@@ -1,6 +1,7 @@
 'use server'
 
 import prisma from '../../lib/prisma';
+import { generateTranslationDraft } from './generateTranslation';
 
 export async function saveTranslationDraft(docId: number, content: string) {
     try {
