@@ -26,7 +26,7 @@ export const Header = () => {
                             width={180}
                             height={60}
                             alt="Promobi"
-                            className="object-contain h-12 md:h-16 w-auto"
+                            className="object-contain h-20 md:h-24 w-auto"
                             priority
                         />
                     </Link>
