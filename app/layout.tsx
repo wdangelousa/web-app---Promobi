@@ -10,6 +10,10 @@ export const metadata: Metadata = {
     description: 'Tradução Certificada Rápida. Sem Burocracia.',
 }
 
+import { WhatsAppProvider } from '../components/WhatsAppContext'
+
+// ... (imports remain)
+
 export default function RootLayout({
     children,
 }: {
@@ -18,8 +22,10 @@ export default function RootLayout({
     return (
         <html lang="pt-BR">
             <body className={inter.className}>
-                {children}
-                <WhatsAppButton />
+                <WhatsAppProvider>
+                    {children}
+                    <WhatsAppButton />
+                </WhatsAppProvider>
             </body>
         </html>
     )

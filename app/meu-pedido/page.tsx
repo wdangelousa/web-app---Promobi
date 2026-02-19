@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, Loader2, CheckCircle, Clock, FileText, Truck, AlertCircle } from 'lucide-react'
 import { getOrderStatus } from '../actions/getOrderStatus'
+import { useWhatsApp } from '@/components/WhatsAppContext'
 
 // Helper to format date
 const formatDate = (dateString: Date) => {
@@ -73,6 +74,20 @@ export default function OrderTrackingPage() {
     // Filter Steps based on Service Flags
     const showTranslation = order?.hasTranslation ?? true; // Default true if not present (legacy)
     const showNotary = order?.hasNotary ?? false;
+
+    // --- WHATSAPP CONTEXT ---
+    const { setMessage, resetMessage } = useWhatsApp()
+
+    useEffect(() => {
+        if (order) {
+            setMessage(`Olá! Estou acompanhando meu pedido #${order.id} (Status: ${order.status}) e gostaria de tirar uma dúvida sobre...`)
+        } else {
+            resetMessage()
+        }
+
+        // Cleanup on unmount
+        return () => resetMessage()
+    }, [order, setMessage, resetMessage])
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-800">

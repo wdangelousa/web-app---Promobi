@@ -4,9 +4,11 @@ import React from 'react'
 import { MessageCircle } from 'lucide-react'
 import { motion } from 'framer-motion'
 
+import { useWhatsApp } from './WhatsAppContext'
+
 export function WhatsAppButton() {
     const phoneNumber = '14073985839' // Insira seu número aqui (com código do país, sem +)
-    const message = "Olá, Equipa Promobi! Já consultei as perguntas frequentes no site, mas tenho uma dúvida específica sobre os meus documentos para avançar com o orçamento. Podem ajudar-me?"
+    const { message } = useWhatsApp()
 
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`
