@@ -1,15 +1,17 @@
 // Density Rules
-const CHAR_THRESHOLD_FULL = 1000;
-const CHAR_THRESHOLD_EMPTY = 50;
-const PRICE_FULL = 8.00;
-const PRICE_HALF = 4.00;
-const PRICE_EMPTY = 0.00;
+const CHAR_THRESHOLD_FULL = 1800; // > 1800 chars = 100%
+const CHAR_THRESHOLD_HIGH = 1200; // 1200-1800 = 75%
+const CHAR_THRESHOLD_MEDIUM = 600; // 600-1200 = 50%
+const CHAR_THRESHOLD_LOW = 50;     // 50-600 = 25%
+
+const PRICE_BASE = 9.00;
 
 export type PageAnalysis = {
     pageNumber: number;
     charCount: number;
-    density: 'full' | 'half' | 'empty';
+    density: 'full' | 'high' | 'medium' | 'low' | 'empty';
     price: number;
+    fraction: number; // 1.0, 0.75, 0.5, 0.25
 };
 
 export type DocumentAnalysis = {
@@ -24,19 +26,17 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
 
     if (isImage) {
         // IMAGE LOGIC:
-        // Cannot extract text easily without OCR.
         // Assume FULL PAGE density for highest fairness/safety for business unless OCR implemented.
-        // Or per prompt: "Simulated via Text" implies we try text, if fail, fallback.
-        // Prompt says "avoid processing image heavy".
         return {
             totalPages: 1,
             pages: [{
                 pageNumber: 1,
                 charCount: 2000, // Simulated "full" count
                 density: 'full',
-                price: PRICE_FULL
+                price: PRICE_BASE,
+                fraction: 1.0
             }],
-            totalPrice: PRICE_FULL,
+            totalPrice: PRICE_BASE,
             isImage: true
         };
     }
@@ -47,8 +47,6 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
         const pdfjsLib = await import('pdfjs-dist');
 
         // Configure worker (use a CDN appropriate for the version, or local file)
-        // Standard approach for Next.js is to use a CDN or copy the worker file to public/
-        // Using unpkg CDN for simplicity and reliability without complex build steps
         pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
         const arrayBuffer = await file.arrayBuffer();
@@ -65,22 +63,39 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             const text = textContent.items.map((item: any) => item.str).join(' ');
             const charCount = text.replace(/\s/g, '').length; // Count non-whitespace chars
 
-            let density: 'full' | 'half' | 'empty' = 'full';
-            let price = PRICE_FULL;
+            let density: 'full' | 'high' | 'medium' | 'low' | 'empty' = 'full';
+            let fraction = 1.0;
+            let price = PRICE_BASE;
 
-            if (charCount < CHAR_THRESHOLD_EMPTY) {
+            if (charCount < CHAR_THRESHOLD_LOW) {
                 density = 'empty';
-                price = PRICE_EMPTY;
+                fraction = 0.0;
+                price = 0.00;
+            } else if (charCount < CHAR_THRESHOLD_MEDIUM) {
+                density = 'low';
+                fraction = 0.25;
+                price = PRICE_BASE * 0.25; // $2.25
+            } else if (charCount < CHAR_THRESHOLD_HIGH) {
+                density = 'medium';
+                fraction = 0.50;
+                price = PRICE_BASE * 0.50; // $4.50
             } else if (charCount < CHAR_THRESHOLD_FULL) {
-                density = 'half';
-                price = PRICE_HALF;
+                density = 'high';
+                fraction = 0.75;
+                price = PRICE_BASE * 0.75; // $6.75
+            } else {
+                // > 1800
+                density = 'full';
+                fraction = 1.0;
+                price = PRICE_BASE;
             }
 
             pages.push({
                 pageNumber: i,
                 charCount,
                 density,
-                price
+                price,
+                fraction
             });
 
             totalPrice += price;
@@ -95,16 +110,17 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
 
     } catch (error) {
         console.error("Error analyzing PDF:", error);
-        // Fallback for corrupted/unreadable PDFs: Assume 1 Full Page to allow user to continue manually or show error
+        // Fallback: Assume 1 Full Page
         return {
             totalPages: 1,
             pages: [{
                 pageNumber: 1,
-                charCount: 1000,
+                charCount: 2000,
                 density: 'full',
-                price: PRICE_FULL
+                price: PRICE_BASE,
+                fraction: 1.0
             }],
-            totalPrice: PRICE_FULL,
+            totalPrice: PRICE_BASE,
             isImage: false
         };
     }

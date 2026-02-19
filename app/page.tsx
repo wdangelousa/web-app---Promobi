@@ -39,6 +39,7 @@ type DocumentItem = {
     notarized: boolean; // Upsell toggle
     analysis?: DocumentAnalysis; // New field for density data
     isSelected: boolean; // New: Selection state
+    handwritten?: boolean; // New field for surcharge
     // New fields for Notarization Only flow
     fileTranslated?: File;
     fileNameTranslated?: string;
@@ -76,11 +77,11 @@ export default function Home() {
     const router = useRouter()
 
     const NOTARY_FEE_PER_DOC = 25.00
-    const MIN_ORDER_VALUE = 10.00 // Only applies to Translation flow usually, but we'll see
+    const MIN_ORDER_VALUE = 10.00
     const URGENCY_MULTIPLIER: Record<string, number> = {
         normal: 1.0,
-        urgent: 1.5,
-        super_urgent: 2.0
+        urgent: 1.3, // +30%
+        super_urgent: 1.6 // +60%
     }
 
     // --- HANDLERS ---
@@ -118,7 +119,8 @@ export default function Home() {
                             count: analysis.totalPages,
                             notarized: false,
                             analysis: analysis,
-                            isSelected: true
+                            isSelected: true,
+                            handwritten: false
                         })
                     } catch (err) {
                         console.error("Analysis failed", err)
@@ -129,7 +131,8 @@ export default function Home() {
                             fileName: file.name,
                             count: 1,
                             notarized: false,
-                            isSelected: true
+                            isSelected: true,
+                            handwritten: false
                         })
                     }
                 }
@@ -211,46 +214,39 @@ export default function Home() {
         if (serviceType === 'translation') {
             // 1. Calculate Base Price (Sum of density prices per page)
             selectedDocs.forEach(doc => {
+                let docPrice = 0;
                 if (doc.analysis) {
-                    totalBase += doc.analysis.totalPrice
+                    docPrice = doc.analysis.totalPrice
                     totalPages += doc.analysis.totalPages
                 } else {
-                    // Fallback ($8.00 per page default) - User said $9 but sticking to code unless I globally change.
-                    // Actually, let's keep consistent with existing logic.
-                    totalBase += (doc.count || 1) * 8.00
+                    // Fallback to $9.00 per page
+                    docPrice = (doc.count || 1) * 9.00
                     totalPages += (doc.count || 1)
                 }
+
+                // Handwritten Surcharge: +25% on this document's base price
+                if ((doc as any).handwritten) {
+                    docPrice *= 1.25
+                }
+
+                totalBase += docPrice
             })
             // 2. Calculate Notary Fee ($25 per notarized doc)
             notary = selectedDocs.reduce((acc, doc) => acc + (doc.notarized ? NOTARY_FEE_PER_DOC : 0), 0)
         } else if (serviceType === 'notarization') {
             // Flat fee per document slot ($25)
-            // "O valor de $25.00 é aplicado automaticamente a cada par de documentos adicionado."
-            // So we just count selected items.
-            totalBase = selectedDocs.length * NOTARY_FEE_PER_DOC
-            notary = 0 // Included in base or we consider it all notary fee? 
-            // Let's put it in 'basePrice' or 'notaryFee'? 
-            // "Cálculo: Desativa a lógica de densidade... O preço é fixo por documento ($25.00)"
-            // Logic wise: Base = $25 * count. Notary fee = 0 (since it's the base service).
-
-            // Actually, for breakdown clarity:
-            // Base Price serves as the "Translation" cost usually.
-            // Maybe put it all in 'notaryFee' and 0 base?
-            // Or just Base = $25. Let's stick to Base = $25/doc for simplicity in total calc.
             totalBase = 0
             notary = selectedDocs.length * NOTARY_FEE_PER_DOC
-            totalPages = selectedDocs.length // Just count docs
+            totalPages = selectedDocs.length
         }
 
-        // 3. Calculate Urgency Fee (Applied to Subtotal: Base + Notary)
-        const subtotal = totalBase + notary
-        const urgencyMultiplier = URGENCY_MULTIPLIER[urgency]
-        const totalWithUrgency = subtotal * urgencyMultiplier
+        // 3. Calculate Urgency Fee (Applied to Base Translation Cost)
+        const baseWithUrgency = totalBase * URGENCY_MULTIPLIER[urgency]
 
-        // Urgency Part (for display separation, though formula aggregates it)
-        const urgencyPart = totalWithUrgency - subtotal
+        // Urgency Fee Component
+        const urgencyPart = baseWithUrgency - totalBase
 
-        let total = totalWithUrgency
+        let total = baseWithUrgency + notary
         let minOrderApplied = false
 
         // 4. Minimum Order Rule (Only if there are selected docs and total > 0)
@@ -310,6 +306,7 @@ export default function Home() {
                 fileNameTranslated: (d as any).fileNameTranslated, // New field
                 count: d.count,
                 notarized: d.notarized,
+                handwritten: (d as any).handwritten,
                 analysis: d.analysis
             })),
             urgency,
@@ -555,30 +552,46 @@ export default function Home() {
                                                     {/* Flow A: Density Breakdown Grid */}
                                                     {serviceType === 'translation' && doc.isSelected && (
                                                         <div className="bg-slate-50 rounded-lg p-2 text-xs text-gray-600 space-y-1">
-                                                            {doc.analysis?.pages.map((p) => (
-                                                                <div key={p.pageNumber} className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-1 last:pb-0">
-                                                                    <span className="flex items-center gap-1">
-                                                                        <span className="font-mono text-gray-400">Pg {p.pageNumber}:</span>
-                                                                        {p.density === 'full' ? 'Texto Completo' : p.density === 'half' ? 'Meia Página/Verso' : 'Em Branco'}
-                                                                    </span>
-                                                                    <span className={`font-bold ${p.density === 'full' ? 'text-slate-800' : p.density === 'half' ? 'text-blue-600' : 'text-green-600'}`}>
-                                                                        ${p.price.toFixed(2)}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
+                                                            {doc.analysis?.pages.map((p) => {
+                                                                let label = 'Texto Completo (100%)';
+                                                                let color = 'text-slate-800';
+                                                                if (p.density === 'high') { label = 'Alta Densidade (75%)'; color = 'text-slate-700'; }
+                                                                if (p.density === 'medium') { label = 'Média Densidade (50%)'; color = 'text-blue-600'; }
+                                                                if (p.density === 'low') { label = 'Baixa Densidade (25%)'; color = 'text-green-600'; }
+                                                                if (p.density === 'empty') { label = 'Em Branco (0%)'; color = 'text-gray-400'; }
+
+                                                                return (
+                                                                    <div key={p.pageNumber} className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-1 last:pb-0">
+                                                                        <span className="flex items-center gap-1">
+                                                                            <span className="font-mono text-gray-400">Pg {p.pageNumber}:</span>
+                                                                            {label}
+                                                                        </span>
+                                                                        <span className={`font-bold ${color}`}>
+                                                                            ${p.price.toFixed(2)}
+                                                                        </span>
+                                                                    </div>
+                                                                )
+                                                            })}
                                                             {!doc.analysis && (
                                                                 <div className="text-center italic text-gray-400 py-1">Análise manual necessária na revisão. Preço base aplicado.</div>
                                                             )}
                                                         </div>
                                                     )}
 
-                                                    {/* Flow A: Actions (Upsell Notarization) */}
+                                                    {/* Flow A: Actions (Upsell Notarization + Handwritten) */}
                                                     {serviceType === 'translation' && doc.isSelected && (
-                                                        <div className="flex items-center justify-end pt-2 border-t border-gray-50">
-                                                            <div className="flex items-center gap-3 cursor-pointer group/toggle" onClick={() => updateDocument(doc.id, 'notarized', !doc.notarized)}>
-                                                                <span className={`text-xs font-bold transition-colors ${doc.notarized ? 'text-green-600' : 'text-slate-400 group-hover/toggle:text-slate-600'}`}>
-                                                                    {doc.notarized ? 'Notarizado (+$25)' : 'Adicionar Notarização?'}
-                                                                </span>
+                                                        <div className="flex flex-col gap-2 pt-2 border-t border-gray-50">
+                                                            {/* Handwritten Toggle */}
+                                                            <div className="flex items-center justify-between group/handwritten cursor-pointer" onClick={() => updateDocument(doc.id, 'handwritten', !doc.handwritten)}>
+                                                                <span className="text-xs text-gray-500 group-hover/handwritten:text-purple-600 transition-colors">Documento Manuscrito? (+25%)</span>
+                                                                <div className={`w-8 h-5 rounded-full p-0.5 transition-colors duration-300 ease-in-out ${doc.handwritten ? 'bg-purple-500' : 'bg-gray-300'}`}>
+                                                                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ease-in-out ${doc.handwritten ? 'translate-x-3' : 'translate-x-0'}`} />
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Notarization Toggle */}
+                                                            <div className="flex items-center justify-between group/notary cursor-pointer" onClick={() => updateDocument(doc.id, 'notarized', !doc.notarized)}>
+                                                                <span className="text-xs text-gray-500 group-hover/notary:text-green-600 transition-colors">Adicionar Notarização? (+$25)</span>
                                                                 <div className={`w-8 h-5 rounded-full p-0.5 transition-colors duration-300 ease-in-out ${doc.notarized ? 'bg-green-500' : 'bg-gray-300'}`}>
                                                                     <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ease-in-out ${doc.notarized ? 'translate-x-3' : 'translate-x-0'}`} />
                                                                 </div>
@@ -692,7 +705,7 @@ export default function Home() {
                                                     onClick={() => setUrgency(u)}
                                                     className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === u ? 'bg-[#f58220] text-white font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                                 >
-                                                    {u === 'normal' ? 'Standard' : u === 'urgent' ? '24h' : '12h'}
+                                                    {u === 'normal' ? 'Standard (2-3 dias)' : u === 'urgent' ? 'Urgente (24h)' : 'Super Urgente (12h)'}
                                                 </button>
                                             ))}
                                         </div>
