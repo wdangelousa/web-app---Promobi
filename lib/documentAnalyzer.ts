@@ -9,7 +9,7 @@ const PRICE_BASE = 9.00;
 export type PageAnalysis = {
     pageNumber: number;
     charCount: number;
-    density: 'full' | 'high' | 'medium' | 'low' | 'empty';
+    density: 'full' | 'high' | 'medium' | 'low' | 'empty' | 'scanned'; // Added 'scanned'
     price: number;
     fraction: number; // 1.0, 0.75, 0.5, 0.25
 };
@@ -26,13 +26,13 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
 
     if (isImage) {
         // IMAGE LOGIC:
-        // Assume FULL PAGE density for highest fairness/safety for business unless OCR implemented.
+        // Assume SCANNED density for highest fairness/safety for business unless OCR implemented.
         return {
             totalPages: 1,
             pages: [{
                 pageNumber: 1,
-                charCount: 2000, // Simulated "full" count
-                density: 'full',
+                charCount: 2000,
+                density: 'scanned', // Explicitly 'scanned' now
                 price: PRICE_BASE,
                 fraction: 1.0
             }],
@@ -43,10 +43,9 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
 
     // PDF LOGIC
     try {
-        // Dynamic import to avoid SSR issues with canvas/DOMMatrix
+        // ... (imports remain same)
         const pdfjsLib = await import('pdfjs-dist');
-
-        // Configure worker (use a CDN appropriate for the version, or local file)
+        // ... (worker setup remains same)
         pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
         const arrayBuffer = await file.arrayBuffer();
@@ -63,14 +62,16 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             const text = textContent.items.map((item: any) => item.str).join(' ');
             const charCount = text.replace(/\s/g, '').length; // Count non-whitespace chars
 
-            let density: 'full' | 'high' | 'medium' | 'low' | 'empty' = 'full';
+            let density: 'full' | 'high' | 'medium' | 'low' | 'empty' | 'scanned' = 'full';
             let fraction = 1.0;
             let price = PRICE_BASE;
 
+            // Updated Logic:
             if (charCount < CHAR_THRESHOLD_LOW) {
-                density = 'empty';
-                fraction = 0.0;
-                price = 0.00;
+                // Was < 50 chars -> likely scanned or image based
+                density = 'scanned';
+                fraction = 1.0;
+                price = PRICE_BASE;
             } else if (charCount < CHAR_THRESHOLD_MEDIUM) {
                 density = 'low';
                 fraction = 0.25;

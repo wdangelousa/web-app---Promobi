@@ -25,7 +25,9 @@ import {
     Users,
     ChevronDown,
     Star,
-    Check
+    Check,
+    Menu,
+    X
 } from 'lucide-react'
 
 // Types
@@ -74,6 +76,7 @@ export default function Home() {
     })
 
     const [activeFaq, setActiveFaq] = useState<number | null>(null)
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const router = useRouter()
 
     const NOTARY_FEE_PER_DOC = 25.00
@@ -358,12 +361,58 @@ export default function Home() {
                     <div className="flex items-center gap-2">
                         <Image src="/logo.png" width={320} height={110} alt="Promobi" className="object-contain h-16 md:h-20 w-auto" />
                     </div>
+
+                    {/* Desktop Nav */}
                     <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
                         <Link href="/" className="hover:text-[#f58220] transition-colors">Início</Link>
                         <Link href="/upload" className="hover:text-[#f58220] transition-colors">Enviar Documentos</Link>
                         <Link href="/admin/dashboard" className="text-slate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</Link>
                     </nav>
+
+                    {/* Mobile Menu Button */}
+                    <button
+                        className="md:hidden p-2 text-slate-600 hover:text-[#f58220] transition-colors"
+                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                    >
+                        {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                    </button>
                 </div>
+
+                {/* Mobile Menu Overlay */}
+                <AnimatePresence>
+                    {mobileMenuOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
+                        >
+                            <nav className="flex flex-col p-4 space-y-4 text-sm font-medium text-slate-600">
+                                <Link
+                                    href="/"
+                                    className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    Início
+                                </Link>
+                                <Link
+                                    href="/upload"
+                                    className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    Enviar Documentos
+                                </Link>
+                                <Link
+                                    href="/admin/dashboard"
+                                    className="p-2 text-[#f58220] font-bold bg-orange-50 rounded-lg transition-colors flex items-center gap-2"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    <Lock className="h-4 w-4" /> Área Administrativa
+                                </Link>
+                            </nav>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.header>
 
             {/* --- HERO SECTION --- */}
@@ -423,9 +472,9 @@ export default function Home() {
                                     {/* CARD A: TRANSLATION */}
                                     <button
                                         onClick={() => handleServiceSelection('translation')}
-                                        className="text-left group relative flex items-start gap-4 p-6 rounded-2xl border-2 border-slate-100 hover:border-[#f58220] hover:bg-orange-50/50 transition-all active:scale-[0.98]"
+                                        className="text-left group relative flex items-start gap-4 p-6 rounded-2xl border-2 border-slate-100 hover:border-[#f58220] hover:shadow-lg hover:shadow-orange-100 hover:bg-white transition-all active:scale-[0.98]"
                                     >
-                                        <div className="bg-orange-100 text-[#f58220] p-3 rounded-xl shrink-0 group-hover:scale-110 transition-transform">
+                                        <div className="bg-orange-50 text-orange-600 border border-orange-100 p-3 rounded-xl shrink-0 group-hover:scale-110 transition-transform">
                                             <Globe className="h-6 w-6" />
                                         </div>
                                         <div>
@@ -439,9 +488,9 @@ export default function Home() {
                                     {/* CARD B: NOTARIZATION ONLY */}
                                     <button
                                         onClick={() => handleServiceSelection('notarization')}
-                                        className="text-left group relative flex items-start gap-4 p-6 rounded-2xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50/50 transition-all active:scale-[0.98]"
+                                        className="text-left group relative flex items-start gap-4 p-6 rounded-2xl border-2 border-slate-100 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-100 hover:bg-white transition-all active:scale-[0.98]"
                                     >
-                                        <div className="bg-blue-100 text-blue-600 p-3 rounded-xl shrink-0 group-hover:scale-110 transition-transform">
+                                        <div className="bg-blue-50 text-blue-600 border border-blue-100 p-3 rounded-xl shrink-0 group-hover:scale-110 transition-transform">
                                             <ShieldCheck className="h-6 w-6" />
                                         </div>
                                         <div>
@@ -503,9 +552,9 @@ export default function Home() {
                                                     initial={{ opacity: 0, y: 10 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, height: 0 }}
-                                                    className={`rounded-xl p-4 shadow-sm border flex flex-col gap-3 relative group transition-all duration-300 ${doc.isSelected
-                                                        ? 'bg-white border-gray-100 opacity-100'
-                                                        : 'bg-gray-50 border-gray-100 opacity-60 grayscale-[0.8]'
+                                                    className={`rounded-2xl p-4 border border-slate-200/60 shadow-[0_2px_8px_-2px_rgba(30,41,59,0.08)] hover:shadow-[0_4px_12px_-2px_rgba(245,130,32,0.15)] flex flex-col gap-3 relative group transition-all duration-300 ${doc.isSelected
+                                                        ? 'bg-white opacity-100'
+                                                        : 'bg-gray-50 opacity-60 grayscale-[0.8]'
                                                         }`}
                                                 >
                                                     {/* Header Line */}
@@ -519,7 +568,7 @@ export default function Home() {
                                                                     onChange={(e) => updateDocument(doc.id, 'isSelected', e.target.checked)}
                                                                     className="w-5 h-5 accent-[#f58220] rounded cursor-pointer z-10 opacity-0 absolute inset-0"
                                                                 />
-                                                                <div className={`w-5 h-5 rounded border flex items-center justify-center pointer-events-none transition-colors ${doc.isSelected ? 'bg-[#f58220] border-[#f58220]' : 'bg-white border-gray-300'}`}>
+                                                                <div className={`w-5 h-5 rounded border border-slate-300 shadow-sm flex items-center justify-center pointer-events-none transition-colors ${doc.isSelected ? 'bg-[#f58220] border-[#f58220] shadow-md shadow-orange-100' : 'bg-white'}`}>
                                                                     {doc.isSelected && <Check className="w-3.5 h-3.5 text-white" />}
                                                                 </div>
                                                             </div>
@@ -551,24 +600,42 @@ export default function Home() {
 
                                                     {/* Flow A: Density Breakdown Grid */}
                                                     {serviceType === 'translation' && doc.isSelected && (
-                                                        <div className="bg-slate-50 rounded-lg p-2 text-xs text-gray-600 space-y-1">
+                                                        <div className="bg-white border border-slate-100 rounded-lg p-3 mt-2 shadow-inner text-xs text-gray-600 space-y-1">
                                                             {doc.analysis?.pages.map((p) => {
                                                                 let label = 'Texto Completo (100%)';
                                                                 let color = 'text-slate-800';
+                                                                let isScanned = false;
+
                                                                 if (p.density === 'high') { label = 'Alta Densidade (75%)'; color = 'text-slate-700'; }
                                                                 if (p.density === 'medium') { label = 'Média Densidade (50%)'; color = 'text-blue-600'; }
                                                                 if (p.density === 'low') { label = 'Baixa Densidade (25%)'; color = 'text-green-600'; }
                                                                 if (p.density === 'empty') { label = 'Em Branco (0%)'; color = 'text-gray-400'; }
 
+                                                                // Scanned / Image Logic
+                                                                if (p.density === 'scanned') {
+                                                                    label = 'Página Digitalizada (Imagem)';
+                                                                    color = 'text-amber-600'; // Warning color
+                                                                    isScanned = true;
+                                                                }
+
                                                                 return (
-                                                                    <div key={p.pageNumber} className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-1 last:pb-0">
-                                                                        <span className="flex items-center gap-1">
-                                                                            <span className="font-mono text-gray-400">Pg {p.pageNumber}:</span>
-                                                                            {label}
-                                                                        </span>
-                                                                        <span className={`font-bold ${color}`}>
-                                                                            ${p.price.toFixed(2)}
-                                                                        </span>
+                                                                    <div key={p.pageNumber}>
+                                                                        <div className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-1 last:pb-0 pt-1">
+                                                                            <span className="flex items-center gap-1">
+                                                                                <span className="font-mono text-gray-400">Pg {p.pageNumber}:</span>
+                                                                                <span className={isScanned ? "bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md font-medium border border-amber-100" : ""}>
+                                                                                    {label}
+                                                                                </span>
+                                                                            </span>
+                                                                            <span className={`font-bold ${color}`}>
+                                                                                ${p.price.toFixed(2)}
+                                                                            </span>
+                                                                        </div>
+                                                                        {isScanned && (
+                                                                            <p className="text-[10px] text-amber-600/80 italic pl-8 leading-tight mb-1">
+                                                                                * Texto em imagem requer formatação manual complexa. Valor padrão aplicado.
+                                                                            </p>
+                                                                        )}
                                                                     </div>
                                                                 )
                                                             })}
@@ -703,7 +770,7 @@ export default function Home() {
                                                 <button
                                                     key={u}
                                                     onClick={() => setUrgency(u)}
-                                                    className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === u ? 'bg-[#f58220] text-white font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                    className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === u ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 scale-105 font-bold' : 'text-slate-600 bg-slate-50 hover:bg-slate-100'}`}
                                                 >
                                                     {u === 'normal' ? 'Standard (2-3 dias)' : u === 'urgent' ? 'Urgente (24h)' : 'Super Urgente (12h)'}
                                                 </button>
@@ -793,7 +860,7 @@ export default function Home() {
                                             <div className="flex items-end justify-between pt-1">
                                                 <span className="text-gray-500 font-medium text-sm">Total Estimado</span>
                                                 <div className="text-right">
-                                                    <span className="block text-3xl font-bold text-slate-900 tracking-tight leading-none">${totalPrice.toFixed(2)}</span>
+                                                    <span className="block text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-[#f58220] leading-none">${totalPrice.toFixed(2)}</span>
                                                     {paymentProvider === 'PARCELADO_USA' && (
                                                         <span className="text-[10px] text-green-600 font-bold block mt-1">
                                                             aprox. R$ {(totalPrice * 5.2).toFixed(2)} (Pix)
