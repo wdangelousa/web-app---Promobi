@@ -1,0 +1,51 @@
+import prisma from '../../../../lib/prisma'
+import Workbench from './components/Workbench'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
+
+export default async function OrderWorkbenchPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params
+    const orderId = parseInt(id)
+
+    const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+            user: true,
+            documents: true
+        }
+    })
+
+    if (!order) {
+        return <div className="p-8 text-center text-red-600">Pedido não encontrado</div>
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-100 flex flex-col">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <Link href="/admin" className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <ArrowLeft className="h-5 w-5 text-gray-500" />
+                    </Link>
+                    <div>
+                        <h1 className="text-xl font-bold text-gray-900">Workbench de Tradução</h1>
+                        <p className="text-xs text-gray-500">Pedido #{order.id} • {order.user.fullName}</p>
+                    </div>
+                </div>
+                <div className="flex gap-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${order.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            order.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
+                                'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}>
+                        {order.status}
+                    </span>
+                </div>
+            </div>
+
+            {/* Workbench Client Component */}
+            <div className="flex-1 overflow-hidden">
+                <Workbench order={order} />
+            </div>
+        </div>
+    )
+}

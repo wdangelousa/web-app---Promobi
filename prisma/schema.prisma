@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  fullName  String
+  email     String   @unique
+  phone     String?
+  role      Role     @default(CLIENT)
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Order {
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  user                 User      @relation(fields: [userId], references: [id])
+  status               OrderStatus @default(PENDING)
+  totalAmount          Float
+  requiresNotarization Boolean   @default(false)
+  requiresHardCopy     Boolean   @default(false)
+  urgency              String    @default("normal")
+  uspsTracking         String?
+  documents            Document[]
+  createdAt            DateTime  @default(now())
+  paymentProvider      PaymentProvider @default(STRIPE)
+  deliveryUrl          String?
+  metadata             String?   // JSON string for complex order details (files, density, pricing breakdown)
+  paymentMethod        String?   // "STRIPE" or "BRL_GATEWAY"
+  hasTranslation       Boolean   @default(true)
+  hasNotary            Boolean   @default(false)
+}
+
+enum PaymentProvider {
+  STRIPE
+  PARCELADO_USA
+}
+
+model Document {
+  id               Int      @id @default(autoincrement())
+  orderId          Int
+  order            Order    @relation(fields: [orderId], references: [id])
+  docType          String
+  originalFileUrl  String
+  translatedFileUrl String?
+  translatedText    String? // Stores DeepL draft
+  exactNameOnDoc   String?
+  createdAt        DateTime @default(now())
+}
+
+enum Role {
+  CLIENT
+  TRANSLATOR
+  NOTARY
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  TRANSLATING
+  NOTARIZING
+  COMPLETED
+  PAID
+  READY_FOR_REVIEW
+  MANUAL_TRANSLATION_NEEDED
+  CANCELLED
+}

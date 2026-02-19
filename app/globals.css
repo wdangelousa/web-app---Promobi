@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+    --color-primary: #FF6600;
+    --color-secondary: #0F172A;
+    --color-accent: #F59E0B;
+    --color-background-main: #0B0C10;
+    --color-background-card: #15171C;
+    --color-text-main: #FFFFFF;
+    --color-text-muted: #94A3B8;
+}
+
+:root {
+    --background-rgb: 248, 250, 252;
+    /* #F8FAFC (Slate-50) */
+    --foreground-rgb: 15, 23, 42;
+    /* #0F172A (Slate-900) */
+    --card-rgb: 255, 255, 255;
+    /* #FFFFFF */
+    --primary-rgb: 255, 102, 0;
+    /* #FF6600 */
+}
+
+body {
+    color: rgb(var(--foreground-rgb));
+    background: rgb(var(--background-rgb));
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Utilities for Premium Look */
+.glass-card {
+    background: rgba(21, 23, 28, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.input-premium {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.input-premium:focus {
+    border-color: #FF6600;
+    box-shadow: 0 0 0 1px rgba(255, 102, 0, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+}
