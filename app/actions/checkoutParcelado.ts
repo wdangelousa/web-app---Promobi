@@ -1,11 +1,13 @@
 'use server'
 
 import prisma from '../../lib/prisma'
+import { createParceladoPaymentLink } from '../../lib/parcelado'
 
 export async function checkoutParcelado(orderId: number) {
     try {
         const order = await prisma.order.findUnique({
-            where: { id: orderId }
+            where: { id: orderId },
+            include: { user: true }
         })
 
         if (!order) {
@@ -21,11 +23,17 @@ export async function checkoutParcelado(orderId: number) {
             }
         })
 
-        // Redirect to simulation page
-        return { success: true, url: `/checkout-parcelado?orderId=${orderId}` }
+        // Generate Payment Link (or get simulation URL)
+        const result = await createParceladoPaymentLink(order, order.user?.email, order.user?.fullName);
+
+        if (result.url) {
+            return { success: true, url: result.url }
+        } else {
+            return { success: false, error: "Falha ao gerar link de pagamento" }
+        }
 
     } catch (error) {
         console.error("Parcelado Checkout Error:", error)
-        return { success: false, error: "Falha ao iniciar simulação de pagamento" }
+        return { success: false, error: "Falha ao iniciar pagamento" }
     }
 }
