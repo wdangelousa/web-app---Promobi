@@ -362,9 +362,9 @@ export default function Home() {
                         <Image src="/logo.png" width={320} height={110} alt="Promobi" className="object-contain h-16 md:h-20 w-auto" />
                     </div>
                     <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-                        <a href="#calculator" className="hover:text-[#f58220] transition-colors">Serviços</a>
-                        <a href="#team" className="hover:text-[#f58220] transition-colors">Equipe</a>
-                        <Link href="/meu-pedido" className="textslate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Rastrear Pedido</Link>
+                        <Link href="/" className="hover:text-[#f58220] transition-colors">Início</Link>
+                        <Link href="/upload" className="hover:text-[#f58220] transition-colors">Enviar Documentos</Link>
+                        <Link href="/admin/dashboard" className="text-slate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</Link>
                     </nav>
                 </div>
             </motion.header>
@@ -394,9 +394,9 @@ export default function Home() {
                         </motion.p>
 
                         <motion.div variants={fadeInUp} className="flex gap-4">
-                            <a href="#calculator" className="bg-[#f58220] hover:bg-orange-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-orange-200 transition-all active:scale-95 flex items-center gap-2">
-                                Solicitar Orçamento Agora <ArrowRight className="h-5 w-5" />
-                            </a>
+                            <Link href="/upload" className="bg-[#f58220] hover:bg-orange-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-orange-200 transition-all active:scale-95 flex items-center gap-2">
+                                Traduzir Agora <ArrowRight className="h-5 w-5" />
+                            </Link>
                         </motion.div>
 
                         {/* Integrated Authority Seals */}
@@ -923,6 +923,11 @@ export default function Home() {
                 <p className="mt-4 max-w-2xl mx-auto text-xs opacity-60">
                     A Promobi é uma empresa de tecnologia e serviços de tradução e notarização. Não somos um escritório de advocacia (Law Firm) e não prestamos consultoria jurídica.
                 </p>
+                <div className="mt-8 pt-8 border-t border-slate-800">
+                    <Link href="/admin" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+                        Acesso Colaborador
+                    </Link>
+                </div>
             </footer>
 
         </div>
