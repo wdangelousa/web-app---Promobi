@@ -366,7 +366,7 @@ export default function Home() {
                     <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
                         <Link href="/" className="hover:text-[#f58220] transition-colors">Início</Link>
                         <Link href="/upload" className="hover:text-[#f58220] transition-colors">Enviar Documentos</Link>
-                        <Link href="/admin/orders" className="text-slate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</Link>
+                        <a href="/admin/orders" className="text-slate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</a>
                     </nav>
 
                     {/* Mobile Menu Button */}
@@ -1004,7 +1004,7 @@ export default function Home() {
                     A Promobi é uma empresa de tecnologia e serviços de tradução e notarização. Não somos um escritório de advocacia (Law Firm) e não prestamos consultoria jurídica.
                 </p>
                 <div className="mt-8 pt-8 border-t border-slate-800">
-                    <Link href="/admin/orders" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+                    <a href="/admin/orders" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
                         Acesso Colaborador
                     </Link>
                 </div>
