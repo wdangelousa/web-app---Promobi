@@ -4,7 +4,8 @@ import { generateTranslationDraft } from '../../../../app/actions/generateTransl
 import Stripe from 'stripe';
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
     apiVersion: '2024-12-18.acacia' as any, // Use latest or matching version
 });
 
