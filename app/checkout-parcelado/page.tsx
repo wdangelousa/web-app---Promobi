@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ShieldCheck, Lock, CheckCircle, Smartphone, CreditCard, Copy, AlertTriangle } from 'lucide-react'
 
@@ -11,7 +11,8 @@ import { ShieldCheck, Lock, CheckCircle, Smartphone, CreditCard, Copy, AlertTria
 // To make it robust, let's assume a total or fetch it. For now, we simulate $100 -> R$ 600.
 const MOCK_EXCHANGE_RATE = 6.00;
 
-export default function ParceladoSimulationPage() {
+// Main Content Component
+function ParceladoSimulationContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const orderId = searchParams.get('orderId')
@@ -164,5 +165,18 @@ export default function ParceladoSimulationPage() {
                 </div>
             </div>
         </div>
+    )
+}
+
+// Default page export with Suspense boundary
+export default function ParceladoSimulationPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="text-gray-500 animate-pulse">Carregando simulação...</div>
+            </div>
+        }>
+            <ParceladoSimulationContent />
+        </Suspense>
     )
 }
