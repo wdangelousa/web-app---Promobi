@@ -20,7 +20,7 @@ export async function middleware(req: NextRequest) {
     // Se o usuário estiver logado e tentar acessar o login, redirecionar para o admin
     if (req.nextUrl.pathname === '/login') {
         if (session) {
-            return NextResponse.redirect(new URL('/admin/dashboard', req.url))
+            return NextResponse.redirect(new URL('/admin/orders', req.url))
         }
     }
 

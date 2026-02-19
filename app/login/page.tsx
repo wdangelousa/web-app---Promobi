@@ -29,7 +29,7 @@ export default function LoginPage() {
                 throw error
             }
 
-            router.push('/admin/dashboard')
+            router.push('/admin/orders')
             router.refresh()
         } catch (err: any) {
             setError(err.message || 'Falha ao realizar login')
@@ -83,7 +83,7 @@ export default function LoginPage() {
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f58220] focus:border-transparent sm:text-sm transition-shadow"
+                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent sm:text-sm transition-shadow"
                                     placeholder="seu@email.com"
                                 />
                             </div>
@@ -104,7 +104,7 @@ export default function LoginPage() {
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f58220] focus:border-transparent sm:text-sm transition-shadow"
+                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent sm:text-sm transition-shadow"
                                     placeholder="••••••••"
                                 />
                             </div>
@@ -114,7 +114,7 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-[#f58220] hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f58220] disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
