@@ -91,6 +91,13 @@ async function processPaymentSuccess(orderId: number, provider: string) {
             });
         }
 
+        // 3. Trigger Automated Translation (Async)
+        // We don't await this to avoid blocking the webhook response
+        if (order.hasTranslation) {
+            const { initiateTranslation } = await import('@/app/actions/translation');
+            initiateTranslation(order.id).catch(err => console.error("Async translation trigger failed:", err));
+        }
+
     } catch (error) {
         console.error(`Error processing payment for Order #${orderId}:`, error);
     }

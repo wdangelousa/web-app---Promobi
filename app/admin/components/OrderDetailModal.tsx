@@ -250,6 +250,11 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                                         <CheckCircle className="h-3 w-3" /> Notarizado
                                                                     </span>
                                                                 )}
+                                                                {doc.translatedFileUrl && (
+                                                                    <a href={doc.translatedFileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline">
+                                                                        <Download className="h-3 w-3" /> Tradução (DeepL)
+                                                                    </a>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
