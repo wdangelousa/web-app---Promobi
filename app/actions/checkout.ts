@@ -37,7 +37,7 @@ export async function createCheckoutSession(orderId: number) {
                 return { success: false, error: "Erro de configuração de pagamento" }
             }
 
-            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
+            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder')
 
             // Create Checkout Session
             const session = await stripe.checkout.sessions.create({
