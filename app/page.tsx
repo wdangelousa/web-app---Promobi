@@ -408,7 +408,7 @@ export default function Home() {
                                     onClick={() => setMobileMenuOpen(false)}
                                 >
                                     <Lock className="h-4 w-4" /> Área Administrativa
-                                </Link>
+                                </a>
                             </nav>
                         </motion.div>
                     )}
@@ -1006,7 +1006,7 @@ export default function Home() {
                 <div className="mt-8 pt-8 border-t border-slate-800">
                     <a href="/admin/orders" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
                         Acesso Colaborador
-                    </Link>
+                    </a>
                 </div>
             </footer>
 
