@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Lock, Mail, Loader2 } from 'lucide-react'
@@ -12,7 +12,12 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const router = useRouter()
-    const supabase = createClientComponentClient()
+
+    // Create Supabase client for browser
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -29,6 +34,7 @@ export default function LoginPage() {
                 throw error
             }
 
+            // Redirect handled by middleware for protected routes, but we push here for UX
             router.push('/admin/orders')
             router.refresh()
         } catch (err: any) {
