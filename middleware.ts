@@ -46,7 +46,7 @@ export async function middleware(request: NextRequest) {
                     })
                     response.cookies.set({
                         name,
-                        value: '',
+                        value,
                         ...options,
                     })
                 },
@@ -61,6 +61,7 @@ export async function middleware(request: NextRequest) {
     // Protected Routes
     if (request.nextUrl.pathname.startsWith('/admin')) {
         if (!session) {
+            // Redirect unauthenticated users to login page
             return NextResponse.redirect(new URL('/login', request.url))
         }
     }
@@ -68,6 +69,7 @@ export async function middleware(request: NextRequest) {
     // Redirect authenticated users away from login
     if (request.nextUrl.pathname === '/login') {
         if (session) {
+            // Redirect to admin dashboard/orders if already logged in
             return NextResponse.redirect(new URL('/admin/orders', request.url))
         }
     }
@@ -78,4 +80,3 @@ export async function middleware(request: NextRequest) {
 export const config = {
     matcher: ['/admin/:path*', '/login'],
 }
-
