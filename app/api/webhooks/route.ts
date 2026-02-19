@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import Stripe from 'stripe';
+import { initiateTranslation } from '@/app/actions/translation';
+import { NotificationService } from '@/lib/notification';
 import { sendOrderConfirmationEmail } from '@/lib/mail';
 
-// Initialize Stripe
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
     apiVersion: '2025-01-27.acacia' as any, // Updated to latest or prompt-compatible
@@ -24,8 +25,8 @@ export async function POST(request: NextRequest) {
             }
             event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
         } catch (err: any) {
-            console.error(`Webhook signature verification failed: ${err.message}`);
-            return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
+            console.error(`Webhook signature verification failed: ${err.message} `);
+            return NextResponse.json({ error: `Webhook Error: ${err.message} ` }, { status: 400 });
         }
 
         if (event.type === 'checkout.session.completed') {
@@ -75,27 +76,18 @@ async function processPaymentSuccess(orderId: number, provider: string) {
         const order = await prisma.order.update({
             where: { id: orderId },
             data: { status: 'PAID' },
-            include: { user: true } // Include user to get email/name
+            include: { user: true }
         });
 
         console.log(`Order #${orderId} marked as PAID.`);
 
-        // 2. Action Post-Payment: Send Confirmation Email
-        if (order.user?.email) {
-            await sendOrderConfirmationEmail({
-                orderId: order.id,
-                customerName: order.user.fullName,
-                customerEmail: order.user.email,
-                hasTranslation: order.hasTranslation,
-                hasNotary: order.hasNotary
-            });
-        }
+        // 2. Notify Client (Email)
+        await NotificationService.notifyOrderCreated(order);
 
-        // 3. Trigger Automated Translation (Async)
-        // We don't await this to avoid blocking the webhook response
+        // 3. Initiate Automated Translation (Async)
         if (order.hasTranslation) {
-            const { initiateTranslation } = await import('@/app/actions/translation');
-            initiateTranslation(order.id).catch(err => console.error("Async translation trigger failed:", err));
+            initiateTranslation(order.id)
+                .catch(err => console.error("Async translation trigger failed:", err));
         }
 
     } catch (error) {

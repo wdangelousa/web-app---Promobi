@@ -4,6 +4,7 @@
 import prisma from '@/lib/prisma';
 import { translateDocument } from '@/lib/deepl';
 import * as deepl from 'deepl-node';
+import { NotificationService } from '@/lib/notification';
 
 export async function initiateTranslation(orderId: number) {
     console.log(`[Translation] Initiating translation for Order #${orderId}`);
@@ -71,12 +72,19 @@ export async function initiateTranslation(orderId: number) {
         // 5. Update Status based on completion
         // If at least one doc translated (or all), move to REVIEW.
         // If errors, maybe stay in TRANSLATING or MANUAL_INTERVENTION.
+
+        // ... (existing imports)
+
         if (completedCount > 0) {
             await prisma.order.update({
                 where: { id: orderId },
                 data: { status: 'READY_FOR_REVIEW' }
             });
             console.log(`[Translation] Order #${orderId} moved to READY_FOR_REVIEW.`);
+
+            // Notify Admin
+            await NotificationService.notifyTranslationReady(order);
+
         } else {
             console.warn(`[Translation] Order #${orderId} had no successful translations.`);
             await prisma.order.update({

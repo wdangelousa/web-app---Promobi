@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { NotificationService } from '@/lib/notification'
 
 export async function updateOrderStatus(orderId: number, status: string, deliveryUrl?: string) {
     try {
@@ -20,6 +21,18 @@ export async function updateOrderStatus(orderId: number, status: string, deliver
         // Revalidate admin pages
         revalidatePath('/admin/orders')
         revalidatePath(`/admin/orders/${orderId}`)
+
+        // Send Completion Email if Status is COMPLETED and we have delivery URL
+        if (status === 'COMPLETED' && deliveryUrl) {
+            // Need to fetch user details if not present in partial update
+            const order = await prisma.order.findUnique({
+                where: { id: orderId },
+                include: { user: true }
+            })
+            if (order) {
+                await NotificationService.notifyOrderCompleted(order, deliveryUrl)
+            }
+        }
 
         return { success: true }
     } catch (error) {

@@ -180,3 +180,69 @@ export async function sendDeliveryEmail({
         return { success: false, error };
     }
 }
+
+interface AdminReviewEmailProps {
+    orderId: number;
+    customerName: string;
+    adminEmail: string;
+}
+
+export async function sendAdminReviewEmail({
+    orderId,
+    customerName,
+    adminEmail
+}: AdminReviewEmailProps) {
+
+    const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://promobi-app.vercel.app'}/admin/orders/${orderId}`;
+
+    const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+            .header { background-color: #1e293b; padding: 20px; text-align: center; } /* Darker slate for Admin */
+            .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: bold; }
+            .content { padding: 40px 30px; color: #334155; line-height: 1.6; }
+            .details { background-color: #eff6ff; padding: 20px; border-radius: 8px; margin-bottom: 30px; border-left: 4px solid #3b82f6; }
+            .button { background-color: #3b82f6; color: #ffffff; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block; }
+        </style>
+    </head>
+    <body style="background-color: #f8fafc;">
+        <div class="container">
+            <div class="header">
+                <h1>Promobi Admin Alert</h1>
+            </div>
+            <div class="content">
+                <p><strong>Atenção:</strong> Uma nova tradução automática foi concluída e precisa de revisão.</p>
+                
+                <div class="details">
+                    <p style="margin: 0;"><strong>Pedido:</strong> #${orderId}</p>
+                    <p style="margin: 5px 0;"><strong>Cliente:</strong> ${customerName}</p>
+                    <p style="margin: 5px 0 0 0;"><strong>Status:</strong> Aguardando Revisão (READY_FOR_REVIEW)</p>
+                </div>
+
+                <p style="text-align: center; margin-top: 30px;">
+                    <a href="${dashboardUrl}" class="button">Revisar Agora</a>
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+
+    try {
+        const data = await resend.emails.send({
+            from: 'Promobi System <onboarding@resend.dev>',
+            to: [adminEmail],
+            subject: `[Ação Necessária] Revisar Tradução #${orderId}`,
+            html: htmlContent,
+        });
+        console.log(`Admin review email sent for #${orderId}`);
+        return { success: true, data };
+    } catch (error) {
+        console.error('Failed to send admin email:', error);
+        return { success: false, error };
+    }
+}
