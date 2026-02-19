@@ -402,7 +402,7 @@ export default function Home() {
                                 >
                                     Enviar Documentos
                                 </Link>
-                                <Link
+                                <a
                                     href="/admin/orders"
                                     className="p-2 text-[#f58220] font-bold bg-orange-50 rounded-lg transition-colors flex items-center gap-2"
                                     onClick={() => setMobileMenuOpen(false)}
