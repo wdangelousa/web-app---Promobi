@@ -6,15 +6,19 @@ import path from 'path';
 import os from 'os';
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Initialize DeepL Translator
-// Note: We use a null check here but the function will throw if key is missing
+// Initialize DeepL Translator lazily
 const translator = DEEPL_API_KEY ? new deepl.Translator(DEEPL_API_KEY) : null;
 
-// Initialize Supabase Admin
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Lazy Supabase client – only instantiated at request time (avoids build error)
+function getSupabaseClient() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+        throw new Error('Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)');
+    }
+    return createClient(url, key);
+}
 
 export async function translateDocument(
     fileUrl: string,
@@ -56,6 +60,7 @@ export async function translateDocument(
         const translatedBuffer = await fs.readFile(tempOutputPath);
         const translatedFileName = `translations/translated-${Date.now()}-${sourceFileName}`;
 
+        const supabase = getSupabaseClient();
         const { data: uploadData, error: uploadError } = await supabase.storage
             .from('documents')
             .upload(translatedFileName, translatedBuffer, {
@@ -66,7 +71,7 @@ export async function translateDocument(
         if (uploadError) throw new Error(`Supabase Upload Error: ${uploadError.message}`);
 
         // 4. Get Public URL
-        const { data: urlData } = supabase.storage
+        const { data: urlData } = getSupabaseClient().storage
             .from('documents')
             .getPublicUrl(translatedFileName);
 
