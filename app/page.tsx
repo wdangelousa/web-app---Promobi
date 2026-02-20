@@ -57,7 +57,8 @@ export default function Home() {
     // Let's use a unified specific type for Notary items if needed, but 'documents' is typed as DocumentItem[].
     // Let's extend DocumentItem to optional fields for Notary flow.
 
-    const [urgency, setUrgency] = useState('normal') // normal, urgent, super_urgent
+    const [urgency, setUrgency] = useState('standard') // standard | urgent | flash
+    const [paymentPlan, setPaymentPlan] = useState<'upfront_discount' | 'upfront' | 'split'>('upfront')
     const [totalPrice, setTotalPrice] = useState(0)
 
     const [fullName, setFullName] = useState('')
@@ -84,9 +85,9 @@ export default function Home() {
     const NOTARY_FEE_PER_DOC = 25.00
     const MIN_ORDER_VALUE = 10.00
     const URGENCY_MULTIPLIER: Record<string, number> = {
-        normal: 1.0,
+        standard: 1.0,
         urgent: 1.3, // +30%
-        super_urgent: 1.6 // +60%
+        flash: 1.6, // +60%
     }
 
     // --- HANDLERS ---
@@ -246,18 +247,20 @@ export default function Home() {
         }
 
         // 3. Calculate Urgency Fee (Applied to Base Translation Cost)
-        const baseWithUrgency = totalBase * URGENCY_MULTIPLIER[urgency]
-
-        // Urgency Fee Component
+        const baseWithUrgency = totalBase * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
         const urgencyPart = baseWithUrgency - totalBase
 
         let total = baseWithUrgency + notary
         let minOrderApplied = false
 
-        // 4. Minimum Order Rule (Only if there are selected docs and total > 0)
         if (selectedDocs.length > 0 && total < MIN_ORDER_VALUE) {
             total = MIN_ORDER_VALUE
             minOrderApplied = true
+        }
+
+        // Apply 5% discount for upfront_discount on Standard only
+        if (urgency === 'standard' && paymentPlan === 'upfront_discount') {
+            total = total * 0.95
         }
 
         setBreakdown({
@@ -266,11 +269,11 @@ export default function Home() {
             notaryFee: notary,
             totalDocs: selectedDocs.length,
             totalCount: totalPages,
-            minOrderApplied
+            minOrderApplied,
         })
 
         setTotalPrice(total)
-    }, [documents, urgency, URGENCY_MULTIPLIER, serviceType])
+    }, [documents, urgency, paymentPlan, URGENCY_MULTIPLIER, serviceType])
 
     // Derived values for breakdown (using state for consistency)
     const { basePrice, urgencyFee, notaryFee, totalCount, minOrderApplied } = breakdown
@@ -284,17 +287,23 @@ export default function Home() {
         const docSummary = serviceType === 'notarization'
             ? `${selectedDocs.length} documento(s) para Notarização`
             : `${selectedDocs.reduce((acc, d) => acc + d.count, 0)} página(s) para Tradução Certificada${hasNotarization ? ' + Notarização' : ''}`
-        const urgencyLabel = urgency === 'urgent' ? ' (Urgente – 24h)' : urgency === 'super_urgent' ? ' (Super Urgente – 12h)' : ''
+        const urgencyLabel = urgency === 'urgent' ? ' (Urgente – 48h)' : urgency === 'flash' ? ' (Flash – 24h)' : ''
+        const planLabel = paymentPlan === 'split'
+            ? '50/50'
+            : paymentPlan === 'upfront_discount'
+                ? 'Integral com Desconto (5% OFF)'
+                : 'Integral'
+        const amountLabel = paymentPlan === 'split'
+            ? `$${(totalPrice / 2).toFixed(2)} agora + $${(totalPrice / 2).toFixed(2)} na entrega`
+            : `$${totalPrice.toFixed(2)}`
+
+        const brlOrderId = `BRL-${Date.now()}`
 
         const message = encodeURIComponent(
-            `Olá! Gostaria de solicitar o link de pagamento em Reais para meu pedido.\n\n` +
-            `📋 Resumo do Pedido:\n` +
-            `• ${docSummary}${urgencyLabel}\n` +
-            `• Valor: $${dollarAmount} USD (aprox. R$ ${brlEstimate})\n\n` +
-            `👤 Dados:\n` +
-            `• Nome: ${fullName}\n` +
-            `• E-mail: ${email}\n\n` +
-            `Aguardo o link de pagamento via Pix ou Parcelado. Obrigado(a)!`
+            `Olá! Gostaria de seguir com a Tradução Certificada (#${brlOrderId}).\n` +
+            `Prazo: ${urgency === 'standard' ? 'Standard (10 dias)' : urgency === 'urgent' ? 'Urgente (48h)' : 'Flash (24h)'}\n` +
+            `Modalidade: ${planLabel}\n` +
+            `Valor a pagar agora: ${amountLabel} USD.`
         )
 
         const WHATSAPP_NUMBER = '14076396154'
@@ -303,7 +312,6 @@ export default function Home() {
 
         // ── Fire emails silently in parallel (fire-and-forget) ──────────────
         const selectedCount = selectedDocs.reduce((acc, d) => acc + d.count, 0)
-        const brlOrderId = `BRL-${Date.now()}`
 
         // 1. Confirmation e-mail → client (paper trail + payment instructions)
         fetch('/api/notifications', {
@@ -889,22 +897,98 @@ export default function Home() {
                                 </div>
 
 
-                                {/* Urgency & Total */}
+                                {/* Urgency 3-tier selector */}
                                 <div className="bg-slate-50 rounded-xl p-4 space-y-4">
                                     <div className="flex justify-between items-center text-sm">
-                                        <span className="text-gray-600 font-medium">Urgência:</span>
-                                        <div className="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
-                                            {['normal', 'urgent', 'super_urgent'].map((u) => (
+                                        <span className="text-gray-600 font-medium">Prazo:</span>
+                                        <div className="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm gap-1">
+                                            {(
+                                                [
+                                                    { id: 'standard', label: 'Standard (10 dias)' },
+                                                    { id: 'urgent', label: 'Urgente (48h)' },
+                                                    { id: 'flash', label: 'Flash (24h)' },
+                                                ] as const
+                                            ).map(({ id, label }) => (
                                                 <button
-                                                    key={u}
-                                                    onClick={() => setUrgency(u)}
-                                                    className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === u ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 scale-105 font-bold' : 'text-slate-600 bg-slate-50 hover:bg-slate-100'}`}
+                                                    key={id}
+                                                    onClick={() => {
+                                                        setUrgency(id)
+                                                        // Force upfront when urgent/flash
+                                                        if (id !== 'standard') setPaymentPlan('upfront')
+                                                    }}
+                                                    className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === id
+                                                        ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 scale-105 font-bold'
+                                                        : 'text-slate-600 bg-slate-50 hover:bg-slate-100'
+                                                        }`}
                                                 >
-                                                    {u === 'normal' ? 'Standard (2-3 dias)' : u === 'urgent' ? 'Urgente (24h)' : 'Super Urgente (12h)'}
+                                                    {label}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
+
+                                    {/* Payment plan — only visible for Standard with smooth exit animation */}
+                                    <AnimatePresence>
+                                        {urgency === 'standard' && (
+                                            <motion.div
+                                                key="payment-plan"
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.25 }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="pt-2 border-t border-gray-200">
+                                                    <span className="text-xs font-medium text-gray-500 block mb-2">Modalidade de Pagamento:</span>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {([
+                                                            { id: 'upfront_discount', label: '5% OFF', sub: 'Integral' },
+                                                            { id: 'upfront', label: 'Integral', sub: 'Preço cheio' },
+                                                            { id: 'split', label: '50 / 50', sub: 'Na entrega' },
+                                                        ] as const).map(({ id, label, sub }) => (
+                                                            <button
+                                                                key={id}
+                                                                onClick={() => setPaymentPlan(id)}
+                                                                className={`flex flex-col items-center p-2 rounded-lg border text-xs transition-all ${paymentPlan === id
+                                                                    ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220] font-bold'
+                                                                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                                                    }`}
+                                                            >
+                                                                <span className="font-bold text-sm">{label}</span>
+                                                                <span className="text-[10px] opacity-70 mt-0.5">{sub}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    {paymentPlan === 'upfront_discount' && (
+                                                        <p className="text-[10px] text-green-600 font-bold mt-2 text-center">
+                                                            ✓ 5% de desconto aplicado no total
+                                                        </p>
+                                                    )}
+                                                    {paymentPlan === 'split' && (
+                                                        <p className="text-[10px] text-blue-600 font-medium mt-2 text-center">
+                                                            50% agora · 50% na entrega dos documentos
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+
+                                    {/* Badge for urgent/flash locking */}
+                                    <AnimatePresence>
+                                        {urgency !== 'standard' && (
+                                            <motion.div
+                                                key="upfront-badge"
+                                                initial={{ opacity: 0, y: -4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -4 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+                                            >
+                                                <span className="text-amber-600 text-xs font-bold">⚡ Pagamento 100% Upfront obrigatório para este prazo.</span>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
 
                                     <div className="h-px bg-gray-200" />
 
@@ -967,10 +1051,9 @@ export default function Home() {
                                                     </div>
                                                 )}
 
-                                                {urgency !== 'normal' && (
+                                                {urgency !== 'standard' && (
                                                     <div className="flex justify-between text-[#f58220]">
-                                                        <span>Taxa de Urgência ({urgency === 'urgent' ? '24h' : '12h'})</span>
-                                                        {/* Now Urgency applies to Notary too, so it might be higher */}
+                                                        <span>Taxa de Urgência ({urgency === 'urgent' ? '48h' : '24h'})</span>
                                                         <span className="font-bold">+${urgencyFee.toFixed(2)}</span>
                                                     </div>
                                                 )}
