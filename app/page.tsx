@@ -300,14 +300,17 @@ export default function Home() {
         window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank')
         setWhatsappSent(true)
 
-        // ── Fire "Order Received" email silently (fire-and-forget) ────────────
+        // ── Fire emails silently in parallel (fire-and-forget) ──────────────
         const selectedCount = selectedDocs.reduce((acc, d) => acc + d.count, 0)
+        const brlOrderId = `BRL-${Date.now()}`
+
+        // 1. Confirmation e-mail → client (paper trail + payment instructions)
         fetch('/api/notifications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 trigger: 'order_received',
-                orderId: `BRL-${Date.now()}`,
+                orderId: brlOrderId,
                 customerName: fullName,
                 customerEmail: email,
                 pageCount: selectedCount,
@@ -317,6 +320,23 @@ export default function Home() {
                 paymentMethod: 'BRL_WHATSAPP',
             }),
         }).catch(err => console.warn('[email] order_received fire failed:', err))
+
+        // 2. Admin alert → admin with ALL contacts (backup if phone DDI/DDD wrong)
+        fetch('/api/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                trigger: 'brl_admin_alert',
+                orderId: brlOrderId,
+                customerName: fullName,
+                customerEmail: email,
+                customerPhone: phone,
+                pageCount: selectedCount,
+                serviceType,
+                urgency,
+                totalAmount: totalPrice,
+            }),
+        }).catch(err => console.warn('[email] brl_admin_alert fire failed:', err))
 
         // Auto-dismiss the toast after 8 seconds
         setTimeout(() => setWhatsappSent(false), 8000)
