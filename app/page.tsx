@@ -66,6 +66,7 @@ export default function Home() {
     const [paymentProvider, setPaymentProvider] = useState<'STRIPE' | 'PARCELADO_USA'>('STRIPE')
     const [loading, setLoading] = useState(false)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
+    const [whatsappSent, setWhatsappSent] = useState(false)
     const [breakdown, setBreakdown] = useState({
         basePrice: 0,
         urgencyFee: 0,
@@ -273,6 +274,36 @@ export default function Home() {
     // Derived values for breakdown (using state for consistency)
     const { basePrice, urgencyFee, notaryFee, totalCount, minOrderApplied } = breakdown
 
+    // ── Manual WhatsApp Concierge for BRL payments ────────────────────────────
+    const handleManualPayment = () => {
+        const selectedDocs = documents.filter(d => d.isSelected)
+        const hasNotarization = selectedDocs.some(d => d.notarized) || serviceType === 'notarization'
+        const dollarAmount = totalPrice.toFixed(2)
+        const brlEstimate = (totalPrice * 5.2).toFixed(2)
+        const docSummary = serviceType === 'notarization'
+            ? `${selectedDocs.length} documento(s) para Notarização`
+            : `${selectedDocs.reduce((acc, d) => acc + d.count, 0)} página(s) para Tradução Certificada${hasNotarization ? ' + Notarização' : ''}`
+        const urgencyLabel = urgency === 'urgent' ? ' (Urgente – 24h)' : urgency === 'super_urgent' ? ' (Super Urgente – 12h)' : ''
+
+        const message = encodeURIComponent(
+            `Olá! Gostaria de solicitar o link de pagamento em Reais para meu pedido.\n\n` +
+            `📋 Resumo do Pedido:\n` +
+            `• ${docSummary}${urgencyLabel}\n` +
+            `• Valor: $${dollarAmount} USD (aprox. R$ ${brlEstimate})\n\n` +
+            `👤 Dados:\n` +
+            `• Nome: ${fullName}\n` +
+            `• E-mail: ${email}\n\n` +
+            `Aguardo o link de pagamento via Pix ou Parcelado. Obrigado(a)!`
+        )
+
+        const WHATSAPP_NUMBER = '14076396154' // Parcelado USA support number from context
+        window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank')
+        setWhatsappSent(true)
+
+        // Auto-dismiss the toast after 8 seconds
+        setTimeout(() => setWhatsappSent(false), 8000)
+    }
+
     const handleSubmit = async () => {
         const selectedDocs = documents.filter(d => d.isSelected)
 
@@ -288,49 +319,63 @@ export default function Home() {
 
         // Validate Notarization Pairs
         if (serviceType === 'notarization') {
-            // Check if all have both files? Or just warn?
-            // "Para cada item, peça dois uploads"
-            // If we implement slots, we should check.
             const incomplete = selectedDocs.some(d => !d.file || !(d as any).fileTranslated)
             if (incomplete) {
                 if (!confirm("Alguns documentos parecem estar sem o par (Original/Tradução). Deseja continuar mesmo assim?")) return
             }
         }
 
-        setLoading(true)
-
-        // MOCK CHECKOUT FOR PHASE 3 & 4
-        const finalOrderPayload = {
-            serviceType, // Add service type
-            user: { fullName, email, phone },
-            documents: selectedDocs.map(d => ({
-                id: d.id,
-                fileName: d.fileName,
-                fileNameTranslated: (d as any).fileNameTranslated, // New field
-                count: d.count,
-                notarized: d.notarized,
-                handwritten: (d as any).handwritten,
-                analysis: d.analysis
-            })),
-            urgency,
-            breakdown: {
-                basePrice,
-                notaryFee,
-                urgencyFee,
-                minOrderApplied
-            },
-            finalTotal: totalPrice,
-            paymentProvider
+        // ── BRL flow: WhatsApp concierge (no API call needed) ─────────────────
+        if (paymentProvider === 'PARCELADO_USA') {
+            handleManualPayment()
+            return
         }
 
-        console.log(">>> CHECKOUT INITIATED (MOCK) <<<")
-        console.log(JSON.stringify(finalOrderPayload, null, 2))
+        // ── USD/Stripe flow: create order + redirect to Stripe Checkout ────────
+        setLoading(true)
 
-        // Simulate "Going to Checkout"
-        setTimeout(() => {
-            alert(`Simulação de Checkout Iniciada!\n\nServiço: ${serviceType === 'translation' ? 'Tradução + Notarização' : 'Apenas Notarização'}\nItens: ${selectedDocs.length}\nTotal: $${totalPrice.toFixed(2)}\nVerifique o console para o JSON completo.`)
+        try {
+            const orderData = {
+                user: { fullName, email, phone },
+                documents: selectedDocs.map(d => ({
+                    id: d.id,
+                    type: 'Uploaded File',
+                    fileName: d.fileName,
+                    count: d.count,
+                    notarized: d.notarized,
+                    customDescription: (d as any).fileNameTranslated
+                        ? `Tradução: ${(d as any).fileNameTranslated}`
+                        : undefined
+                })),
+                urgency,
+                docCategory: 'standard' as const,
+                notaryMode: 'none' as const,
+                zipCode: '00000',
+                grandTotalOverride: totalPrice,
+                breakdown: { basePrice, notaryFee, urgencyFee, minOrderApplied, serviceType },
+                paymentProvider: 'STRIPE' as const
+            }
+
+            const orderResult = await createOrder(orderData)
+
+            if (!orderResult.success || !orderResult.orderId) {
+                alert('Erro ao criar pedido. Tente novamente.')
+                setLoading(false)
+                return
+            }
+
+            const checkoutResult = await createCheckoutSession(orderResult.orderId)
+            if (checkoutResult.success && checkoutResult.url) {
+                window.location.href = checkoutResult.url
+            } else {
+                alert('Erro ao iniciar pagamento: ' + (checkoutResult.error || 'Tente novamente.'))
+                setLoading(false)
+            }
+        } catch (error) {
+            console.error('Checkout error:', error)
+            alert('Falha ao processar pagamento. Verifique sua conexão.')
             setLoading(false)
-        }, 1000)
+        }
     }
 
     // --- ANIMATION VARIANTS ---
@@ -872,12 +917,31 @@ export default function Home() {
                                     )}
                                 </div>
 
+                                {/* WhatsApp Concierge Confirmation Toast */}
+                                {whatsappSent && (
+                                    <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        <div className="shrink-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                            <Check className="h-4 w-4 text-white" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-green-800">Solicitação Enviada!</p>
+                                            <p className="text-xs text-green-700 mt-0.5 leading-snug">
+                                                Um consultor entrará em contato em instantes com seu link de pagamento parcelado. Verifique o WhatsApp.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <button
                                     onClick={handleSubmit}
                                     disabled={loading || totalPrice === 0 || (serviceType === 'notarization' && documents.some(d => !d.fileTranslated))}
                                     className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
                                 >
-                                    {loading ? 'Processando...' : 'Ir para Pagamento (Checkout)'} <ArrowRight className="h-5 w-5" />
+                                    {loading ? 'Processando...' :
+                                        paymentProvider === 'PARCELADO_USA'
+                                            ? <><Smartphone className="h-5 w-5" /> Solicitar Link via WhatsApp</>
+                                            : <>Ir para Pagamento (Checkout) <ArrowRight className="h-5 w-5" /></>
+                                    }
                                 </button>
                             </>
                         )}
