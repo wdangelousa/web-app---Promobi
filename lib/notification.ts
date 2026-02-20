@@ -96,8 +96,7 @@ export const NotificationService = {
             customerName: order.user.fullName,
             customerEmail: order.user.email,
             deliveryUrl,
-            hasTranslation,
-            hasNotary
+            serviceType: hasNotary ? 'notarization' : 'translation',
         });
 
         // 2. Send WhatsApp (Future)

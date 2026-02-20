@@ -296,9 +296,27 @@ export default function Home() {
             `Aguardo o link de pagamento via Pix ou Parcelado. Obrigado(a)!`
         )
 
-        const WHATSAPP_NUMBER = '14076396154' // Parcelado USA support number from context
+        const WHATSAPP_NUMBER = '14076396154'
         window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank')
         setWhatsappSent(true)
+
+        // ── Fire "Order Received" email silently (fire-and-forget) ────────────
+        const selectedCount = selectedDocs.reduce((acc, d) => acc + d.count, 0)
+        fetch('/api/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                trigger: 'order_received',
+                orderId: `BRL-${Date.now()}`,
+                customerName: fullName,
+                customerEmail: email,
+                pageCount: selectedCount,
+                serviceType,
+                urgency,
+                totalAmount: totalPrice,
+                paymentMethod: 'BRL_WHATSAPP',
+            }),
+        }).catch(err => console.warn('[email] order_received fire failed:', err))
 
         // Auto-dismiss the toast after 8 seconds
         setTimeout(() => setWhatsappSent(false), 8000)
