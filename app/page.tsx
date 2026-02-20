@@ -67,6 +67,7 @@ export default function Home() {
     const [loading, setLoading] = useState(false)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [whatsappSent, setWhatsappSent] = useState(false)
+    const [uploadProgress, setUploadProgress] = useState<string | null>(null)
     const [breakdown, setBreakdown] = useState({
         basePrice: 0,
         urgencyFee: 0,
@@ -349,33 +350,62 @@ export default function Home() {
             alert('Por favor, preencha seus dados de contato.')
             return
         }
-
         if (selectedDocs.length === 0) {
             alert('Por favor, selecione pelo menos um documento para pagamento.')
             return
         }
-
-        // Validate Notarization Pairs
         if (serviceType === 'notarization') {
             const incomplete = selectedDocs.some(d => !d.file || !(d as any).fileTranslated)
             if (incomplete) {
-                if (!confirm("Alguns documentos parecem estar sem o par (Original/Tradução). Deseja continuar mesmo assim?")) return
+                if (!confirm('Alguns documentos parecem estar sem o par (Original/Tradução). Deseja continuar mesmo assim?')) return
             }
         }
 
-        // ── BRL flow: WhatsApp concierge (no API call needed) ─────────────────
+        // ── BRL flow: WhatsApp concierge (no upload needed) ───────────────────
         if (paymentProvider === 'PARCELADO_USA') {
             handleManualPayment()
             return
         }
 
-        // ── USD/Stripe flow: create order + redirect to Stripe Checkout ────────
+        // ── USD/Stripe flow ────────────────────────────────────────────────────
         setLoading(true)
+        setUploadProgress(null)
 
         try {
-            const orderData = {
-                user: { fullName, email, phone },
-                documents: selectedDocs.map(d => ({
+            // STEP 1: Upload each file to Supabase via /api/upload ─────────────
+            const docsWithFiles = selectedDocs.filter(d => d.file)
+            const uploadedDocs: Array<{ docIndex: number; url: string; fileName: string; contentType: string }> = []
+
+            if (docsWithFiles.length > 0) {
+                for (let i = 0; i < docsWithFiles.length; i++) {
+                    const doc = docsWithFiles[i]
+                    setUploadProgress(`Enviando documentos… (${i + 1}/${docsWithFiles.length})`)
+
+                    const form = new FormData()
+                    form.append('file', doc.file as File)
+
+                    const res = await fetch('/api/upload', { method: 'POST', body: form })
+                    if (res.ok) {
+                        const data = await res.json()
+                        uploadedDocs.push({
+                            docIndex: selectedDocs.indexOf(doc),
+                            url: data.url,
+                            fileName: data.fileName,
+                            contentType: data.contentType,
+                        })
+                    } else {
+                        // Non-fatal: continue without this file (PENDING_UPLOAD fallback)
+                        console.warn(`[upload] File upload failed for: ${doc.fileName}`)
+                    }
+                }
+            }
+
+            setUploadProgress('Criando pedido…')
+
+            // STEP 2: Build documents payload with real URLs ───────────────────
+            const orderDocuments = selectedDocs.map((d, idx) => {
+                const uploaded = uploadedDocs.find(u => u.docIndex === idx)
+                return {
                     id: d.id,
                     type: 'Uploaded File',
                     fileName: d.fileName,
@@ -383,36 +413,51 @@ export default function Home() {
                     notarized: d.notarized,
                     customDescription: (d as any).fileNameTranslated
                         ? `Tradução: ${(d as any).fileNameTranslated}`
-                        : undefined
-                })),
+                        : undefined,
+                    // ✅ Pass real URL so Document record has it from day 1
+                    uploadedFile: uploaded
+                        ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType }
+                        : undefined,
+                }
+            })
+
+            // STEP 3: Create order in DB ──────────────────────────────────────
+            const orderResult = await createOrder({
+                user: { fullName, email, phone },
+                documents: orderDocuments,
                 urgency,
-                docCategory: 'standard' as const,
-                notaryMode: 'none' as const,
+                docCategory: 'standard',
+                notaryMode: 'none',
                 zipCode: '00000',
                 grandTotalOverride: totalPrice,
                 breakdown: { basePrice, notaryFee, urgencyFee, minOrderApplied, serviceType },
-                paymentProvider: 'STRIPE' as const
-            }
-
-            const orderResult = await createOrder(orderData)
+                paymentProvider: 'STRIPE',
+                serviceType: serviceType ?? 'translation',
+            })
 
             if (!orderResult.success || !orderResult.orderId) {
                 alert('Erro ao criar pedido. Tente novamente.')
                 setLoading(false)
+                setUploadProgress(null)
                 return
             }
 
+            setUploadProgress('Redirecionando para pagamento…')
+
+            // STEP 4: Open Stripe Checkout ────────────────────────────────────
             const checkoutResult = await createCheckoutSession(orderResult.orderId)
             if (checkoutResult.success && checkoutResult.url) {
                 window.location.href = checkoutResult.url
             } else {
                 alert('Erro ao iniciar pagamento: ' + (checkoutResult.error || 'Tente novamente.'))
                 setLoading(false)
+                setUploadProgress(null)
             }
         } catch (error) {
             console.error('Checkout error:', error)
             alert('Falha ao processar pagamento. Verifique sua conexão.')
             setLoading(false)
+            setUploadProgress(null)
         }
     }
 
@@ -975,8 +1020,9 @@ export default function Home() {
                                     disabled={loading || totalPrice === 0 || (serviceType === 'notarization' && documents.some(d => !d.fileTranslated))}
                                     className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
                                 >
-                                    {loading ? 'Processando...' :
-                                        paymentProvider === 'PARCELADO_USA'
+                                    {loading
+                                        ? (uploadProgress ?? 'Processando…')
+                                        : paymentProvider === 'PARCELADO_USA'
                                             ? <><Smartphone className="h-5 w-5" /> Solicitar Link via WhatsApp</>
                                             : <>Ir para Pagamento (Checkout) <ArrowRight className="h-5 w-5" /></>
                                     }

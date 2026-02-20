@@ -4,49 +4,58 @@
 import prisma from '@/lib/prisma';
 import { translateDocument } from '@/lib/deepl';
 import * as deepl from 'deepl-node';
-import { NotificationService } from '@/lib/notification';
+import { sendAdminReviewEmail } from '@/lib/mail';
 
 export async function initiateTranslation(orderId: number) {
-    console.log(`[Translation] Initiating translation for Order #${orderId}`);
+    console.log(`[Translation] Initiating for Order #${orderId}`);
 
     try {
-        // 1. Fetch Order and Documents
+        // 1. Fetch order + documents
         const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { documents: true }
+            include: { documents: true, user: true },
         });
 
-        if (!order || !order.documents || order.documents.length === 0) {
-            console.log(`[Translation] No documents found for Order #${orderId}`);
+        if (!order) {
+            console.warn(`[Translation] Order #${orderId} not found.`);
             return;
         }
 
-        // 2. Determine Target Language
-        // Logic: If user wants Notarization (US), target is English (en-US).
-        // If user is just translating, we might need more logic or user input.
-        // For now, default to en-US as per requirements for USCIS/Promobi context.
+        // 2. Filter out PENDING_UPLOAD or empty URLs
+        const translatableDoc = order.documents.filter(
+            (d) => d.originalFileUrl && d.originalFileUrl !== 'PENDING_UPLOAD'
+        );
+
+        if (translatableDoc.length === 0) {
+            console.warn(`[Translation] Order #${orderId} has no uploaded documents. Marking MANUAL_TRANSLATION_NEEDED.`);
+            await prisma.order.update({
+                where: { id: orderId },
+                data: { status: 'MANUAL_TRANSLATION_NEEDED' },
+            });
+            // Notify admin so they can handle it manually
+            await sendAdminReviewEmail({
+                orderId,
+                customerName: order.user.fullName,
+            });
+            return;
+        }
+
+        // 3. Mark order as TRANSLATING
+        await prisma.order.update({ where: { id: orderId }, data: { status: 'TRANSLATING' } });
+
         const targetLang: deepl.TargetLanguageCode = 'en-US';
-
-        // 3. Update Status to TRANSLATING
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'TRANSLATING' }
-        });
-
-        // 4. Translate Each Document
         let completedCount = 0;
 
-        for (const doc of order.documents) {
+        // 4. Translate each document (skip already-translated)
+        for (const doc of translatableDoc) {
             if (doc.translatedFileUrl) {
-                console.log(`[Translation] Document #${doc.id} already translated. Skipping.`);
+                console.log(`[Translation] Doc #${doc.id} already translated — skipping.`);
                 completedCount++;
                 continue;
             }
 
-            console.log(`[Translation] Translating Document #${doc.id} (${doc.docType})...`);
-
-            // Assume filename from URL or docType
             const filename = doc.exactNameOnDoc || `doc-${doc.id}.pdf`;
+            console.log(`[Translation] Translating Doc #${doc.id} (${filename})…`);
 
             try {
                 const result = await translateDocument(doc.originalFileUrl, filename, targetLang);
@@ -54,42 +63,41 @@ export async function initiateTranslation(orderId: number) {
                 if (result.translatedUrl) {
                     await prisma.document.update({
                         where: { id: doc.id },
-                        data: {
-                            translatedFileUrl: result.translatedUrl,
-                            // We could also store text if we did text translation, but we did document.
-                        }
+                        data: { translatedFileUrl: result.translatedUrl },
                     });
                     completedCount++;
+                    console.log(`[Translation] Doc #${doc.id} ✓`);
                 } else {
-                    console.error(`[Translation] Failed to translate Document #${doc.id}: ${result.error}`);
+                    console.error(`[Translation] Doc #${doc.id} failed: ${result.error}`);
                 }
-
             } catch (err) {
-                console.error(`[Translation] Exception processing Document #${doc.id}:`, err);
+                console.error(`[Translation] Exception on Doc #${doc.id}:`, err);
             }
         }
 
-        // 5. Update Status based on completion
-        // If at least one doc translated (or all), move to REVIEW.
-        // If errors, maybe stay in TRANSLATING or MANUAL_INTERVENTION.
-
-        // ... (existing imports)
-
+        // 5. Update order status based on results
         if (completedCount > 0) {
             await prisma.order.update({
                 where: { id: orderId },
-                data: { status: 'READY_FOR_REVIEW' }
+                data: { status: 'READY_FOR_REVIEW' },
             });
-            console.log(`[Translation] Order #${orderId} moved to READY_FOR_REVIEW.`);
+            console.log(`[Translation] Order #${orderId} → READY_FOR_REVIEW (${completedCount}/${translatableDoc.length} docs)`);
 
-            // Notify Admin
-            await NotificationService.notifyTranslationReady(order);
+            // Notify admin to review
+            await sendAdminReviewEmail({
+                orderId,
+                customerName: order.user.fullName,
+            });
 
         } else {
-            console.warn(`[Translation] Order #${orderId} had no successful translations.`);
+            console.warn(`[Translation] Order #${orderId} — all translations failed. → MANUAL_TRANSLATION_NEEDED`);
             await prisma.order.update({
                 where: { id: orderId },
-                data: { status: 'MANUAL_TRANSLATION_NEEDED' }
+                data: { status: 'MANUAL_TRANSLATION_NEEDED' },
+            });
+            await sendAdminReviewEmail({
+                orderId,
+                customerName: order.user.fullName,
             });
         }
 
