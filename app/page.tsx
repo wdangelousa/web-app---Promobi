@@ -440,9 +440,9 @@ export default function Home() {
                 animate={{ opacity: 1, y: 0 }}
                 className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100"
             >
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-24 flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-32 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Image src="/logo.png" width={320} height={110} alt="Promobi" className="object-contain h-16 md:h-20 w-auto" />
+                        <Image src="/logo.png" width={480} height={165} alt="Promobi" className="object-contain h-24 md:h-32 w-auto" />
                     </div>
 
                     {/* Desktop Nav */}
