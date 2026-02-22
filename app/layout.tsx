@@ -23,7 +23,7 @@ export default function RootLayout({
 }) {
     return (
         <html lang="pt-BR">
-            <body className={inter.className}>
+            <body className={`${inter.className} overflow-x-hidden w-full max-w-[100vw]`}>
                 <WhatsAppProvider>
                     <UIFeedbackProvider>
                         {children}

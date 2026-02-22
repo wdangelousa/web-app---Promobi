@@ -579,17 +579,17 @@ export default function Home() {
 
                     {/* Desktop Nav */}
                     <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-                        <Link href="/" className="hover:text-[#f58220] transition-colors">Início</Link>
-                        <Link href="/upload" className="hover:text-[#f58220] transition-colors">Enviar Documentos</Link>
-                        <a href="/admin/orders" className="text-slate-900 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</a>
+                        <Link href="/" className="hover:text-[#f58220] transition-colors py-2">Início</Link>
+                        <Link href="/upload" className="hover:text-[#f58220] transition-colors py-2">Enviar Documentos</Link>
+                        <a href="/admin/orders" className="text-slate-900 border border-slate-200 px-4 py-3 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</a>
                     </nav>
 
                     {/* Mobile Menu Button */}
                     <button
-                        className="md:hidden p-2 text-slate-600 hover:text-[#f58220] transition-colors"
+                        className="md:hidden p-3 text-slate-600 hover:text-[#f58220] transition-colors"
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                     >
-                        {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                        {mobileMenuOpen ? <X className="h-7 w-7" /> : <Menu className="h-7 w-7" />}
                     </button>
                 </div>
 
@@ -631,15 +631,18 @@ export default function Home() {
             </motion.header>
 
             {/* --- HERO SECTION --- */}
-            <main className="pt-32 pb-16 lg:pt-48 lg:pb-32 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-                <div className="grid lg:grid-cols-2 gap-16 items-start">
+            <main className="pt-28 pb-12 md:pt-40 md:pb-24 overflow-hidden relative">
+                {/* Minimal Background Elements */}
+                <div className="absolute top-0 right-0 -mr-40 mt-10 md:mt-20 w-[400px] md:w-[600px] h-[400px] md:h-[600px] bg-gradient-to-br from-orange-100 to-transparent rounded-full blur-3xl opacity-40 mix-blend-multiply pointer-events-none" />
+                <div className="absolute bottom-0 left-0 -ml-20 mb-10 w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-gradient-to-tr from-blue-50 to-transparent rounded-full blur-3xl opacity-60 mix-blend-multiply pointer-events-none" />
 
-                    {/* Left: Copy */}
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                    {/* Left: Copywriting */}
                     <motion.div
                         initial="hidden"
                         animate="visible"
                         variants={staggerContainer}
-                        className="space-y-8 pt-8 lg:pt-16"
+                        className="space-y-6 md:space-y-8 mt-10 md:mt-0"
                     >
                         <motion.div variants={fadeInUp} className="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full text-blue-800 text-xs font-bold tracking-wide uppercase">
                             <ShieldCheck className="h-3 w-3" />
@@ -683,7 +686,7 @@ export default function Home() {
                                     <h3 className="text-2xl font-bold text-slate-900">Comece seu Pedido</h3>
                                     <p className="text-sm text-slate-500">Qual serviço você precisa hoje?</p>
                                 </div>
-                                <div className="grid gap-4">
+                                <div className="flex flex-col gap-4">
                                     {/* CARD A: TRANSLATION */}
                                     <button
                                         onClick={() => handleServiceSelection('translation')}
@@ -999,9 +1002,9 @@ export default function Home() {
 
                                 {/* Urgency 3-tier selector */}
                                 <div className="bg-slate-50 rounded-xl p-4 space-y-4">
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span className="text-gray-600 font-medium">Prazo:</span>
-                                        <div className="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm gap-1">
+                                    <div className="flex flex-col md:flex-row md:justify-between md:items-center text-sm gap-3">
+                                        <span className="text-gray-600 font-medium whitespace-nowrap">Prazo:</span>
+                                        <div className="flex flex-col sm:flex-row w-full bg-white rounded-lg p-1 border border-gray-200 shadow-sm gap-1">
                                             {(
                                                 [
                                                     { id: 'standard', label: 'Standard (10 dias)' },
@@ -1019,8 +1022,8 @@ export default function Home() {
                                                             setPaymentPlan('upfront_discount')
                                                         }
                                                     }}
-                                                    className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === id
-                                                        ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 scale-105 font-bold'
+                                                    className={`w-full sm:flex-1 px-3 py-3 sm:py-2 rounded-md text-xs transition-all ${urgency === id
+                                                        ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 font-bold'
                                                         : 'text-slate-600 bg-slate-50 hover:bg-slate-100'
                                                         }`}
                                                 >
@@ -1051,7 +1054,7 @@ export default function Home() {
                                                             <button
                                                                 key={id}
                                                                 onClick={() => setPaymentPlan(id)}
-                                                                className={`flex flex-col items-center p-2 rounded-lg border text-xs transition-all ${paymentPlan === id
+                                                                className={`flex flex-col items-center justify-center p-3 sm:p-2 rounded-lg border text-xs transition-all ${paymentPlan === id
                                                                     ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220] font-bold'
                                                                     : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                                                                     }`}
@@ -1096,22 +1099,22 @@ export default function Home() {
 
                                     <div className="space-y-3">
                                         <h4 className="text-xs font-bold text-gray-500 uppercase">Seus Dados</h4>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <input type="text" placeholder="Nome" value={fullName} onChange={e => setFullName(e.target.value)} className="p-2 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220]" />
-                                            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="p-2 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220]" />
-                                            <input type="tel" placeholder="Telefone" value={phone} onChange={e => setPhone(e.target.value)} className="col-span-2 p-2 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220]" />
+                                        <div className="flex flex-col gap-3">
+                                            <input type="text" placeholder="Nome" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220] min-h-[44px]" />
+                                            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220] min-h-[44px]" />
+                                            <input type="tel" placeholder="Telefone" value={phone} onChange={e => setPhone(e.target.value)} className="w-full p-3 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#f58220] min-h-[44px]" />
                                         </div>
                                     </div>
 
                                     <div className="h-px bg-gray-200" />
 
                                     {/* Payment Selector Mini */}
-                                    <div className="flex gap-2">
-                                        <div onClick={() => setPaymentProvider('STRIPE')} className={`flex-1 p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-2 text-xs font-bold ${paymentProvider === 'STRIPE' ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220]' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                            <Globe className="h-3 w-3" /> USD (Card)
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <div onClick={() => setPaymentProvider('STRIPE')} className={`flex-1 p-3 sm:p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-2 text-xs font-bold min-h-[44px] ${paymentProvider === 'STRIPE' ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220]' : 'border-gray-200 bg-white text-gray-500'}`}>
+                                            <Globe className="h-4 w-4 sm:h-3 sm:w-3" /> USD (Card)
                                         </div>
-                                        <div onClick={() => setPaymentProvider('PARCELADO_USA')} className={`flex-1 p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-2 text-xs font-bold ${paymentProvider === 'PARCELADO_USA' ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220]' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                            <Smartphone className="h-3 w-3" /> BRL (Pix/12x)
+                                        <div onClick={() => setPaymentProvider('PARCELADO_USA')} className={`flex-1 p-3 sm:p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-2 text-xs font-bold min-h-[44px] ${paymentProvider === 'PARCELADO_USA' ? 'border-[#f58220] bg-[#f58220]/10 text-[#f58220]' : 'border-gray-200 bg-white text-gray-500'}`}>
+                                            <Smartphone className="h-4 w-4 sm:h-3 sm:w-3" /> BRL (Pix/12x)
                                         </div>
                                     </div>
 
