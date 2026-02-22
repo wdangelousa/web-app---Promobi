@@ -27,7 +27,8 @@ import {
     Star,
     Check,
     Menu,
-    X
+    X,
+    ChevronUp
 } from 'lucide-react'
 
 // Types
@@ -81,6 +82,7 @@ export default function Home() {
     })
 
     const [activeFaq, setActiveFaq] = useState<number | null>(null)
+    const [expandedDocs, setExpandedDocs] = useState<string[]>([])
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const router = useRouter()
 
@@ -98,6 +100,12 @@ export default function Home() {
         setServiceType(type)
         setDocuments([]) // Clear previous state on switch
         setUrgency('normal')
+        setExpandedDocs([])
+    }
+
+    const toggleDocExpand = (id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
     }
 
     const resetServiceSelection = () => {
@@ -741,7 +749,15 @@ export default function Home() {
 
                                                                 {/* Helper text based on Service Type */}
                                                                 {serviceType === 'translation' ? (
-                                                                    <p className="text-xs text-slate-500">{doc.count} páginas identificadas</p>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <p className="text-xs text-slate-500">{doc.count} páginas identificadas</p>
+                                                                        {doc.analysis && (
+                                                                            <button onClick={(e) => toggleDocExpand(doc.id, e)} className="text-xs text-[#f58220] hover:underline flex items-center bg-orange-50 px-2 py-0.5 rounded transition-colors group-hover:bg-orange-100 border border-orange-100">
+                                                                                {expandedDocs.includes(doc.id) ? 'Ocultar Densidade' : 'Ver Densidade'}
+                                                                                <ChevronDown className={`w-3 h-3 ml-0.5 transition-transform ${expandedDocs.includes(doc.id) ? 'rotate-180' : ''}`} />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 ) : (
                                                                     <p className="text-xs text-slate-400 mt-1">Par Documental (Original + Tradução)</p>
                                                                 )}
@@ -753,50 +769,64 @@ export default function Home() {
                                                     </div>
 
                                                     {/* Flow A: Density Breakdown Grid */}
-                                                    {serviceType === 'translation' && doc.isSelected && (
-                                                        <div className="bg-white border border-slate-100 rounded-lg p-3 mt-2 shadow-inner text-xs text-gray-600 space-y-1">
-                                                            {doc.analysis?.pages.map((p) => {
-                                                                let label = 'Texto Completo';
-                                                                let color = 'text-slate-800';
-                                                                let isScanned = false;
+                                                    <AnimatePresence>
+                                                        {serviceType === 'translation' && doc.isSelected && expandedDocs.includes(doc.id) && (
+                                                            <motion.div
+                                                                initial={{ opacity: 0, height: 0 }}
+                                                                animate={{ opacity: 1, height: 'auto' }}
+                                                                exit={{ opacity: 0, height: 0 }}
+                                                                className="bg-white border border-slate-100 rounded-lg p-3 mt-2 shadow-inner text-xs text-gray-600 space-y-2 overflow-hidden"
+                                                            >
+                                                                {doc.analysis?.pages.map((p) => {
+                                                                    let label = 'Texto Completo';
+                                                                    let color = 'text-slate-800';
+                                                                    let barColor = 'bg-slate-800';
+                                                                    let isScanned = false;
 
-                                                                if (p.density === 'high') { label = 'Alta Densidade (>= 50%)'; color = 'text-slate-700'; }
-                                                                if (p.density === 'low') { label = `Baixa Densidade (${(p.fraction * 100).toFixed(0)}%)`; color = 'text-green-600'; }
-                                                                if (p.density === 'empty') { label = 'Em Branco (0%)'; color = 'text-gray-400'; }
+                                                                    if (p.density === 'high') { label = 'Alta Densidade'; color = 'text-slate-700'; barColor = 'bg-[#f58220]'; }
+                                                                    if (p.density === 'low') { label = 'Baixa Densidade'; color = 'text-green-600'; barColor = 'bg-green-500'; }
+                                                                    if (p.density === 'empty') { label = 'Em Branco'; color = 'text-gray-400'; barColor = 'bg-gray-300'; }
 
-                                                                // Scanned / Image Logic
-                                                                if (p.density === 'scanned') {
-                                                                    label = 'Página Digitalizada (Imagem)';
-                                                                    color = 'text-amber-600'; // Warning color
-                                                                    isScanned = true;
-                                                                }
+                                                                    // Scanned / Image Logic
+                                                                    if (p.density === 'scanned') {
+                                                                        label = 'Página Digitalizada (Imagem)';
+                                                                        color = 'text-amber-600'; // Warning color
+                                                                        barColor = 'bg-amber-500';
+                                                                        isScanned = true;
+                                                                    }
 
-                                                                return (
-                                                                    <div key={p.pageNumber}>
-                                                                        <div className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-1 last:pb-0 pt-1">
-                                                                            <span className="flex items-center gap-1">
-                                                                                <span className="font-mono text-gray-400">Pg {p.pageNumber}:</span>
-                                                                                <span className={isScanned ? "bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md font-medium border border-amber-100" : ""}>
-                                                                                    {label}
+                                                                    return (
+                                                                        <div key={p.pageNumber}>
+                                                                            <div className="flex justify-between items-center border-b border-gray-100 last:border-0 pb-2 last:pb-0 pt-1.5">
+                                                                                <div className="flex-1 pr-4">
+                                                                                    <span className="flex items-center gap-2 mb-1.5">
+                                                                                        <span className="font-mono text-gray-400 shrink-0">Pg {p.pageNumber}:</span>
+                                                                                        <span className={isScanned ? "bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md font-medium border border-amber-100" : `font-medium ${color}`}>
+                                                                                            {label} {p.density !== 'scanned' && <span className="opacity-70 font-normal">({(p.fraction * 100).toFixed(0)}%)</span>}
+                                                                                        </span>
+                                                                                    </span>
+                                                                                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex">
+                                                                                        <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${p.fraction * 100}%` }} />
+                                                                                    </div>
+                                                                                </div>
+                                                                                <span className={`font-bold ${color} shrink-0`}>
+                                                                                    ${p.price.toFixed(2)}
                                                                                 </span>
-                                                                            </span>
-                                                                            <span className={`font-bold ${color}`}>
-                                                                                ${p.price.toFixed(2)}
-                                                                            </span>
+                                                                            </div>
+                                                                            {isScanned && (
+                                                                                <p className="text-[10px] text-amber-600/80 italic pl-8 leading-tight mb-1">
+                                                                                    * Texto em imagem requer formatação manual complexa. Valor padrão aplicado.
+                                                                                </p>
+                                                                            )}
                                                                         </div>
-                                                                        {isScanned && (
-                                                                            <p className="text-[10px] text-amber-600/80 italic pl-8 leading-tight mb-1">
-                                                                                * Texto em imagem requer formatação manual complexa. Valor padrão aplicado.
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                            {!doc.analysis && (
-                                                                <div className="text-center italic text-gray-400 py-1">Análise manual necessária na revisão. Preço base aplicado.</div>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                                    )
+                                                                })}
+                                                                {!doc.analysis && (
+                                                                    <div className="text-center italic text-gray-400 py-2">Análise manual necessária na revisão. Preço base aplicado.</div>
+                                                                )}
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
 
                                                     {/* Flow A: Actions (Upsell Notarization + Handwritten) */}
                                                     {serviceType === 'translation' && doc.isSelected && (
@@ -1047,6 +1077,11 @@ export default function Home() {
                                         <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
                                             <div className="flex items-center justify-between pb-2 border-b border-gray-200">
                                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Detalhes do Orçamento</h4>
+                                                {serviceType === 'translation' && (
+                                                    <div className="flex items-center gap-1 bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full text-[10px] font-bold cursor-help" title="Nossa inteligência artificial analisa a densidade de texto do seu arquivo. Você só paga o valor integral por páginas cheias. Sem taxas ocultas.">
+                                                        <ShieldCheck className="w-3 h-3" /> Preço Justo Garantido
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Dynamic Lines */}
@@ -1058,7 +1093,7 @@ export default function Home() {
 
                                                 {serviceType === 'translation' && (
                                                     <div className="flex justify-between text-gray-600">
-                                                        <span>Tradução (Densidade Inteligente)</span>
+                                                        <span>Subtotal da Tradução (Densidade)</span>
                                                         <span className="font-medium">${basePrice.toFixed(2)}</span>
                                                     </div>
                                                 )}
@@ -1079,7 +1114,7 @@ export default function Home() {
 
                                                 {minOrderApplied && (
                                                     <div className="flex justify-between text-blue-600 bg-blue-50 p-1 rounded">
-                                                        <span>Ajuste Pedido Mínimo (Piso)</span>
+                                                        <span>Ajuste de Custo Operacional (Mínimo)</span>
                                                         <span className="font-bold">+${totalMinimumAdjustment.toFixed(2)}</span>
                                                     </div>
                                                 )}
@@ -1087,19 +1122,19 @@ export default function Home() {
 
                                             <div className="h-px bg-gray-200 my-2" />
 
-                                            {/* Subtotal & Discount Rows */}
-                                            {totalDiscountApplied > 0 && (
-                                                <div className="space-y-1 pb-2 mb-2 border-b border-gray-100 border-dashed">
-                                                    <div className="flex justify-between text-gray-500 text-sm">
-                                                        <span>Subtotal</span>
-                                                        <span>${(totalPrice + totalDiscountApplied).toFixed(2)}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-green-600 bg-green-50 p-1 rounded text-sm">
+                                            {/* Subtotal Base & Discount Rows */}
+                                            <div className="space-y-1 pb-2 mb-2 border-b border-gray-100 border-dashed">
+                                                <div className="flex justify-between text-gray-500 text-sm">
+                                                    <span>Subtotal Base</span>
+                                                    <span>${(totalPrice + totalDiscountApplied).toFixed(2)}</span>
+                                                </div>
+                                                {totalDiscountApplied > 0 && (
+                                                    <div className="flex justify-between text-green-600 bg-green-50 p-1 rounded text-sm mt-1">
                                                         <span>Desconto Pagamento Integral (5%)</span>
                                                         <span className="font-bold">-${totalDiscountApplied.toFixed(2)}</span>
                                                     </div>
-                                                </div>
-                                            )}
+                                                )}
+                                            </div>
 
                                             {/* Final Total */}
                                             <div className="flex items-end justify-between pt-1">
@@ -1131,6 +1166,14 @@ export default function Home() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* MODULE 4: INSTANT PRICE LOCK */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 flex items-start gap-2 shadow-sm">
+                                    <Lock className="w-4 h-4 text-[#f58220] shrink-0 mt-0.5" />
+                                    <p>
+                                        <strong>Valor Travado (Price Lock):</strong> O orçamento gerado é definitivo. Ao confirmar o pagamento agora, garantimos que não haverá cobranças extras de tradução, mesmo após a revisão da nossa equipe.
+                                    </p>
+                                </div>
 
                                 <button
                                     onClick={handleSubmit}
