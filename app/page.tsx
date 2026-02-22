@@ -216,9 +216,12 @@ export default function Home() {
         let totalBase = 0
         let totalPages = 0
         let notary = 0
+        let minOrderApplied = false
 
         if (serviceType === 'translation') {
             // 1. Calculate Base Price (Sum of density prices per page)
+            let anyDocHitFloor = false;
+
             selectedDocs.forEach(doc => {
                 let docPrice = 0;
                 if (doc.analysis) {
@@ -235,9 +238,18 @@ export default function Home() {
                     docPrice *= 1.25
                 }
 
+                // Minimum Order Lock per document
+                if (docPrice < 10.00) {
+                    docPrice = 10.00
+                    anyDocHitFloor = true;
+                }
+
                 totalBase += docPrice
             })
-            // 2. Calculate Notary Fee ($25 per notarized doc)
+
+            minOrderApplied = anyDocHitFloor;
+
+            // 2. Calculate Notary Fee ($25 per notarized doc - happens globally here but equivalent to per doc)
             notary = selectedDocs.reduce((acc, doc) => acc + (doc.notarized ? NOTARY_FEE_PER_DOC : 0), 0)
         } else if (serviceType === 'notarization') {
             // Flat fee per document slot ($25)
@@ -251,12 +263,6 @@ export default function Home() {
         const urgencyPart = baseWithUrgency - totalBase
 
         let total = baseWithUrgency + notary
-        let minOrderApplied = false
-
-        if (selectedDocs.length > 0 && total < MIN_ORDER_VALUE) {
-            total = MIN_ORDER_VALUE
-            minOrderApplied = true
-        }
 
         // Apply 5% discount for upfront_discount on Standard only
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') {
@@ -738,13 +744,12 @@ export default function Home() {
                                                     {serviceType === 'translation' && doc.isSelected && (
                                                         <div className="bg-white border border-slate-100 rounded-lg p-3 mt-2 shadow-inner text-xs text-gray-600 space-y-1">
                                                             {doc.analysis?.pages.map((p) => {
-                                                                let label = 'Texto Completo (100%)';
+                                                                let label = 'Texto Completo';
                                                                 let color = 'text-slate-800';
                                                                 let isScanned = false;
 
-                                                                if (p.density === 'high') { label = 'Alta Densidade (75%)'; color = 'text-slate-700'; }
-                                                                if (p.density === 'medium') { label = 'Média Densidade (50%)'; color = 'text-blue-600'; }
-                                                                if (p.density === 'low') { label = 'Baixa Densidade (25%)'; color = 'text-green-600'; }
+                                                                if (p.density === 'high') { label = 'Alta Densidade (>= 50%)'; color = 'text-slate-700'; }
+                                                                if (p.density === 'low') { label = `Baixa Densidade (${(p.fraction * 100).toFixed(0)}%)`; color = 'text-green-600'; }
                                                                 if (p.density === 'empty') { label = 'Em Branco (0%)'; color = 'text-gray-400'; }
 
                                                                 // Scanned / Image Logic

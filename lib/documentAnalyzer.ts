@@ -76,19 +76,10 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
                 density = 'low';
                 fraction = 0.25;
                 price = PRICE_BASE * 0.25; // $2.25
-            } else if (charCount < CHAR_THRESHOLD_HIGH) {
-                density = 'medium';
-                fraction = 0.50;
-                price = PRICE_BASE * 0.50; // $4.50
-            } else if (charCount < CHAR_THRESHOLD_FULL) {
-                density = 'high';
-                fraction = 0.75;
-                price = PRICE_BASE * 0.75; // $6.75
             } else {
-                // > 1800
-                density = 'full';
+                density = 'high';
                 fraction = 1.0;
-                price = PRICE_BASE;
+                price = PRICE_BASE; // $9.00
             }
 
             pages.push({
