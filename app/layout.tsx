@@ -12,6 +12,8 @@ export const metadata: Metadata = {
 
 import { WhatsAppProvider } from '../components/WhatsAppContext'
 
+import { UIFeedbackProvider } from '../components/UIFeedbackProvider'
+
 // ... (imports remain)
 
 export default function RootLayout({
@@ -23,8 +25,10 @@ export default function RootLayout({
         <html lang="pt-BR">
             <body className={inter.className}>
                 <WhatsAppProvider>
-                    {children}
-                    <WhatsAppButton />
+                    <UIFeedbackProvider>
+                        {children}
+                        <WhatsAppButton />
+                    </UIFeedbackProvider>
                 </WhatsAppProvider>
             </body>
         </html>

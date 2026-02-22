@@ -30,6 +30,7 @@ import {
     X,
     ChevronUp
 } from 'lucide-react'
+import { useUIFeedback } from '../components/UIFeedbackProvider'
 
 // Types
 import { analyzeDocument, DocumentAnalysis } from '../lib/documentAnalyzer'
@@ -85,6 +86,7 @@ export default function Home() {
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const router = useRouter()
+    const { confirm, toast } = useUIFeedback()
 
     const NOTARY_FEE_PER_DOC = 25.00
     const MIN_ORDER_VALUE = 10.00
@@ -110,7 +112,18 @@ export default function Home() {
 
     const resetServiceSelection = () => {
         if (documents.length > 0) {
-            if (!confirm("Isso limpará seu orçamento atual. Deseja continuar?")) return
+            confirm({
+                title: 'Alterar Serviço',
+                message: 'Isso limpará seu orçamento atual. Deseja continuar?',
+                confirmText: 'Sim, alterar',
+                danger: true,
+                onConfirm: () => {
+                    setServiceType(null)
+                    setDocuments([])
+                    setUrgency('normal')
+                }
+            })
+            return
         }
         setServiceType(null)
         setDocuments([])
@@ -154,6 +167,7 @@ export default function Home() {
                 }
                 setDocuments(prev => [...prev, ...newDocs])
                 setIsAnalyzing(false)
+                toast.success('Documentos adicionados ao orçamento com sucesso!')
 
             }
             // FLOW B: NOTARIZATION (New Logic)
@@ -184,6 +198,7 @@ export default function Home() {
                     } as DocumentItem)
                 }
                 setDocuments(prev => [...prev, ...newDocs])
+                toast.success('Pares de documentos adicionados com sucesso!')
             }
         }
     }
@@ -204,14 +219,32 @@ export default function Home() {
     }
 
     const removeDocument = (id: string) => {
-        setDocuments(documents.filter(d => d.id !== id))
+        const doc = documents.find(d => d.id === id)
+        if (!doc) return
+
+        confirm({
+            title: 'Remover Documento',
+            message: `Tem certeza que deseja remover "${doc.fileName}" do orçamento?`,
+            confirmText: 'Remover',
+            danger: true,
+            onConfirm: () => {
+                setDocuments(prev => prev.filter(d => d.id !== id))
+            }
+        })
     }
 
     const clearAllDocuments = () => {
-        if (confirm("Tem certeza que deseja limpar todo o orçamento?")) {
-            setDocuments([])
-            setUrgency('normal')
-        }
+        confirm({
+            title: 'Limpar Orçamento',
+            message: 'Tem certeza que deseja limpar todo o orçamento atual?',
+            confirmText: 'Limpar',
+            danger: true,
+            onConfirm: () => {
+                setDocuments([])
+                setUrgency('normal')
+                toast.info('Orçamento reiniciado.')
+            }
+        })
     }
 
     const updateDocument = (id: string, field: keyof DocumentItem, value: any) => {
@@ -381,118 +414,130 @@ export default function Home() {
         const selectedDocs = documents.filter(d => d.isSelected)
 
         if (!fullName || !email || !phone) {
-            alert('Por favor, preencha seus dados de contato.')
+            toast.error('Por favor, preencha todos os seus dados de contato na etapa Seus Dados.')
             return
         }
         if (selectedDocs.length === 0) {
-            alert('Por favor, selecione pelo menos um documento para pagamento.')
-            return
-        }
-        if (serviceType === 'notarization') {
-            const incomplete = selectedDocs.some(d => !d.file || !(d as any).fileTranslated)
-            if (incomplete) {
-                if (!confirm('Alguns documentos parecem estar sem o par (Original/Tradução). Deseja continuar mesmo assim?')) return
-            }
-        }
-
-        // ── BRL flow: WhatsApp concierge (no upload needed) ───────────────────
-        if (paymentProvider === 'PARCELADO_USA') {
-            handleManualPayment()
+            toast.error('Por favor, selecione pelo menos um documento para o pagamento.')
             return
         }
 
-        // ── USD/Stripe flow ────────────────────────────────────────────────────
-        setLoading(true)
-        setUploadProgress(null)
-
-        try {
-            // STEP 1: Upload each file to Supabase via /api/upload ─────────────
-            const docsWithFiles = selectedDocs.filter(d => d.file)
-            const uploadedDocs: Array<{ docIndex: number; url: string; fileName: string; contentType: string }> = []
-
-            if (docsWithFiles.length > 0) {
-                for (let i = 0; i < docsWithFiles.length; i++) {
-                    const doc = docsWithFiles[i]
-                    setUploadProgress(`Enviando documentos… (${i + 1}/${docsWithFiles.length})`)
-
-                    const form = new FormData()
-                    form.append('file', doc.file as File)
-
-                    const res = await fetch('/api/upload', { method: 'POST', body: form })
-                    if (res.ok) {
-                        const data = await res.json()
-                        uploadedDocs.push({
-                            docIndex: selectedDocs.indexOf(doc),
-                            url: data.url,
-                            fileName: data.fileName,
-                            contentType: data.contentType,
-                        })
-                    } else {
-                        // Non-fatal: continue without this file (PENDING_UPLOAD fallback)
-                        console.warn(`[upload] File upload failed for: ${doc.fileName}`)
-                    }
-                }
-            }
-
-            setUploadProgress('Criando pedido…')
-
-            // STEP 2: Build documents payload with real URLs ───────────────────
-            const orderDocuments = selectedDocs.map((d, idx) => {
-                const uploaded = uploadedDocs.find(u => u.docIndex === idx)
-                return {
-                    id: d.id,
-                    type: 'Uploaded File',
-                    fileName: d.fileName,
-                    count: d.count,
-                    notarized: d.notarized,
-                    customDescription: (d as any).fileNameTranslated
-                        ? `Tradução: ${(d as any).fileNameTranslated}`
-                        : undefined,
-                    // ✅ Pass real URL so Document record has it from day 1
-                    uploadedFile: uploaded
-                        ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType }
-                        : undefined,
-                }
-            })
-
-            // STEP 3: Create order in DB ──────────────────────────────────────
-            const orderResult = await createOrder({
-                user: { fullName, email, phone },
-                documents: orderDocuments,
-                urgency,
-                docCategory: 'standard',
-                notaryMode: 'none',
-                zipCode: '00000',
-                grandTotalOverride: totalPrice,
-                breakdown: { basePrice, notaryFee, urgencyFee, minOrderApplied, serviceType },
-                paymentProvider: 'STRIPE',
-                serviceType: serviceType ?? 'translation',
-            })
-
-            if (!orderResult.success || !orderResult.orderId) {
-                alert('Erro ao criar pedido. Tente novamente.')
-                setLoading(false)
-                setUploadProgress(null)
+        const executeSubmit = async () => {
+            // ── BRL flow: WhatsApp concierge (no upload needed) ───────────────────
+            if (paymentProvider === 'PARCELADO_USA') {
+                handleManualPayment()
                 return
             }
 
-            setUploadProgress('Redirecionando para pagamento…')
+            // ── USD/Stripe flow ────────────────────────────────────────────────────
+            setLoading(true)
+            setUploadProgress(null)
 
-            // STEP 4: Open Stripe Checkout ────────────────────────────────────
-            const checkoutResult = await createCheckoutSession(orderResult.orderId)
-            if (checkoutResult.success && checkoutResult.url) {
-                window.location.href = checkoutResult.url
-            } else {
-                alert('Erro ao iniciar pagamento: ' + (checkoutResult.error || 'Tente novamente.'))
+            try {
+                // STEP 1: Upload each file to Supabase via /api/upload ─────────────
+                const docsWithFiles = selectedDocs.filter(d => d.file)
+                const uploadedDocs: Array<{ docIndex: number; url: string; fileName: string; contentType: string }> = []
+
+                if (docsWithFiles.length > 0) {
+                    for (let i = 0; i < docsWithFiles.length; i++) {
+                        const doc = docsWithFiles[i]
+                        setUploadProgress(`Enviando documentos… (${i + 1}/${docsWithFiles.length})`)
+
+                        const form = new FormData()
+                        form.append('file', doc.file as File)
+
+                        const res = await fetch('/api/upload', { method: 'POST', body: form })
+                        if (res.ok) {
+                            const data = await res.json()
+                            uploadedDocs.push({
+                                docIndex: selectedDocs.indexOf(doc),
+                                url: data.url,
+                                fileName: data.fileName,
+                                contentType: data.contentType,
+                            })
+                        } else {
+                            // Non-fatal: continue without this file (PENDING_UPLOAD fallback)
+                            console.warn(`[upload] File upload failed for: ${doc.fileName}`)
+                        }
+                    }
+                }
+
+                setUploadProgress('Criando pedido…')
+
+                // STEP 2: Build documents payload with real URLs ───────────────────
+                const orderDocuments = selectedDocs.map((d, idx) => {
+                    const uploaded = uploadedDocs.find(u => u.docIndex === idx)
+                    return {
+                        id: d.id,
+                        type: 'Uploaded File',
+                        fileName: d.fileName,
+                        count: d.count,
+                        notarized: d.notarized,
+                        customDescription: (d as any).fileNameTranslated
+                            ? `Tradução: ${(d as any).fileNameTranslated}`
+                            : undefined,
+                        // ✅ Pass real URL so Document record has it from day 1
+                        uploadedFile: uploaded
+                            ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType }
+                            : undefined,
+                    }
+                })
+
+                // STEP 3: Create order in DB ──────────────────────────────────────
+                const orderResult = await createOrder({
+                    user: { fullName, email, phone },
+                    documents: orderDocuments,
+                    urgency,
+                    docCategory: 'standard',
+                    notaryMode: 'none',
+                    zipCode: '00000',
+                    grandTotalOverride: totalPrice,
+                    breakdown: { basePrice, notaryFee, urgencyFee, minOrderApplied, serviceType },
+                    paymentProvider: 'STRIPE',
+                    serviceType: serviceType ?? 'translation',
+                })
+
+                if (!orderResult.success || !orderResult.orderId) {
+                    toast.error('Erro ao criar pedido. Tente novamente.')
+                    setLoading(false)
+                    setUploadProgress(null)
+                    return
+                }
+
+                setUploadProgress('Redirecionando para pagamento…')
+
+                // STEP 4: Open Stripe Checkout ────────────────────────────────────
+                const checkoutResult = await createCheckoutSession(orderResult.orderId)
+                if (checkoutResult.success && checkoutResult.url) {
+                    window.location.href = checkoutResult.url
+                } else {
+                    toast.error('Erro ao iniciar pagamento: ' + (checkoutResult.error || 'Tente novamente.'))
+                    setLoading(false)
+                    setUploadProgress(null)
+                }
+            } catch (error) {
+                console.error('Checkout error:', error)
+                toast.error('Falha ao processar pagamento. Verifique sua conexão.')
                 setLoading(false)
                 setUploadProgress(null)
             }
-        } catch (error) {
-            console.error('Checkout error:', error)
-            alert('Falha ao processar pagamento. Verifique sua conexão.')
-            setLoading(false)
-            setUploadProgress(null)
+        }; // End of executeSubmit
+
+        // Trigger executeSubmit with or without warning Modal
+        if (serviceType === 'notarization') {
+            const incomplete = selectedDocs.some(d => !d.file || !(d as any).fileTranslated)
+            if (incomplete) {
+                confirm({
+                    title: 'Verificação de Pares',
+                    message: 'Alguns documentos parecem estar sem o par (Original/Tradução). Deseja continuar o checkout assim mesmo?',
+                    confirmText: 'Continuar',
+                    onConfirm: executeSubmit
+                })
+                return
+            }
         }
+
+        executeSubmit()
     }
 
     // --- ANIMATION VARIANTS ---
