@@ -17,12 +17,12 @@ export async function logout() {
 
 export async function getCurrentUser() {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.user?.email) return null
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) return null
 
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email }
+    const dbUser = await prisma.user.findUnique({
+        where: { email: user.email }
     })
 
-    return user
+    return dbUser
 }

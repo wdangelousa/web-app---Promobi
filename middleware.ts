@@ -55,8 +55,11 @@ export async function middleware(request: NextRequest) {
     )
 
     const {
-        data: { session },
-    } = await supabase.auth.getSession()
+        data: { user },
+    } = await supabase.auth.getUser()
+
+    // Consider session valid if user exists
+    const isAuthenticated = !!user;
 
     const pathname = request.nextUrl.pathname
 
@@ -68,7 +71,7 @@ export async function middleware(request: NextRequest) {
 
     // 2. ADMIN PROTECTION
     if (pathname.startsWith('/admin')) {
-        if (!session) {
+        if (!isAuthenticated) {
             // Se deslogado: redirecione para /login
             const redirectUrl = request.nextUrl.clone()
             redirectUrl.pathname = '/login'
@@ -80,7 +83,7 @@ export async function middleware(request: NextRequest) {
 
     // 3. LOGIN PAGE REDIRECT
     if (pathname === '/login') {
-        if (session) {
+        if (isAuthenticated) {
             // Se logado: redirecione IMEDIATAMENTE para /admin/dashboard
             const redirectUrl = request.nextUrl.clone()
             redirectUrl.pathname = '/admin/dashboard'
