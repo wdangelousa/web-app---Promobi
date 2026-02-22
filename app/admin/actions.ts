@@ -80,10 +80,51 @@ export async function getOrderDetails(orderId: number) {
 
 export async function updateOrderStatus(orderId: number, newStatus: OrderStatus) {
     try {
-        await prisma.order.update({
+        const order = await prisma.order.update({
             where: { id: orderId },
-            data: { status: newStatus }
+            data: { status: newStatus },
+            include: {
+                user: {
+                    select: {
+                        fullName: true,
+                        email: true
+                    }
+                }
+            }
         })
+
+        // ── 1. Automate "Translation Started" Email ───────────────────────────
+        if (newStatus === 'TRANSLATING') {
+            try {
+                // Determine page count from metadata
+                let pageCount = 1;
+                if (order.metadata) {
+                    try {
+                        const meta = JSON.parse(order.metadata);
+                        pageCount = meta.breakdown?.totalCount || 1;
+                    } catch (e) {
+                        console.error("Failed to parse metadata for email", e);
+                    }
+                }
+
+                await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/notifications`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        trigger: 'translation_started',
+                        orderId: order.id,
+                        customerName: order.user.fullName,
+                        customerEmail: order.user.email,
+                        pageCount: pageCount,
+                        urgency: order.urgency
+                    })
+                });
+                console.log(`[admin/actions] Triggered translation_started for Order #${orderId}`);
+            } catch (emailErr) {
+                console.error("Failed to trigger automatic email:", emailErr);
+            }
+        }
+
         revalidatePath('/admin')
         return { success: true }
     } catch (error) {

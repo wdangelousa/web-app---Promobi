@@ -81,8 +81,6 @@ export function renderTranslationStarted({
         </p>
     </div>
 
-    <div class="cta-wrap">
-        <a href="${APP_URL}/meu-pedido" class="btn">Track My Order</a>
     </div>
 
     <div class="divider"></div>

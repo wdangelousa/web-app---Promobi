@@ -108,9 +108,8 @@ export function renderPaymentConfirmed({
         </div>
     </div>
 
-    <div class="cta-wrap">
-        <a href="${APP_URL}/meu-pedido" class="btn">Track My Order</a>
-    </div>
+    <!-- Process timeline -->
+    <div style="margin:28px 0;">
 
     <div class="divider"></div>
     <p class="para" style="font-size:13px;color:#94a3b8;text-align:center;">

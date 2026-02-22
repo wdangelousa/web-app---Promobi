@@ -92,10 +92,7 @@ export function renderOrderReceived({
 
     ${paymentInstructions}
 
-    ${isWhatsApp ? '' : `
-    <div class="cta-wrap">
-        <a href="${APP_URL}/meu-pedido" class="btn">View My Order</a>
-    </div>`}
+    ${isWhatsApp ? '' : ''}
 
     <div class="divider"></div>
     <p class="para" style="font-size:13px;color:#94a3b8;">

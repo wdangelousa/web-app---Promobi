@@ -38,10 +38,6 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <p>
                     Estamos analisando seus documentos. Você receberá uma nova atualização por e-mail assim que a tradução/notarização for iniciada.
                 </p>
-
-                <a href="https://promobi.com" style={{ display: 'inline-block', backgroundColor: '#f58220', color: '#ffffff', textDecoration: 'none', padding: '12px 24px', borderRadius: '6px', fontWeight: 'bold', marginTop: '10px' }}>
-                    Acessar Painel do Cliente
-                </a>
             </div>
 
             {/* Footer */}
