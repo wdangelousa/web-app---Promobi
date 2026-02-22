@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "library"
 }
 
@@ -18,28 +15,40 @@ model User {
   email     String   @unique
   phone     String?
   role      Role     @default(CLIENT)
-  orders    Order[]
   createdAt DateTime @default(now())
+  orders    Order[]
 }
 
 model Order {
-  id                   Int       @id @default(autoincrement())
+  id                   Int             @id @default(autoincrement())
   userId               Int
-  user                 User      @relation(fields: [userId], references: [id])
-  status               OrderStatus @default(PENDING)
+  status               OrderStatus     @default(PENDING)
   totalAmount          Float
-  requiresNotarization Boolean   @default(false)
-  requiresHardCopy     Boolean   @default(false)
-  urgency              String    @default("normal")
+  requiresNotarization Boolean         @default(false)
+  requiresHardCopy     Boolean         @default(false)
+  urgency              String          @default("normal")
   uspsTracking         String?
-  documents            Document[]
-  createdAt            DateTime  @default(now())
+  createdAt            DateTime        @default(now())
   paymentProvider      PaymentProvider @default(STRIPE)
   deliveryUrl          String?
-  metadata             String?   // JSON string for complex order details (files, density, pricing breakdown)
-  paymentMethod        String?   // "STRIPE" or "BRL_GATEWAY"
-  hasTranslation       Boolean   @default(true)
-  hasNotary            Boolean   @default(false)
+  metadata             String?
+  paymentMethod        String?
+  hasTranslation       Boolean         @default(true)
+  hasNotary            Boolean         @default(false)
+  documents            Document[]
+  user                 User            @relation(fields: [userId], references: [id])
+}
+
+model Document {
+  id                Int      @id @default(autoincrement())
+  orderId           Int
+  docType           String
+  originalFileUrl   String
+  translatedFileUrl String?
+  translatedText    String?
+  exactNameOnDoc    String?
+  createdAt         DateTime @default(now())
+  order             Order    @relation(fields: [orderId], references: [id])
 }
 
 enum PaymentProvider {
@@ -47,30 +56,16 @@ enum PaymentProvider {
   PARCELADO_USA
 }
 
-model Document {
-  id               Int      @id @default(autoincrement())
-  orderId          Int
-  order            Order    @relation(fields: [orderId], references: [id])
-  docType          String
-  originalFileUrl  String
-  translatedFileUrl String?
-  translatedText    String? // Stores DeepL draft
-  exactNameOnDoc   String?
-  createdAt        DateTime @default(now())
-}
-
 enum Role {
   CLIENT
-  OPERATIONS   // Walter — full access
-  FINANCIAL    // Letícia — receita, conciliação, recebíveis
-  TECHNICAL    // Isabele — fila de produção, uploads
-  PARTNER      // Evandro — read-only executive view
+  OPERATIONS
+  FINANCIAL
+  TECHNICAL
+  PARTNER
 }
 
 enum OrderStatus {
   PENDING
-  PENDING_PAYMENT
-  AWAITING_VERIFICATION
   TRANSLATING
   NOTARIZING
   COMPLETED
@@ -78,4 +73,6 @@ enum OrderStatus {
   READY_FOR_REVIEW
   MANUAL_TRANSLATION_NEEDED
   CANCELLED
+  PENDING_PAYMENT
+  AWAITING_VERIFICATION
 }
