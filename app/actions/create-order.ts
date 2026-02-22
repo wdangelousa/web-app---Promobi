@@ -2,6 +2,7 @@
 
 import { PaymentProvider } from '@prisma/client'
 import prisma from '../../lib/prisma'
+import { getGlobalSettings } from './settings'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type UploadedFile = {
@@ -44,10 +45,17 @@ export async function createOrder(data: CreateOrderInput) {
         console.log('[createOrder] Starting for:', data.user.email);
 
         // ── 1. Calculate total ────────────────────────────────────────────────
-        const PRICE_PER_PAGE = 9.00;
-        const NOTARY_FEE_PER_DOC = 25.00;
+        const settings = await getGlobalSettings();
+        const PRICE_PER_PAGE = settings.basePrice;
+        const NOTARY_FEE_PER_DOC = settings.notaryFee;
+
+        // Unify with frontend: standard/urgent/flash
         const URGENCY_MULTIPLIER: Record<string, number> = {
-            normal: 1.0, urgent: 1.5, super_urgent: 2.0,
+            standard: 1.0,
+            urgent: 1.0 + settings.urgencyRate,
+            flash: 1.0 + (settings.urgencyRate * 2),
+            // Fallback for legacy keys if any
+            normal: 1.0,
         };
 
         let totalAmount = 0;

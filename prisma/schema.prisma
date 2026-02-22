@@ -51,6 +51,13 @@ model Document {
   order             Order    @relation(fields: [orderId], references: [id])
 }
 
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 enum PaymentProvider {
   STRIPE
   PARCELADO_USA

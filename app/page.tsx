@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from './actions/create-order'
 import { createCheckoutSession } from './actions/checkout'
 import { processParceladoPayment } from './actions/processParceladoPayment'
+import { getGlobalSettings, GlobalSettings } from './actions/settings'
 import {
     CheckCircle,
     ArrowRight,
@@ -87,15 +88,20 @@ export default function Home() {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const [termsAccepted, setTermsAccepted] = useState(false)
     const [termsError, setTermsError] = useState(false)
+    const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
     const router = useRouter()
     const { confirm, toast } = useUIFeedback()
 
-    const NOTARY_FEE_PER_DOC = 25.00
+    useEffect(() => {
+        getGlobalSettings().then(setGlobalSettings)
+    }, [])
+
+    const NOTARY_FEE_PER_DOC = globalSettings?.notaryFee || 25.00
     const MIN_ORDER_VALUE = 10.00
     const URGENCY_MULTIPLIER: Record<string, number> = {
         standard: 1.0,
-        urgent: 1.3, // +30%
-        flash: 1.6, // +60%
+        urgent: 1.0 + (globalSettings?.urgencyRate || 0.3),
+        flash: 1.0 + (globalSettings?.urgencyRate ? globalSettings.urgencyRate * 2 : 0.6),
     }
 
     // --- HANDLERS ---
@@ -276,8 +282,9 @@ export default function Home() {
                     docPrice = doc.analysis.totalPrice
                     totalPages += doc.analysis.totalPages
                 } else {
-                    // Fallback to $9.00 per page
-                    docPrice = (doc.count || 1) * 9.00
+                    // Fallback to dynamic base price
+                    const base = globalSettings?.basePrice || 9.00
+                    docPrice = (doc.count || 1) * base
                     totalPages += (doc.count || 1)
                 }
 

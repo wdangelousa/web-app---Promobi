@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from '@/app/actions/create-order'
+import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
 import {
     CheckCircle,
     ArrowRight,
@@ -64,13 +65,18 @@ export default function ConciergePage() {
         totalDiscountApplied: 0
     })
 
+    const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
     const { confirm, toast } = useUIFeedback()
 
-    const NOTARY_FEE_PER_DOC = 25.00
+    useEffect(() => {
+        getGlobalSettings().then(setGlobalSettings)
+    }, [])
+
+    const NOTARY_FEE_PER_DOC = globalSettings?.notaryFee || 25.00
     const URGENCY_MULTIPLIER: Record<string, number> = {
         standard: 1.0,
-        urgent: 1.3,
-        flash: 1.6,
+        urgent: 1.0 + (globalSettings?.urgencyRate || 0.3),
+        flash: 1.0 + (globalSettings?.urgencyRate ? globalSettings.urgencyRate * 2 : 0.6),
     }
 
     const handleServiceSelection = (type: 'translation' | 'notarization') => {
@@ -143,7 +149,8 @@ export default function ConciergePage() {
                     docPrice = doc.analysis.totalPrice
                     totalPages += doc.analysis.totalPages
                 } else {
-                    docPrice = (doc.count || 1) * 9.00
+                    const base = globalSettings?.basePrice || 9.00
+                    docPrice = (doc.count || 1) * base
                     totalPages += (doc.count || 1)
                 }
 

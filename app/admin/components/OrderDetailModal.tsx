@@ -16,6 +16,7 @@ import { updateOrderStatus, updateTrackingCode } from '../actions'
 import { uploadDelivery } from '../../actions/uploadDelivery'
 import { sendDelivery } from '../../actions/sendDelivery'
 import { OrderStatus } from '@prisma/client'
+import { getGlobalSettings, GlobalSettings } from '../../actions/settings'
 
 type Props = {
     order: DetailOrder | null
@@ -31,6 +32,11 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
     const [file, setFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
     const [deliveryUrl, setDeliveryUrl] = useState<string | null>(null)
+    const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
+
+    useEffect(() => {
+        getGlobalSettings().then(setGlobalSettings)
+    }, [])
 
     useEffect(() => {
         if (order) {
@@ -260,7 +266,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                     </div>
                                                     <div className="text-right">
                                                         <p className="font-mono font-bold text-gray-900">
-                                                            ${(doc.analysis?.totalPrice + (doc.notarized ? 25 : 0)).toFixed(2)}
+                                                            ${(doc.analysis?.totalPrice + (doc.notarized ? (globalSettings?.notaryFee || 25.00) : 0)).toFixed(2)}
                                                         </p>
                                                     </div>
                                                 </div>
