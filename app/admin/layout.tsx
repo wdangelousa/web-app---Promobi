@@ -22,7 +22,7 @@ export default async function AdminLayout({
     return (
         <div className="min-h-screen flex bg-gray-50">
             {/* Sidebar */}
-            <AdminSidebar role={user.role} />
+            <AdminSidebar user={{ fullName: user.fullName, email: user.email, role: user.role }} />
 
             {/* Main Content */}
             <main className="flex-1 ml-64 p-8">

@@ -36,6 +36,7 @@ type CreateOrderInput = {
     breakdown?: any;
     paymentProvider: 'STRIPE' | 'PARCELADO_USA';
     serviceType?: 'translation' | 'notarization'; // drives hasTranslation
+    status?: any; // Allow custom initial status (e.g. PENDING_PAYMENT)
 }
 
 export async function createOrder(data: CreateOrderInput) {
@@ -84,7 +85,7 @@ export async function createOrder(data: CreateOrderInput) {
                 data: {
                     userId: user.id,
                     totalAmount,
-                    status: 'PENDING',
+                    status: data.status || 'PENDING',
                     paymentProvider: data.paymentProvider as PaymentProvider,
                     paymentMethod: data.paymentProvider === 'STRIPE' ? 'STRIPE' : 'BRL_GATEWAY',
                     urgency: data.urgency,

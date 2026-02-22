@@ -58,19 +58,33 @@ export async function middleware(request: NextRequest) {
         data: { session },
     } = await supabase.auth.getSession()
 
-    // Protected Routes
-    if (request.nextUrl.pathname.startsWith('/admin')) {
+    const pathname = request.nextUrl.pathname
+
+    // 1. PUBLIC ROUTES (LIVRES)
+    // Matches: /, /api/auth/callback, /pay, and public assets (handled by matcher)
+    if (pathname === '/' || pathname.startsWith('/api/auth') || pathname.startsWith('/pay')) {
+        return response
+    }
+
+    // 2. ADMIN PROTECTION
+    if (pathname.startsWith('/admin')) {
         if (!session) {
-            // Redirect unauthenticated users to login page
-            return NextResponse.redirect(new URL('/login', request.url))
+            // Se deslogado: redirecione para /login
+            const redirectUrl = request.nextUrl.clone()
+            redirectUrl.pathname = '/login'
+            // Keep original URL as a param to redirect back after login if needed
+            // redirectUrl.searchParams.set('redirectedFrom', pathname)
+            return NextResponse.redirect(redirectUrl)
         }
     }
 
-    // Redirect authenticated users away from login
-    if (request.nextUrl.pathname === '/login') {
+    // 3. LOGIN PAGE REDIRECT
+    if (pathname === '/login') {
         if (session) {
-            // Redirect to admin dashboard/orders if already logged in
-            return NextResponse.redirect(new URL('/admin/orders', request.url))
+            // Se logado: redirecione IMEDIATAMENTE para /admin/dashboard
+            const redirectUrl = request.nextUrl.clone()
+            redirectUrl.pathname = '/admin/dashboard'
+            return NextResponse.redirect(redirectUrl)
         }
     }
 
@@ -84,9 +98,8 @@ export const config = {
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
-         * - api (API routes, unless explicitly protected)
-         * - public images and assets
+         * - public images and assets (png, jpg, etc)
          */
-        '/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }

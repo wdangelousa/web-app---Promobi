@@ -4,16 +4,23 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
     LayoutDashboard,
-    FileText,
-    Users,
+    ListTodo,
     Settings,
     LogOut,
     DollarSign,
-    PieChart
+    UserCircle,
+    FilePlus
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
+import Image from 'next/image'
 
-export default function AdminSidebar({ role }: { role?: string }) {
+type UserProps = {
+    fullName: string;
+    email: string;
+    role: string;
+}
+
+export default function AdminSidebar({ user }: { user: UserProps }) {
     const pathname = usePathname()
 
     const isActive = (path: string) => {
@@ -22,74 +29,71 @@ export default function AdminSidebar({ role }: { role?: string }) {
 
     return (
         <aside className="w-64 bg-gray-900 text-white flex flex-col fixed h-full shadow-xl z-20 overflow-y-auto">
-            <div className="p-6 border-b border-gray-800">
-                <Link href="/admin/orders">
+            {/* Brand Logo & User Profile */}
+            <div className="p-6 border-b border-gray-800 space-y-6">
+                <Link href="/admin/dashboard" className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-[#f58220] rounded-lg shadow-lg flex items-center justify-center font-bold text-white tracking-tighter shrink-0">
+                        PR
+                    </div>
                     <h1 className="text-xl font-bold text-white tracking-wider cursor-pointer">
-                        PROMOBI <span className="text-[#f58220]">ADMIN</span>
+                        PROMOBI
                     </h1>
                 </Link>
+
+                <div className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gray-700 to-gray-600 flex items-center justify-center shrink-0">
+                        <UserCircle className="w-6 h-6 text-gray-300" />
+                    </div>
+                    <div className="overflow-hidden">
+                        <h3 className="text-sm font-bold text-gray-100 truncate">{user.fullName || 'Administrador'}</h3>
+                        <p className="text-[10px] text-gray-400 truncate uppercase tracking-wider font-medium">{user.role}</p>
+                    </div>
+                </div>
             </div>
 
+            {/* Navigation Links */}
             <nav className="flex-1 p-4 space-y-2">
-                {(role === 'OPERATIONS' || role === 'PARTNER') && (
-                    <Link
-                        href="/admin/dashboard"
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/dashboard') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                    >
-                        <LayoutDashboard className={`h-5 w-5 ${isActive('/admin/dashboard') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                        <span className={`font-medium ${isActive('/admin/dashboard') ? 'font-bold' : ''}`}>Visão Geral</span>
-                    </Link>
-                )}
+                <Link
+                    href="/admin/dashboard"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/dashboard') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                >
+                    <LayoutDashboard className={`h-5 w-5 ${isActive('/admin/dashboard') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                    <span>Dashboard</span>
+                </Link>
 
-                {role !== 'FINANCIAL' && (
-                    <Link
-                        href="/admin/orders"
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/orders') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                    >
-                        <FileText className={`h-5 w-5 ${isActive('/admin/orders') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                        <span className={`font-medium ${isActive('/admin/orders') ? 'font-bold' : ''}`}>Gestão de Pedidos</span>
-                    </Link>
-                )}
+                <Link
+                    href="/admin/orders"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/orders') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                >
+                    <ListTodo className={`h-5 w-5 ${isActive('/admin/orders') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                    <span>Operações</span>
+                </Link>
 
-                {(role === 'OPERATIONS' || role === 'FINANCIAL') && (
+                {user.role !== 'TECHNICAL' && (
                     <Link
                         href="/admin/finance"
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/finance') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/finance') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
                     >
-                        <DollarSign className={`h-5 w-5 ${isActive('/admin/finance') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                        <span className={`font-medium ${isActive('/admin/finance') ? 'font-bold' : ''}`}>Financeiro</span>
+                        <DollarSign className={`h-5 w-5 ${isActive('/admin/finance') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                        <span>Financeiro</span>
                     </Link>
                 )}
 
-                {(role === 'OPERATIONS' || role === 'PARTNER') && (
-                    <Link
-                        href="/admin/executive"
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/executive') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                    >
-                        <PieChart className={`h-5 w-5 ${isActive('/admin/executive') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                        <span className={`font-medium ${isActive('/admin/executive') ? 'font-bold' : ''}`}>Executivo</span>
-                    </Link>
-                )}
+                <Link
+                    href="/admin/concierge"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/concierge') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                >
+                    <FilePlus className={`h-5 w-5 ${isActive('/admin/concierge') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                    <span>Novo Orçamento Manual</span>
+                </Link>
 
-                {role === 'OPERATIONS' && (
-                    <>
-                        <Link
-                            href="/admin/customers"
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/customers') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                        >
-                            <Users className={`h-5 w-5 ${isActive('/admin/customers') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                            <span className={`font-medium ${isActive('/admin/customers') ? 'font-bold' : ''}`}>Base de Clientes</span>
-                        </Link>
-
-                        <Link
-                            href="/admin/settings"
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/settings') ? 'bg-[#f58220]/10 text-[#f58220]' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                        >
-                            <Settings className={`h-5 w-5 ${isActive('/admin/settings') ? '' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                            <span className={`font-medium ${isActive('/admin/settings') ? 'font-bold' : ''}`}>Configurações</span>
-                        </Link>
-                    </>
-                )}
+                <Link
+                    href="/admin/settings"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/settings') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                >
+                    <Settings className={`h-5 w-5 ${isActive('/admin/settings') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                    <span>Configurações</span>
+                </Link>
             </nav>
 
             <div className="p-4 border-t border-gray-800">
@@ -100,8 +104,8 @@ export default function AdminSidebar({ role }: { role?: string }) {
                     <LogOut className="h-5 w-5" />
                     <span className="font-medium">Sair</span>
                 </button>
-                <div className="text-[10px] text-gray-500 text-center mt-4">
-                    Perfil: {role}
+                <div className="text-[10px] text-gray-500 text-center mt-4 truncate px-2">
+                    {user.email}
                 </div>
                 <p className="text-[10px] text-gray-600 text-center mt-1">
                     v1.1.0 • Promobi System
