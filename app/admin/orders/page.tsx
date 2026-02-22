@@ -49,14 +49,14 @@ export default async function AdminOrdersPage() {
     };
 
     const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('pt-BR', {
+        return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: 'BRL',
+            currency: 'USD',
         }).format(amount);
     };
 
     const formatDate = (date: Date) => {
-        return new Intl.DateTimeFormat('pt-BR', {
+        return new Intl.DateTimeFormat('en-US', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
@@ -124,10 +124,7 @@ export default async function AdminOrdersPage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 font-medium text-gray-900">
-                                        <div className="flex items-center gap-1">
-                                            <DollarSign className="w-4 h-4 text-gray-400" />
-                                            {formatCurrency(order.totalAmount)}
-                                        </div>
+                                        {formatCurrency(order.totalAmount)}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-1 text-gray-500">

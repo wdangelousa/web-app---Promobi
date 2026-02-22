@@ -61,7 +61,7 @@ export default function SettingsPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Preço Base (Por Página)</label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 sm:text-sm">R$</span>
+                                    <span className="text-gray-500 sm:text-sm">$</span>
                                 </div>
                                 <input
                                     type="number"
@@ -77,7 +77,7 @@ export default function SettingsPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Taxa de Urgência (Adicional)</label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 sm:text-sm">R$</span>
+                                    <span className="text-gray-500 sm:text-sm">$</span>
                                 </div>
                                 <input
                                     type="number"
