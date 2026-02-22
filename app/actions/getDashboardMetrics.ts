@@ -25,25 +25,18 @@ export async function getDashboardMetrics(period: 'today' | '7days' | 'month' = 
             startDate.setHours(0, 0, 0, 0)
         }
 
-        // 1. Total Revenue (Paid Orders)
-        // Split by Payment Provider to separate currencies
-        const revenueUSD = await prisma.order.aggregate({
+        // 1. Total Revenue (Paid Orders) - Consolidated in USD
+        // We sum all orders that are not PENDING. 
+        // Note: totalAmount is stored in USD in the database.
+        const revenue = await prisma.order.aggregate({
             _sum: { totalAmount: true },
             where: {
-                status: { not: 'PENDING' },
-                paymentProvider: 'STRIPE',
+                status: { notIn: ['PENDING', 'PENDING_PAYMENT', 'CANCELLED'] as any },
                 createdAt: { gte: startDate }
             }
         })
 
-        const revenueBRL = await prisma.order.aggregate({
-            _sum: { totalAmount: true },
-            where: {
-                status: { not: 'PENDING' }, // Or 'WAITING_PAYMENT_PIX' depending on logic, but usually PAID for revenue
-                paymentProvider: 'PARCELADO_USA',
-                createdAt: { gte: startDate }
-            }
-        })
+        const totalRevenueUSD = revenue._sum.totalAmount || 0;
 
         // 2. Open Orders (Pending)
         const openOrders = await prisma.order.count({
@@ -99,10 +92,7 @@ export async function getDashboardMetrics(period: 'today' | '7days' | 'month' = 
         return {
             success: true,
             data: {
-                revenue: {
-                    usd: revenueUSD._sum.totalAmount || 0,
-                    brl: revenueBRL._sum.totalAmount || 0
-                },
+                revenue: totalRevenueUSD,
                 openOrders,
                 ticketAvgUSD: ticketAvgUSD._avg.totalAmount || 0,
                 paymentSplit,

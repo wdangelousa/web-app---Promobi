@@ -45,7 +45,7 @@ export default async function ExecutiveDashboard() {
                     <div>
                         <p className="text-sm font-medium text-gray-500">Receita Total Acumulada</p>
                         <p className="text-3xl font-bold text-gray-900 mt-1">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRevenue)}
+                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalRevenue)}
                         </p>
                     </div>
                 </div>

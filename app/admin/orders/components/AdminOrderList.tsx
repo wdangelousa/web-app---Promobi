@@ -7,12 +7,12 @@ import Link from 'next/link'
 
 // Helper to format currency
 const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value); // Assuming BRL/USD based on context, defaulting BRL for format
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 }
 
 // Helper to format date
 const formatDate = (dateString: Date | string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 export default function AdminOrderList({ initialOrders }: { initialOrders: any[] }) {

@@ -5,6 +5,14 @@ import { DollarSign, FileText, PieChart } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
+const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val)
+}
+
+const formatDate = (date: Date | string) => {
+    return new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })
+}
+
 export default async function FinanceDashboard() {
     const currentUser = await getCurrentUser()
     const role = currentUser?.role as unknown as string
@@ -17,7 +25,8 @@ export default async function FinanceDashboard() {
         where: {
             // Include Stripe and Pix orders where possible
             // paymentMethod might not be fully populated conceptually, but we simulate a view
-            paymentProvider: { in: ['STRIPE', 'PARCELADO_USA'] }
+            paymentProvider: { in: ['STRIPE', 'PARCELADO_USA'] },
+            status: { notIn: ['PENDING', 'PENDING_PAYMENT', 'CANCELLED'] as any },
         },
         include: {
             user: true
@@ -45,7 +54,7 @@ export default async function FinanceDashboard() {
                     <div>
                         <p className="text-sm font-medium text-gray-500">Receita Total Estimada</p>
                         <p className="text-2xl font-bold text-gray-900">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRevenue)}
+                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalRevenue)}
                         </p>
                     </div>
                 </div>
@@ -85,10 +94,10 @@ export default async function FinanceDashboard() {
                         {orders.map(order => (
                             <tr key={order.id} className="hover:bg-gray-50/50">
                                 <td className="px-6 py-4 font-medium text-gray-900">#{order.id} - {order.user.fullName}</td>
-                                <td className="px-6 py-4 text-gray-500">{new Date(order.createdAt).toLocaleDateString('pt-BR')}</td>
+                                <td className="px-6 py-4 text-gray-500">{formatDate(order.createdAt)}</td>
                                 <td className="px-6 py-4 text-gray-500">{order.paymentProvider}</td>
                                 <td className="px-6 py-4 font-bold text-green-600 mr-2">
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(order.totalAmount)}
+                                    {formatCurrency(order.totalAmount)}
                                 </td>
                             </tr>
                         ))}

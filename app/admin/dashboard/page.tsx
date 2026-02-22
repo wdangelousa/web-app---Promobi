@@ -28,10 +28,10 @@ export default function AdminDashboard() {
         }
     }
 
-    const formatCurrency = (val: number, currency: 'USD' | 'BRL') => {
-        return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'pt-BR', {
+    const formatCurrency = (val: number) => {
+        return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: currency
+            currency: 'USD'
         }).format(val)
     }
 
@@ -74,11 +74,8 @@ export default function AdminDashboard() {
                                 <h3 className="text-gray-500 font-medium">Faturamento Total</h3>
                             </div>
                             <div className="space-y-1">
-                                <div className="text-2xl font-bold text-slate-800">
-                                    {formatCurrency(metrics.revenue.usd, 'USD')}
-                                </div>
-                                <div className="text-lg font-bold text-slate-500">
-                                    {formatCurrency(metrics.revenue.brl, 'BRL')}
+                                <div className="text-3xl font-bold text-slate-800">
+                                    {formatCurrency(metrics.revenue)}
                                 </div>
                             </div>
                         </div>
@@ -106,7 +103,7 @@ export default function AdminDashboard() {
                                 <h3 className="text-gray-500 font-medium">Ticket Médio (USD)</h3>
                             </div>
                             <div className="text-3xl font-bold text-slate-800">
-                                {formatCurrency(metrics.ticketAvgUSD, 'USD')}
+                                {formatCurrency(metrics.ticketAvgUSD)}
                             </div>
                         </div>
                     </div>
