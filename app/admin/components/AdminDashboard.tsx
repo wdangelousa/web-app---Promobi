@@ -14,6 +14,7 @@ type Props = {
 const COLUMNS = [
     { id: 'PENDING', label: 'Novos Pedidos', color: 'bg-yellow-100 text-yellow-800' },
     { id: 'TRANSLATING', label: 'Em Tradução', color: 'bg-blue-100 text-blue-800' },
+    { id: 'READY_FOR_REVIEW', label: 'Revisão (QA)', color: 'bg-indigo-100 text-indigo-800' },
     { id: 'NOTARIZING', label: 'Para Notarização', color: 'bg-purple-100 text-purple-800' },
     { id: 'COMPLETED', label: 'Concluídos', color: 'bg-green-100 text-green-800' },
 ]

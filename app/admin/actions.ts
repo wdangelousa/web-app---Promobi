@@ -16,6 +16,7 @@ export async function getKanbanOrders() {
                 requiresNotarization: true,
                 requiresHardCopy: true,
                 createdAt: true,
+                metadata: true,
                 user: {
                     select: {
                         fullName: true

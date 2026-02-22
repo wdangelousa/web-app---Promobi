@@ -1,28 +1,28 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import {
-    LayoutDashboard,
-    FileText,
-    Users,
-    Settings,
-    LogOut
-} from 'lucide-react'
+import { redirect } from 'next/navigation'
 import AdminSidebar from './components/AdminSidebar'
+import { getCurrentUser } from '@/app/actions/auth'
 
 export const metadata: Metadata = {
     title: 'Promobi Admin',
     description: 'Gestão de Pedidos',
 }
 
-export default function AdminLayout({
+export default async function AdminLayout({
     children,
 }: {
     children: React.ReactNode
 }) {
+    const user = await getCurrentUser()
+
+    if (!user) {
+        redirect('/login')
+    }
+
     return (
         <div className="min-h-screen flex bg-gray-50">
             {/* Sidebar */}
-            <AdminSidebar />
+            <AdminSidebar role={user.role} />
 
             {/* Main Content */}
             <main className="flex-1 ml-64 p-8">

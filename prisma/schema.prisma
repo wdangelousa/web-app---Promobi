@@ -61,9 +61,10 @@ model Document {
 
 enum Role {
   CLIENT
-  TRANSLATOR
-  NOTARY
-  ADMIN
+  OPERATIONS   // Walter — full access
+  FINANCIAL    // Letícia — receita, conciliação, recebíveis
+  TECHNICAL    // Isabele — fila de produção, uploads
+  PARTNER      // Evandro — read-only executive view
 }
 
 enum OrderStatus {

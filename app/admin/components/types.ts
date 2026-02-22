@@ -15,6 +15,7 @@ export type KanbanOrder = {
     requiresNotarization: boolean
     requiresHardCopy: boolean
     createdAt: Date
+    metadata?: string | null
 }
 
 // Full type for Modal Details

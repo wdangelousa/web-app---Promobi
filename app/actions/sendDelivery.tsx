@@ -18,31 +18,31 @@ export async function sendDelivery(orderId: number) {
             return { success: false, error: "Pedido não encontrado ou sem arquivo de entrega." }
         }
 
-        const downloadLink = `${process.env.NEXT_PUBLIC_APP_URL}${order.deliveryUrl}`
+        const downloadLink = `${process.env.NEXT_PUBLIC_APP_URL}/delivery/${order.id}`
 
         // Send Email
         await resend.emails.send({
             from: 'Promobi Notifications <onboarding@resend.dev>', // Update domain in prod
             to: order.user.email,
             subject: 'Seus documentos traduzidos e notarizados chegaram! - Promobi',
-            react: <DeliveryEmail 
-                customerName={ order.user.fullName }
-                orderId = { order.id }
-                downloadLink = { downloadLink }
+            react: <DeliveryEmail
+                customerName={order.user.fullName}
+                orderId={order.id}
+                downloadLink={downloadLink}
             />
         })
 
-    // Update Status to COMPLETED
-    await prisma.order.update({
-        where: { id: orderId },
-        data: { status: 'COMPLETED' }
-    })
+        // Update Status to COMPLETED
+        await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'COMPLETED' }
+        })
 
-    revalidatePath('/admin')
-    return { success: true }
+        revalidatePath('/admin')
+        return { success: true }
 
-} catch (error) {
-    console.error("Send Delivery Error:", error)
-    return { success: false, error: "Falha ao enviar e-mail de entrega" }
-}
+    } catch (error) {
+        console.error("Send Delivery Error:", error)
+        return { success: false, error: "Falha ao enviar e-mail de entrega" }
+    }
 }

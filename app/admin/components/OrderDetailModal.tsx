@@ -412,13 +412,13 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                 {/* --- STATUS UPDATE --- */}
                                 <div className="pt-6 border-t border-gray-100">
                                     <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Workflow Status</h4>
-                                    <div className="flex gap-2">
-                                        {['PENDING', 'TRANSLATING', 'NOTARIZING', 'COMPLETED'].map((s) => (
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        {['PENDING', 'TRANSLATING', 'READY_FOR_REVIEW', 'NOTARIZING', 'COMPLETED'].map((s) => (
                                             <button
                                                 key={s}
                                                 onClick={() => handleStatusUpdate(s as any)}
                                                 disabled={loading}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${order.status === s
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${order.status === s
                                                     ? 'bg-slate-900 text-white border-slate-900'
                                                     : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
                                                     }`}
@@ -427,6 +427,46 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                             </button>
                                         ))}
                                     </div>
+
+                                    {order.status === 'READY_FOR_REVIEW' && (
+                                        <button
+                                            onClick={() => {
+                                                const hasNotarization = orderMetadata?.documents?.some((d: any) => d.notarized) || orderMetadata?.serviceType === 'notarization'
+                                                handleStatusUpdate(hasNotarization ? 'NOTARIZING' : 'COMPLETED')
+                                            }}
+                                            disabled={loading}
+                                            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-md transition-all active:scale-95"
+                                        >
+                                            <CheckCircle className="w-5 h-5" />
+                                            Aprovar Produção (Auto-Route)
+                                        </button>
+                                    )}
+
+                                    {order.status === 'TRANSLATING' && (
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm("Gerar o Kit PDF (Certificado + Tradução + Original)? Isso enviará para QA.")) return;
+                                                // Call API
+                                                const res = await fetch('/api/generate-pdf-kit', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ orderId: order.id })
+                                                });
+                                                if (res.ok) {
+                                                    const data = await res.json();
+                                                    alert("Kit PDF gerado com sucesso!");
+                                                    onUpdate({ ...order, status: 'READY_FOR_REVIEW', deliveryUrl: data.deliveryUrl });
+                                                } else {
+                                                    alert("Erro ao gerar o kit PDF.");
+                                                }
+                                            }}
+                                            disabled={loading}
+                                            className="w-full mt-4 flex items-center justify-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white py-3 rounded-lg font-bold shadow-md transition-all active:scale-95"
+                                        >
+                                            <FileText className="w-5 h-5" />
+                                            Concluir Tradução & Gerar PDF
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>

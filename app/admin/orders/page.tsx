@@ -1,10 +1,19 @@
 import prisma from '@/lib/prisma';
 import { Eye, FileText, Calendar, DollarSign, User } from 'lucide-react';
 import Link from 'next/link';
+import { getCurrentUser } from '@/app/actions/auth';
+import { redirect } from 'next/navigation';
+import { Role } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminOrdersPage() {
+    const currentUser = await getCurrentUser();
+
+    // Role protection
+    if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
+    if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
+
     const orders = await prisma.order.findMany({
         include: {
             user: true,

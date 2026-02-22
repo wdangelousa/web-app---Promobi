@@ -1,14 +1,14 @@
-import { getKanbanOrders } from './actions'
-import AdminDashboard from './components/AdminDashboard'
+import { getCurrentUser } from '@/app/actions/auth'
+import { redirect } from 'next/navigation'
 
 export default async function AdminPage() {
-    const { success, data } = await getKanbanOrders()
+    const user = await getCurrentUser()
+    const role = user?.role as unknown as string
 
-    // Fallback for empty state or error
-    const orders = success ? data : []
+    if (role === 'FINANCIAL') redirect('/admin/finance')
+    if (role === 'PARTNER') redirect('/admin/executive')
+    if (role === 'TECHNICAL') redirect('/admin/orders')
 
-    // Pass as any because of Date serialization issues if not handled, 
-    // but Typescript should match if we did it right. 
-    // In a real app we might need to serialize dates to strings.
-    return <AdminDashboard initialOrders={orders as any} />
+    // Default for OPERATIONS and others
+    redirect('/admin/dashboard')
 }

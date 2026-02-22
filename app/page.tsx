@@ -299,11 +299,11 @@ export default function Home() {
 
         const brlOrderId = `BRL-${Date.now()}`
 
+        const prazoText = urgency === 'standard' ? 'Standard 10 dias' : urgency === 'urgent' ? 'Urgente 48h' : 'Flash 24h'
+        const modText = paymentPlan === 'split' ? '50-50' : 'Integral'
+
         const message = encodeURIComponent(
-            `Olá! Gostaria de seguir com a Tradução Certificada (#${brlOrderId}).\n` +
-            `Prazo: ${urgency === 'standard' ? 'Standard (10 dias)' : urgency === 'urgent' ? 'Urgente (48h)' : 'Flash (24h)'}\n` +
-            `Modalidade: ${planLabel}\n` +
-            `Valor a pagar agora: ${amountLabel} USD.`
+            `Pedido #${brlOrderId} - Prazo: ${prazoText} - Modalidade: ${modText} - Valor Atual: $${totalPrice.toFixed(2)} USD`
         )
 
         const WHATSAPP_NUMBER = '14076396154'
@@ -913,8 +913,11 @@ export default function Home() {
                                                     key={id}
                                                     onClick={() => {
                                                         setUrgency(id)
-                                                        // Force upfront when urgent/flash
-                                                        if (id !== 'standard') setPaymentPlan('upfront')
+                                                        if (id !== 'standard') {
+                                                            setPaymentPlan('upfront')
+                                                        } else if (paymentPlan === 'upfront') {
+                                                            setPaymentPlan('upfront_discount')
+                                                        }
                                                     }}
                                                     className={`px-3 py-1 rounded-md text-xs transition-all ${urgency === id
                                                         ? 'bg-[#f58220] text-white shadow-md shadow-orange-200 scale-105 font-bold'
@@ -940,11 +943,10 @@ export default function Home() {
                                             >
                                                 <div className="pt-2 border-t border-gray-200">
                                                     <span className="text-xs font-medium text-gray-500 block mb-2">Modalidade de Pagamento:</span>
-                                                    <div className="grid grid-cols-3 gap-2">
+                                                    <div className="grid grid-cols-2 gap-2">
                                                         {([
-                                                            { id: 'upfront_discount', label: '5% OFF', sub: 'Integral' },
-                                                            { id: 'upfront', label: 'Integral', sub: 'Preço cheio' },
-                                                            { id: 'split', label: '50 / 50', sub: 'Na entrega' },
+                                                            { id: 'upfront_discount', label: 'Integral', sub: '5% OFF' },
+                                                            { id: 'split', label: '50 / 50', sub: 'Preço cheio' },
                                                         ] as const).map(({ id, label, sub }) => (
                                                             <button
                                                                 key={id}
