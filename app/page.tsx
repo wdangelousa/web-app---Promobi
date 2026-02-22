@@ -85,6 +85,8 @@ export default function Home() {
     const [activeFaq, setActiveFaq] = useState<number | null>(null)
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const [termsAccepted, setTermsAccepted] = useState(false)
+    const [termsError, setTermsError] = useState(false)
     const router = useRouter()
     const { confirm, toast } = useUIFeedback()
 
@@ -419,6 +421,12 @@ export default function Home() {
         }
         if (selectedDocs.length === 0) {
             toast.error('Por favor, selecione pelo menos um documento para o pagamento.')
+            return
+        }
+        if (!termsAccepted) {
+            setTermsError(true)
+            toast.error('Você deve concordar com os Termos de Serviço para prosseguir.')
+            setTimeout(() => setTermsError(false), 2000)
             return
         }
 
@@ -1218,6 +1226,26 @@ export default function Home() {
                                     <p>
                                         <strong>Valor Travado (Price Lock):</strong> O orçamento gerado é definitivo. Ao confirmar o pagamento agora, garantimos que não haverá cobranças extras de tradução, mesmo após a revisão da nossa equipe.
                                     </p>
+                                </div>
+
+                                {/* MODULE 3: COMPLIANCE CHECKBOX */}
+                                <div className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${termsError ? 'bg-red-50 border-red-300 animate-pulse' : 'bg-transparent border-transparent'}`}>
+                                    <input
+                                        type="checkbox"
+                                        id="termsCheckbox"
+                                        checked={termsAccepted}
+                                        onChange={(e) => {
+                                            setTermsAccepted(e.target.checked);
+                                            if (e.target.checked) setTermsError(false); // Clear error if checked
+                                        }}
+                                        className="mt-1 w-4 h-4 text-[#f58220] border-gray-300 rounded focus:ring-[#f58220] cursor-pointer"
+                                    />
+                                    <label htmlFor="termsCheckbox" className={`text-xs cursor-pointer select-none leading-relaxed ${termsError ? 'text-red-700 font-medium' : 'text-slate-600'}`}>
+                                        Declaro que as informações e documentos enviados são verdadeiros e concordo com os{' '}
+                                        <a href="/termos" target="_blank" className="underline hover:text-[#f58220] font-medium" onClick={(e) => e.stopPropagation()}>
+                                            Termos de Serviço e Política de Privacidade.
+                                        </a>
+                                    </label>
                                 </div>
 
                                 <button
