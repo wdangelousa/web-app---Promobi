@@ -75,7 +75,9 @@ export default function Home() {
         notaryFee: 0,
         totalDocs: 0,
         totalCount: 0,
-        minOrderApplied: false
+        minOrderApplied: false,
+        totalMinimumAdjustment: 0,
+        totalDiscountApplied: 0
     })
 
     const [activeFaq, setActiveFaq] = useState<number | null>(null)
@@ -213,10 +215,13 @@ export default function Home() {
     useEffect(() => {
         const selectedDocs = documents.filter(d => d.isSelected)
 
-        let totalBase = 0
+        let totalBaseBeforeFloor = 0
+        let totalBaseAfterFloor = 0
         let totalPages = 0
         let notary = 0
         let minOrderApplied = false
+        let totalMinimumAdjustment = 0
+        let totalDiscountApplied = 0
 
         if (serviceType === 'translation') {
             // 1. Calculate Base Price (Sum of density prices per page)
@@ -238,13 +243,16 @@ export default function Home() {
                     docPrice *= 1.25
                 }
 
+                totalBaseBeforeFloor += docPrice
+
                 // Minimum Order Lock per document
                 if (docPrice < 10.00) {
+                    totalMinimumAdjustment += (10.00 - docPrice)
                     docPrice = 10.00
                     anyDocHitFloor = true;
                 }
 
-                totalBase += docPrice
+                totalBaseAfterFloor += docPrice
             })
 
             minOrderApplied = anyDocHitFloor;
@@ -253,36 +261,40 @@ export default function Home() {
             notary = selectedDocs.reduce((acc, doc) => acc + (doc.notarized ? NOTARY_FEE_PER_DOC : 0), 0)
         } else if (serviceType === 'notarization') {
             // Flat fee per document slot ($25)
-            totalBase = 0
+            totalBaseBeforeFloor = 0
+            totalBaseAfterFloor = 0
             notary = selectedDocs.length * NOTARY_FEE_PER_DOC
             totalPages = selectedDocs.length
         }
 
-        // 3. Calculate Urgency Fee (Applied to Base Translation Cost)
-        const baseWithUrgency = totalBase * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
-        const urgencyPart = baseWithUrgency - totalBase
+        // 3. Calculate Urgency Fee (Applied to Base Translation Cost After Floor)
+        const baseWithUrgency = totalBaseAfterFloor * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
+        const urgencyPart = baseWithUrgency - totalBaseAfterFloor
 
         let total = baseWithUrgency + notary
 
         // Apply 5% discount for upfront_discount on Standard only
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') {
+            totalDiscountApplied = total * 0.05
             total = total * 0.95
         }
 
         setBreakdown({
-            basePrice: totalBase,
+            basePrice: totalBaseBeforeFloor,
             urgencyFee: urgencyPart,
             notaryFee: notary,
             totalDocs: selectedDocs.length,
             totalCount: totalPages,
             minOrderApplied,
+            totalMinimumAdjustment,
+            totalDiscountApplied
         })
 
         setTotalPrice(total)
     }, [documents, urgency, paymentPlan, URGENCY_MULTIPLIER, serviceType])
 
     // Derived values for breakdown (using state for consistency)
-    const { basePrice, urgencyFee, notaryFee, totalCount, minOrderApplied } = breakdown
+    const { basePrice, urgencyFee, notaryFee, totalCount, minOrderApplied, totalMinimumAdjustment, totalDiscountApplied } = breakdown
 
     // ── Manual WhatsApp Concierge for BRL payments ────────────────────────────
     const handleManualPayment = () => {
@@ -1067,14 +1079,29 @@ export default function Home() {
 
                                                 {minOrderApplied && (
                                                     <div className="flex justify-between text-blue-600 bg-blue-50 p-1 rounded">
-                                                        <span>Ajuste Pedido Mínimo</span>
-                                                        <span className="font-bold">Aplicado</span>
+                                                        <span>Ajuste Pedido Mínimo (Piso)</span>
+                                                        <span className="font-bold">+${totalMinimumAdjustment.toFixed(2)}</span>
                                                     </div>
                                                 )}
                                             </div>
 
                                             <div className="h-px bg-gray-200 my-2" />
 
+                                            {/* Subtotal & Discount Rows */}
+                                            {totalDiscountApplied > 0 && (
+                                                <div className="space-y-1 pb-2 mb-2 border-b border-gray-100 border-dashed">
+                                                    <div className="flex justify-between text-gray-500 text-sm">
+                                                        <span>Subtotal</span>
+                                                        <span>${(totalPrice + totalDiscountApplied).toFixed(2)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-green-600 bg-green-50 p-1 rounded text-sm">
+                                                        <span>Desconto Pagamento Integral (5%)</span>
+                                                        <span className="font-bold">-${totalDiscountApplied.toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Final Total */}
                                             <div className="flex items-end justify-between pt-1">
                                                 <span className="text-gray-500 font-medium text-sm">Total Estimado</span>
                                                 <div className="text-right">
