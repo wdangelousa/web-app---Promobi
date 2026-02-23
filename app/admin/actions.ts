@@ -84,7 +84,16 @@ export async function getOrderDetails(orderId: number) {
         // Since we used 'include', they should be there.
 
         if (!order) return { success: false, error: "Order not found" }
-        return { success: true, data: order }
+
+        // Shield against malformed data
+        try {
+            const safeOrder = normalizeOrder(order);
+            return { success: true, data: safeOrder }
+        } catch (e) {
+            console.error(`Failed to normalize order details #${orderId}:`, e);
+            // Fallback: still return order but it might be risky (though our UI is now shielded too)
+            return { success: true, data: order }
+        }
     } catch (error) {
         console.error("Failed to fetch order details:", error)
         return { success: false, error: "Failed to fetch order details" }
