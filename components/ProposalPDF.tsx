@@ -14,6 +14,7 @@ import path from 'path';
 const getFontPath = (fontName: string) => path.join(process.cwd(), 'public', 'fonts', fontName);
 
 // --- Font Registration ---
+/*
 try {
     Font.register({
         family: 'Playfair Display',
@@ -39,10 +40,11 @@ try {
 } catch (e) {
     console.error("Font registration failed, falling back to defaults:", e);
 }
+*/
 
 const styles = StyleSheet.create({
     page: {
-        fontFamily: 'DM Sans',
+        fontFamily: 'Helvetica',
         backgroundColor: '#FFFFFF',
         color: '#1A1D23',
         paddingBottom: 80, // Space for sticky footer
@@ -79,13 +81,13 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     headerNumber: {
-        fontFamily: 'Playfair Display',
+        fontFamily: 'Helvetica-Bold',
         fontSize: 32,
         fontWeight: 700,
         color: '#FFFFFF',
     },
     headerDate: {
-        fontFamily: 'DM Mono',
+        fontFamily: 'Courier',
         fontSize: 9,
         color: '#A0AEC0',
         marginTop: 4,
@@ -113,7 +115,7 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     clientName: {
-        fontFamily: 'Playfair Display',
+        fontFamily: 'Helvetica-Bold',
         fontSize: 24,
         fontWeight: 700,
         color: '#1A1D23',
@@ -196,7 +198,7 @@ const styles = StyleSheet.create({
     iconDOC: { backgroundColor: '#E0F2FE', color: '#0369A1' },
 
     pageCount: {
-        fontFamily: 'DM Mono',
+        fontFamily: 'Courier',
         fontSize: 10,
     },
     badgePill: {
@@ -209,13 +211,13 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
     },
     densityDetails: {
-        fontFamily: 'DM Mono',
+        fontFamily: 'Courier',
         fontSize: 8,
         color: '#5A6070',
         lineHeight: 1.4,
     },
     subtotal: {
-        fontFamily: 'DM Mono',
+        fontFamily: 'Courier-Bold',
         fontSize: 11,
         fontWeight: 600,
     },
@@ -279,7 +281,7 @@ const styles = StyleSheet.create({
         color: '#718096',
     },
     totalValue: {
-        fontFamily: 'Playfair Display',
+        fontFamily: 'Helvetica-Bold',
         fontSize: 40,
         fontWeight: 700,
         color: '#E8751A',
