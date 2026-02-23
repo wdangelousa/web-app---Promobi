@@ -29,16 +29,17 @@ export async function approvePaymentManually(orderId: number) {
         console.log(`[Manual Bypass] Pedido #${orderId} atualizado para PAID com sucesso.`);
 
         // 3. Trigger DeepL Translation Draft if needed
-        // Assuming metadata hasTranslation flag or we just trigger it and let it decide
-        // Based on the user instruction: "Imediatamente após a confirmação no banco, acionar a rotina da API do DeepL"
         console.log(`[Manual Bypass] Acionando rotina de tradução DeepL para o Pedido #${orderId}`);
 
-        // We trigger it asynchronously without awaiting so the UI returns fast
-        generateTranslationDraft(orderId).catch(err => {
-            console.error(`[Manual Bypass] Erro na task paralela do DeepL para Pedido #${orderId}:`, err);
-        });
+        try {
+            await generateTranslationDraft(orderId);
+            console.log(`[Manual Bypass] Tradução DeepL concluída para o Pedido #${orderId}`);
+        } catch (err) {
+            console.error(`[Manual Bypass] Erro na task do DeepL para Pedido #${orderId}:`, err);
+            // We still return true because payment was approved successfully.
+        }
 
-        return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL iniciada.' };
+        return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL concluída.' };
 
     } catch (error: any) {
         console.error(`[Manual Bypass] Erro crítico ao aprovar pedido #${orderId}:`, error);

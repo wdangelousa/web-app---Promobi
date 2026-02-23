@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { Save, Send, FileText, CheckCircle, AlertTriangle } from 'lucide-react'
+import { approvePaymentManually } from '../../../../actions/manualPaymentBypass'
 import 'react-quill-new/dist/quill.snow.css'
 
 // Dynamic import for ReactQuill to avoid SSR issues
@@ -59,18 +60,17 @@ export default function Workbench({ order }: { order: Order }) {
         if (!confirm("Aprovar transação MANUALMENTE e acionar a Inteligência Artificial (DeepL)?")) return;
         setBypassing(true);
         try {
-            const { approvePaymentManually } = await import('../../../../actions/manualPaymentBypass');
             const result = await approvePaymentManually(order.id);
             if (result.success) {
                 // Feedback: Exiba um Toast de sucesso
                 alert(result.message);
                 window.location.reload();
             } else {
-                alert("Erro: " + result.error);
+                alert("Erro da API: " + result.error);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert("Erro ao tentar aprovar pagamento.");
+            alert("Erro de execução: " + (err.message || "Falha na conexão com servidor."));
         } finally {
             setBypassing(false);
         }
