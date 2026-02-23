@@ -1,578 +1,273 @@
 // components/ProposalPDF.tsx
-// ✅ FIX: Removed `import path from 'path'` — this is Node.js only and breaks
-// when PDFDownloadLink renders this component on the client side.
-// Fonts are now registered conditionally and only when running server-side.
+//
+// ✅ FIX "Unknown font format": Removidas TODAS as fontes customizadas (.ttf)
+// que falham na Vercel (o filesystem /public não existe no Lambda runtime).
+// Usando apenas fontes built-in do @react-pdf/renderer:
+//   - Helvetica / Helvetica-Bold / Helvetica-Oblique
+//   - Courier (monospace, para números e código)
+// O design mantém a identidade visual via cores e layout.
 
 import React from 'react';
-import {
-    Document,
-    Page,
-    Text,
-    View,
-    StyleSheet,
-    Image,
-    Font
-} from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 
-// ✅ FIX: Safe font registration — no `path` import, uses relative public URLs
-// @react-pdf/renderer can fetch fonts via URL when running in browser context (PDFDownloadLink)
-// and via filesystem when running server-side (renderToBuffer in server actions).
-// We detect the environment and use the correct approach.
-
-const registerFonts = () => {
-    try {
-        // In browser (PDFDownloadLink): use absolute URL
-        // In server (renderToBuffer): use filesystem path via dynamic require
-        const isServer = typeof window === 'undefined';
-
-        if (isServer) {
-            // Server-side: use require for path
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const nodePath = require('path');
-            const getFontPath = (name: string) => nodePath.join(process.cwd(), 'public', 'fonts', name);
-
-            Font.register({
-                family: 'Playfair Display',
-                fonts: [
-                    { src: getFontPath('PlayfairDisplay-Bold.ttf'), fontWeight: 700 },
-                    { src: getFontPath('PlayfairDisplay-Black.ttf'), fontWeight: 900 }
-                ]
-            });
-            Font.register({
-                family: 'DM Sans',
-                fonts: [
-                    { src: getFontPath('DMSans-Regular.ttf'), fontWeight: 400 },
-                    { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 500 },
-                    { src: getFontPath('DMSans-SemiBold.ttf'), fontWeight: 600 }
-                ]
-            });
-            Font.register({
-                family: 'DM Mono',
-                src: getFontPath('DMMono-Regular.ttf')
-            });
-        } else {
-            // Client-side (PDFDownloadLink): use absolute URL path
-            const base = window.location.origin;
-            Font.register({
-                family: 'Playfair Display',
-                fonts: [
-                    { src: `${base}/fonts/PlayfairDisplay-Bold.ttf`, fontWeight: 700 },
-                    { src: `${base}/fonts/PlayfairDisplay-Black.ttf`, fontWeight: 900 }
-                ]
-            });
-            Font.register({
-                family: 'DM Sans',
-                fonts: [
-                    { src: `${base}/fonts/DMSans-Regular.ttf`, fontWeight: 400 },
-                    { src: `${base}/fonts/DMSans-Medium.ttf`, fontWeight: 500 },
-                    { src: `${base}/fonts/DMSans-SemiBold.ttf`, fontWeight: 600 }
-                ]
-            });
-            Font.register({
-                family: 'DM Mono',
-                src: `${base}/fonts/DMMono-Regular.ttf`
-            });
-        }
-    } catch (e) {
-        console.warn("Font registration failed, using defaults:", e);
-    }
+const C = {
+  orange: '#E8751A',
+  dark:   '#1A1D23',
+  gray:   '#5A6070',
+  light:  '#F5F6F8',
+  border: '#E8EAEE',
+  white:  '#FFFFFF',
+  muted:  '#A0AEC0',
+  dimmed: '#718096',
 };
 
-// Register fonts immediately when this module loads
-registerFonts();
-
 const styles = StyleSheet.create({
-    page: {
-        fontFamily: 'DM Sans',
-        backgroundColor: '#FFFFFF',
-        color: '#1A1D23',
-        paddingBottom: 80,
-    },
-    header: {
-        backgroundColor: '#1A1D23',
-        padding: '30 40',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'relative',
-    },
-    headerAccent: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 3,
-        backgroundColor: '#E8751A',
-    },
-    logo: {
-        height: 50,
-        width: 'auto',
-    },
-    headerRight: {
-        textAlign: 'right',
-    },
-    headerLabel: {
-        fontSize: 10,
-        color: '#E8751A',
-        fontWeight: 600,
-        letterSpacing: 2,
-        marginBottom: 2,
-    },
-    headerNumber: {
-        fontFamily: 'Playfair Display',
-        fontSize: 32,
-        fontWeight: 700,
-        color: '#FFFFFF',
-    },
-    headerDate: {
-        fontFamily: 'DM Mono',
-        fontSize: 9,
-        color: '#A0AEC0',
-        marginTop: 4,
-    },
-    clientSection: {
-        padding: '40 40 20 40',
-    },
-    clientLabel: {
-        fontSize: 8,
-        color: '#5A6070',
-        letterSpacing: 3,
-        textTransform: 'uppercase',
-        marginBottom: 10,
-    },
-    clientNameWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-    clientBar: {
-        width: 4,
-        height: 28,
-        backgroundColor: '#E8751A',
-        marginRight: 10,
-    },
-    clientName: {
-        fontFamily: 'Playfair Display',
-        fontSize: 24,
-        fontWeight: 700,
-        color: '#1A1D23',
-    },
-    clientSub: {
-        fontSize: 12,
-        color: '#5A6070',
-        marginLeft: 14,
-    },
-    sectionTitle: {
-        paddingHorizontal: 40,
-        marginTop: 20,
-        marginBottom: 15,
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    sectionTitleText: {
-        fontSize: 12,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        color: '#1A1D23',
-        marginRight: 10,
-    },
-    sectionTitleLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: '#E8751A',
-        opacity: 0.3,
-    },
-    tableHeader: {
-        backgroundColor: '#1A1D23',
-        flexDirection: 'row',
-        marginHorizontal: 40,
-        padding: '8 12',
-    },
-    tableHeaderText: {
-        fontSize: 8,
-        color: '#FFFFFF',
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    tableRow: {
-        flexDirection: 'row',
-        marginHorizontal: 40,
-        padding: '12 12',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E8EAEE',
-        alignItems: 'center',
-    },
-    tableRowZebra: {
-        backgroundColor: '#F5F6F8',
-    },
-    tableCell: {
-        fontSize: 10,
-        color: '#1A1D23',
-    },
-    colFile: { width: '35%' },
-    colPages: { width: '10%', textAlign: 'center' },
-    colComposition: { width: '10%', textAlign: 'center' },
-    colDensity: { width: '30%' },
-    colSubtotal: { width: '15%', textAlign: 'right' },
-    fileName: {
-        fontSize: 10,
-        fontWeight: 500,
-        color: '#1A1D23',
-    },
-    fileIcon: {
-        fontSize: 8,
-        fontWeight: 600,
-        marginRight: 4,
-        padding: '2 4',
-        borderRadius: 3,
-    },
-    iconPDF: { backgroundColor: '#FEE2E2', color: '#B91C1C' },
-    iconDOC: { backgroundColor: '#E0F2FE', color: '#0369A1' },
-    iconLINK: { backgroundColor: '#E0FEF0', color: '#065F46' },
-    pageCount: {
-        fontFamily: 'DM Mono',
-        fontSize: 10,
-    },
-    badgePill: {
-        fontSize: 8,
-        fontWeight: 600,
-        color: '#E8751A',
-        backgroundColor: 'rgba(232, 117, 26, 0.12)',
-        padding: '3 6',
-        borderRadius: 10,
-        alignSelf: 'center',
-    },
-    densityDetails: {
-        fontFamily: 'DM Mono',
-        fontSize: 8,
-        color: '#5A6070',
-        lineHeight: 1.4,
-    },
-    subtotal: {
-        fontFamily: 'DM Mono',
-        fontSize: 11,
-        fontWeight: 600,
-    },
-    auditCard: {
-        marginHorizontal: 40,
-        marginTop: 20,
-        backgroundColor: '#F5F6F8',
-        borderLeftWidth: 4,
-        borderLeftColor: '#E8751A',
-        padding: 15,
-        borderRadius: 4,
-    },
-    auditTitle: {
-        fontSize: 9,
-        fontWeight: 600,
-        color: '#E8751A',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        marginBottom: 6,
-    },
-    auditText: {
-        fontSize: 10,
-        color: '#5A6070',
-        lineHeight: 1.5,
-    },
-    totalCard: {
-        marginHorizontal: 40,
-        marginTop: 30,
-        backgroundColor: '#1A1D23',
-        borderRadius: 12,
-        padding: '25 35',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'relative',
-        overflow: 'hidden',
-    },
-    totalCardGlow: {
-        position: 'absolute',
-        top: -40,
-        right: -40,
-        width: 140,
-        height: 140,
-        backgroundColor: '#E8751A',
-        opacity: 0.08,
-        borderRadius: 70,
-    },
-    totalLeft: {},
-    totalLabel: {
-        fontSize: 10,
-        fontWeight: 600,
-        color: '#A0AEC0',
-        letterSpacing: 2,
-        textTransform: 'uppercase',
-        marginBottom: 5,
-    },
-    totalSub: {
-        fontSize: 11,
-        color: '#718096',
-    },
-    totalValue: {
-        fontFamily: 'Playfair Display',
-        fontSize: 40,
-        fontWeight: 700,
-        color: '#E8751A',
-    },
-    paymentSection: {
-        paddingHorizontal: 40,
-        marginTop: 30,
-    },
-    paymentLabel: {
-        fontSize: 9,
-        fontWeight: 600,
-        color: '#5A6070',
-        letterSpacing: 2,
-        textTransform: 'uppercase',
-        marginBottom: 12,
-    },
-    paymentCards: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    paymentCard: {
-        flex: 1,
-        borderWidth: 1.5,
-        borderColor: '#E8EAEE',
-        borderRadius: 10,
-        padding: 12,
-    },
-    paymentTitle: {
-        fontSize: 10,
-        fontWeight: 600,
-        color: '#1A1D23',
-        marginBottom: 4,
-    },
-    paymentText: {
-        fontSize: 8,
-        color: '#5A6070',
-    },
-    footer: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: '#F5F6F8',
-        padding: '25 40',
-        borderTopWidth: 1,
-        borderTopColor: '#E8EAEE',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    footerAddress: {
-        fontSize: 8,
-        color: '#1A1D23',
-        marginBottom: 4,
-    },
-    footerContact: {
-        fontSize: 8,
-        color: '#5A6070',
-    },
-    footerLink: {
-        fontSize: 9,
-        fontWeight: 600,
-        color: '#E8751A',
-    }
+  page: {
+    fontFamily: 'Helvetica',
+    backgroundColor: C.white,
+    color: C.dark,
+    paddingBottom: 90,
+    fontSize: 10,
+  },
+
+  // ── HEADER ─────────────────────────────────────────────────────────────
+  header: {
+    backgroundColor: C.dark,
+    paddingHorizontal: 40,
+    paddingVertical: 28,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerAccent: { height: 3, backgroundColor: C.orange },
+  logo:         { height: 44, width: 'auto' },
+  logoFallback: { color: C.orange, fontFamily: 'Helvetica-Bold', fontSize: 22 },
+  headerRight:  { alignItems: 'flex-end' },
+  headerLabel:  { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.orange, letterSpacing: 2, marginBottom: 3 },
+  headerNumber: { fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.white },
+  headerDate:   { fontFamily: 'Courier', fontSize: 8, color: C.muted, marginTop: 3 },
+
+  // ── CLIENT ─────────────────────────────────────────────────────────────
+  clientSection: { paddingHorizontal: 40, paddingTop: 34, paddingBottom: 16 },
+  clientLabel:   { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.gray, letterSpacing: 3, marginBottom: 10 },
+  clientRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  clientBar:     { width: 4, height: 26, backgroundColor: C.orange, marginRight: 10 },
+  clientName:    { fontFamily: 'Helvetica-Bold', fontSize: 22, color: C.dark },
+  clientSub:     { fontSize: 11, color: C.gray, marginLeft: 14 },
+
+  // ── SECTION TITLE ──────────────────────────────────────────────────────
+  sectionTitle:     { paddingHorizontal: 40, marginTop: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+  sectionTitleText: { fontFamily: 'Helvetica-Bold', fontSize: 9, letterSpacing: 1, color: C.dark, marginRight: 10 },
+  sectionTitleLine: { flex: 1, height: 1, backgroundColor: C.orange, opacity: 0.3 },
+
+  // ── TABLE ──────────────────────────────────────────────────────────────
+  tableHead:     { backgroundColor: C.dark, flexDirection: 'row', marginHorizontal: 40, paddingHorizontal: 12, paddingVertical: 7 },
+  tableHeadCell: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.white, letterSpacing: 0.5 },
+  tableRow:      { flexDirection: 'row', marginHorizontal: 40, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: C.border, alignItems: 'center' },
+  tableRowAlt:   { backgroundColor: C.light },
+
+  colFile:     { width: '36%' },
+  colPages:    { width: '9%',  textAlign: 'center' },
+  colComp:     { width: '10%', textAlign: 'center' },
+  colDensity:  { width: '30%' },
+  colSubtotal: { width: '15%', textAlign: 'right' },
+
+  fileRow:    { flexDirection: 'row', alignItems: 'center' },
+  fileTag:    { fontFamily: 'Helvetica-Bold', fontSize: 7, marginRight: 5, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 3 },
+  tagPDF:     { backgroundColor: '#FEE2E2', color: '#B91C1C' },
+  tagDOC:     { backgroundColor: '#E0F2FE', color: '#0369A1' },
+  tagLNK:     { backgroundColor: '#D1FAE5', color: '#065F46' },
+  fileName:   { fontSize: 9, color: C.dark },
+
+  monoCell:   { fontFamily: 'Courier', fontSize: 10, color: C.dark },
+  badge:      { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, backgroundColor: 'rgba(232,117,26,0.12)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8 },
+  densityTxt: { fontFamily: 'Courier', fontSize: 7, color: C.gray, lineHeight: 1.4 },
+  subtotalTxt:{ fontFamily: 'Helvetica-Bold', fontSize: 11, color: C.dark },
+
+  // ── AUDIT ──────────────────────────────────────────────────────────────
+  auditBox:   { marginHorizontal: 40, marginTop: 16, backgroundColor: C.light, borderLeftWidth: 4, borderLeftColor: C.orange, padding: 14, borderRadius: 4 },
+  auditTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.orange, letterSpacing: 1, marginBottom: 5 },
+  auditText:  { fontSize: 9, color: C.gray, lineHeight: 1.5 },
+
+  // ── TOTAL ──────────────────────────────────────────────────────────────
+  totalBox:   { marginHorizontal: 40, marginTop: 24, backgroundColor: C.dark, borderRadius: 10, paddingHorizontal: 32, paddingVertical: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  totalLabel: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.muted, letterSpacing: 2, marginBottom: 4 },
+  totalSub:   { fontSize: 9, color: C.dimmed },
+  totalValue: { fontFamily: 'Helvetica-Bold', fontSize: 36, color: C.orange },
+
+  // ── PAYMENT ────────────────────────────────────────────────────────────
+  paySection: { paddingHorizontal: 40, marginTop: 24 },
+  payLabel:   { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.gray, letterSpacing: 2, marginBottom: 10 },
+  payRow:     { flexDirection: 'row', gap: 10 },
+  payCard:    { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, padding: 10 },
+  payTitle:   { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.dark, marginBottom: 3 },
+  payText:    { fontSize: 8, color: C.gray },
+
+  // ── FOOTER ─────────────────────────────────────────────────────────────
+  footer:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.light, paddingHorizontal: 40, paddingVertical: 18, borderTopWidth: 1, borderTopColor: C.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  footerAddress: { fontSize: 8, color: C.dark, marginBottom: 3 },
+  footerContact: { fontSize: 8, color: C.gray },
+  footerLink:    { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.orange },
 });
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+const safeMetadata = (raw: any) => {
+  try {
+    if (!raw) return {};
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch { return {}; }
+};
+
+const safeDatePT = (val: any) => {
+  try { return new Date(val).toLocaleDateString('pt-BR'); }
+  catch { return new Date().toLocaleDateString('pt-BR'); }
+};
+
+const densityLabel = (doc: any, isLink: boolean): string => {
+  const pages = doc.analysis?.pages;
+  if (!pages?.length) return isLink ? 'Documento via link externo' : 'Pag. 1 -> Alta Densidade';
+  const allSame = pages.every((p: any) => p.density === pages[0].density);
+  const fmt = (d: string) => d === 'scanned' ? 'Alta (escaneada)' : d.charAt(0).toUpperCase() + d.slice(1);
+  if (pages.length === 1) return `Pag. 1 -> ${fmt(pages[0].density)} Densidade`;
+  if (allSame) return `Pags. 1-${pages.length} -> ${fmt(pages[0].density)} Densidade`;
+  return pages.map((p: any) => `P${p.pageNumber}:${p.density.toUpperCase()}`).join(' | ');
+};
+
+// ─── component ────────────────────────────────────────────────────────────────
+
 interface ProposalPDFProps {
-    order: any;
-    globalSettings: any;
-    logoBase64?: string | null;
+  order: any;
+  globalSettings: any;
+  logoBase64?: string | null;
 }
 
 export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFProps) => {
-    // ✅ FIX: Safe metadata parsing — handle both string and object
-    const metadata = (() => {
-        try {
-            if (!order.metadata) return {};
-            return typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata;
-        } catch {
-            return {};
-        }
-    })();
+  const metadata   = safeMetadata(order?.metadata);
+  const documents  = metadata?.documents ?? [];
+  const totalPages = documents.reduce((s: number, d: any) => s + (d.count || 0), 0);
+  const totalDocs  = documents.length;
+  const totalAmt   = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
 
-    const documents = metadata?.documents || [];
-    const breakdown = metadata?.breakdown || {};
+  return (
+    <Document title={`Proposta-Promobi-${order?.id}`}>
+      <Page size="A4" style={styles.page}>
 
-    const totalPages = documents.reduce((acc: number, doc: any) => acc + (doc.count || 0), 0);
-    const totalDocs = documents.length;
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View>
+            {logoBase64
+              ? <Image src={logoBase64} style={styles.logo} />
+              : <Text style={styles.logoFallback}>PROMOBi</Text>}
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.headerLabel}>COTACAO</Text>
+            <Text style={styles.headerNumber}>#{order?.id}</Text>
+            <Text style={styles.headerDate}>{safeDatePT(order?.createdAt)}</Text>
+          </View>
+        </View>
+        <View style={styles.headerAccent} />
 
-    // ✅ FIX: Safe totalAmount fallback
-    const totalAmount = typeof order.totalAmount === 'number' ? order.totalAmount : 0;
+        {/* CLIENT */}
+        <View style={styles.clientSection}>
+          <Text style={styles.clientLabel}>PROPOSTA PREPARADA PARA</Text>
+          <View style={styles.clientRow}>
+            <View style={styles.clientBar} />
+            <Text style={styles.clientName}>{order?.user?.fullName || 'Cliente Promobi'}</Text>
+          </View>
+          <Text style={styles.clientSub}>Servicos de Traducao Certificada · Pacote Completo</Text>
+        </View>
 
-    // ✅ FIX: Safe date parsing
-    const orderDate = (() => {
-        try {
-            return new Date(order.createdAt).toLocaleDateString('pt-BR');
-        } catch {
-            return new Date().toLocaleDateString('pt-BR');
-        }
-    })();
+        {/* TABLE */}
+        <View style={styles.sectionTitle}>
+          <Text style={styles.sectionTitleText}>RAIO-X TECNICO DOS DOCUMENTOS</Text>
+          <View style={styles.sectionTitleLine} />
+        </View>
 
-    return (
-        <Document title={`Proposta-Promobi-${order.id}`}>
-            <Page size="A4" style={styles.page}>
-                {/* BLOCO 1 — CABEÇALHO */}
-                <View style={styles.header}>
-                    <View>
-                        {logoBase64 ? (
-                            <Image src={logoBase64} style={styles.logo} />
-                        ) : (
-                            <Text style={{ color: '#E8751A', fontWeight: 900, fontSize: 22 }}>PROMOBi</Text>
-                        )}
-                    </View>
-                    <View style={styles.headerRight}>
-                        <Text style={styles.headerLabel}>COTAÇÃO</Text>
-                        <Text style={styles.headerNumber}>#{order.id}</Text>
-                        <Text style={styles.headerDate}>{orderDate}</Text>
-                    </View>
-                    <View style={styles.headerAccent} />
-                </View>
+        <View style={styles.tableHead}>
+          <Text style={[styles.tableHeadCell, styles.colFile]}>ARQUIVO</Text>
+          <Text style={[styles.tableHeadCell, styles.colPages]}>PAGS</Text>
+          <Text style={[styles.tableHeadCell, styles.colComp]}>COMP.</Text>
+          <Text style={[styles.tableHeadCell, styles.colDensity]}>DENSIDADE</Text>
+          <Text style={[styles.tableHeadCell, styles.colSubtotal]}>SUBTOTAL</Text>
+        </View>
 
-                {/* BLOCO 2 — IDENTIFICAÇÃO DO CLIENTE */}
-                <View style={styles.clientSection}>
-                    <Text style={styles.clientLabel}>PROPOSTA PREPARADA PARA</Text>
-                    <View style={styles.clientNameWrapper}>
-                        <View style={styles.clientBar} />
-                        <Text style={styles.clientName}>{order.user?.fullName || 'Cliente Promobi'}</Text>
-                    </View>
-                    <Text style={styles.clientSub}>Serviços de Tradução Certificada · Pacote Completo</Text>
-                </View>
+        {documents.length === 0
+          ? <View style={styles.tableRow}><Text style={{ color: C.gray }}>Nenhum documento.</Text></View>
+          : documents.map((doc: any, idx: number) => {
+              const rawName  = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
+              const fileName = (rawName.split(/[/\\]/).pop() || rawName) as string;
+              const isPDF    = fileName.toLowerCase().endsWith('.pdf');
+              const isLink   = !!doc.externalLink;
+              const subtotal = (doc.analysis?.totalPrice || (doc.count || 1) * (globalSettings?.basePrice || 9))
+                             + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0);
 
-                {/* BLOCO 3 — RAIO-X TÉCNICO */}
-                <View style={styles.sectionTitle}>
-                    <Text style={styles.sectionTitleText}>Raio-X Técnico dos Documentos</Text>
-                    <View style={styles.sectionTitleLine} />
-                </View>
-
-                <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderText, styles.colFile]}>ARQUIVO</Text>
-                    <Text style={[styles.tableHeaderText, styles.colPages]}>PÁGS</Text>
-                    <Text style={[styles.tableHeaderText, styles.colComposition]}>COMP.</Text>
-                    <Text style={[styles.tableHeaderText, styles.colDensity]}>DENSIDADE (POR PÁGINA)</Text>
-                    <Text style={[styles.tableHeaderText, styles.colSubtotal]}>SUBTOTAL</Text>
-                </View>
-
-                {/* ✅ FIX: Guard against empty documents array */}
-                {documents.length === 0 ? (
-                    <View style={[styles.tableRow]}>
-                        <Text style={[styles.tableCell, { color: '#999', fontStyle: 'italic' }]}>
-                            Nenhum documento listado.
-                        </Text>
-                    </View>
-                ) : (
-                    documents.map((doc: any, idx: number) => {
-                        // ✅ FIX: Safe filename extraction
-                        const rawName = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
-                        const fileName = rawName.split(/[/\\]/).pop() || rawName;
-                        const isPDF = fileName.toLowerCase().endsWith('.pdf');
-                        const isLink = !!doc.externalLink;
-                        const isZebra = idx % 2 !== 0;
-
-                        // Density detail text
-                        let densityDetail = 'Pág. 1 → Alta Densidade';
-                        if (doc.analysis?.pages?.length) {
-                            const pages = doc.analysis.pages;
-                            const allSame = pages.every((p: any) => p.density === pages[0].density);
-                            if (pages.length === 1) {
-                                const p = pages[0];
-                                const desc = p.density === 'scanned' ? '(escaneada)' : '';
-                                densityDetail = `Pág. 1 → ${p.density === 'scanned' ? 'Alta' : p.density.charAt(0).toUpperCase() + p.density.slice(1)} Densidade ${desc}`.trim();
-                            } else if (allSame) {
-                                const d = pages[0].density;
-                                const desc = d === 'scanned' ? '(escaneadas, DTP completo)' : '';
-                                densityDetail = `Págs. 1–${pages.length} → ${d === 'scanned' ? 'Alta' : d.charAt(0).toUpperCase() + d.slice(1)} Densidade ${desc}`.trim();
-                            } else {
-                                densityDetail = pages.map((p: any) => `Pág. ${p.pageNumber}: ${p.density.toUpperCase()}`).join(', ');
-                            }
-                        } else if (isLink) {
-                            densityDetail = 'Documento via link externo';
-                        }
-
-                        const subtotal = (doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0);
-
-                        return (
-                            <View key={idx} style={[styles.tableRow, isZebra ? styles.tableRowZebra : {}]}>
-                                <View style={[styles.colFile, { flexDirection: 'row', alignItems: 'center' }]}>
-                                    <Text style={[
-                                        styles.fileIcon,
-                                        isLink ? styles.iconLINK : isPDF ? styles.iconPDF : styles.iconDOC
-                                    ]}>
-                                        {isLink ? 'LNK' : isPDF ? 'PDF' : 'DOC'}
-                                    </Text>
-                                    <Text style={styles.fileName} {...({ numberOfLines: 1 } as any)}>{fileName}</Text>
-                                </View>
-                                <Text style={[styles.tableCell, styles.colPages, styles.pageCount]}>
-                                    {doc.count || 1}
-                                </Text>
-                                <View style={styles.colComposition}>
-                                    <Text style={styles.badgePill}>⚡ HIGH</Text>
-                                </View>
-                                <View style={styles.colDensity}>
-                                    <Text style={styles.densityDetails}>{densityDetail}</Text>
-                                </View>
-                                <Text style={[styles.tableCell, styles.colSubtotal, styles.subtotal]}>
-                                    ${subtotal.toFixed(2)}
-                                </Text>
-                            </View>
-                        );
-                    })
-                )}
-
-                {/* BLOCO 4 — AUDITORIA */}
-                <View style={styles.auditCard}>
-                    <Text style={styles.auditTitle}>Auditoria de Preço Justo</Text>
-                    <Text style={styles.auditText}>
-                        Páginas escaneadas (não-pesquisáveis) requerem extração e formatação manual (DTP) por nossa equipe. Devido a este processamento humano, estas páginas são classificadas como "Alta Densidade", com custo unitário variável conforme complexidade tipográfica e de layout.
+              return (
+                <View key={idx} style={[styles.tableRow, idx % 2 !== 0 ? styles.tableRowAlt : {}]}>
+                  <View style={[styles.colFile, styles.fileRow]}>
+                    <Text style={[styles.fileTag, isLink ? styles.tagLNK : isPDF ? styles.tagPDF : styles.tagDOC]}>
+                      {isLink ? 'LNK' : isPDF ? 'PDF' : 'DOC'}
                     </Text>
+                    <Text style={styles.fileName} numberOfLines={1}>{fileName}</Text>
+                  </View>
+                  <Text style={[styles.monoCell, styles.colPages]}>{doc.count || 1}</Text>
+                  <View style={[styles.colComp, { alignItems: 'center' }]}>
+                    <Text style={styles.badge}>HIGH</Text>
+                  </View>
+                  <View style={styles.colDensity}>
+                    <Text style={styles.densityTxt}>{densityLabel(doc, isLink)}</Text>
+                  </View>
+                  <Text style={[styles.subtotalTxt, styles.colSubtotal]}>${subtotal.toFixed(2)}</Text>
                 </View>
+              );
+            })
+        }
 
-                {/* BLOCO 5 — INVESTIMENTO TOTAL */}
-                <View style={styles.totalCard}>
-                    <View style={styles.totalCardGlow} />
-                    <View style={styles.totalLeft}>
-                        <Text style={styles.totalLabel}>INVESTIMENTO TOTAL</Text>
-                        <Text style={styles.totalSub}>
-                            {totalPages} páginas · {totalDocs} documentos · Tradução certificada
-                        </Text>
-                    </View>
-                    <Text style={styles.totalValue}>${totalAmount.toFixed(2)}</Text>
-                </View>
+        {/* AUDIT */}
+        <View style={styles.auditBox}>
+          <Text style={styles.auditTitle}>AUDITORIA DE PRECO JUSTO</Text>
+          <Text style={styles.auditText}>
+            Paginas escaneadas requerem extracao e formatacao manual (DTP) pela nossa equipe.
+            Classificadas como Alta Densidade com custo unitario conforme complexidade de layout.
+          </Text>
+        </View>
 
-                {/* BLOCO 6 — MÉTODOS DE PAGAMENTO */}
-                <View style={styles.paymentSection}>
-                    <Text style={styles.paymentLabel}>FORMAS DE PAGAMENTO</Text>
-                    <View style={styles.paymentCards}>
-                        <View style={styles.paymentCard}>
-                            <Text style={styles.paymentTitle}>💚 ZELLE</Text>
-                            <Text style={styles.paymentText}>Transferência instantânea EUA</Text>
-                        </View>
-                        <View style={styles.paymentCard}>
-                            <Text style={styles.paymentTitle}>🇧🇷 PIX / BOLETO</Text>
-                            <Text style={styles.paymentText}>Pagamento via Brasil</Text>
-                        </View>
-                        <View style={styles.paymentCard}>
-                            <Text style={styles.paymentTitle}>💳 STRIPE</Text>
-                            <Text style={styles.paymentText}>Cartão de crédito ou débito</Text>
-                        </View>
-                    </View>
-                </View>
+        {/* TOTAL */}
+        <View style={styles.totalBox}>
+          <View>
+            <Text style={styles.totalLabel}>INVESTIMENTO TOTAL</Text>
+            <Text style={styles.totalSub}>{totalPages} pags. · {totalDocs} docs · Traducao certificada</Text>
+          </View>
+          <Text style={styles.totalValue}>${totalAmt.toFixed(2)}</Text>
+        </View>
 
-                {/* BLOCO 7 — RODAPÉ */}
-                <View style={styles.footer}>
-                    <View>
-                        <Text style={styles.footerAddress}>4700 Millenia Blvd, Orlando, FL 32839, USA</Text>
-                        <Text style={styles.footerContact}>(321) 324-5851 · info@promobi.us</Text>
-                    </View>
-                    <Text style={styles.footerLink}>www.promobi.us</Text>
-                </View>
-            </Page>
-        </Document>
-    );
+        {/* PAYMENT */}
+        <View style={styles.paySection}>
+          <Text style={styles.payLabel}>FORMAS DE PAGAMENTO</Text>
+          <View style={styles.payRow}>
+            {[
+              { title: 'ZELLE',        sub: 'Transferencia instantanea EUA' },
+              { title: 'PIX / BOLETO', sub: 'Pagamento via Brasil'          },
+              { title: 'STRIPE',       sub: 'Cartao de credito ou debito'   },
+            ].map((p, i) => (
+              <View key={i} style={styles.payCard}>
+                <Text style={styles.payTitle}>{p.title}</Text>
+                <Text style={styles.payText}>{p.sub}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* FOOTER */}
+        <View style={styles.footer}>
+          <View>
+            <Text style={styles.footerAddress}>4700 Millenia Blvd, Orlando, FL 32839, USA</Text>
+            <Text style={styles.footerContact}>(321) 324-5851 · info@promobi.us</Text>
+          </View>
+          <Text style={styles.footerLink}>www.promobi.us</Text>
+        </View>
+
+      </Page>
+    </Document>
+  );
 };
