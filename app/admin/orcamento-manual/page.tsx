@@ -17,7 +17,8 @@ import {
     Upload,
     Link as LinkIcon,
     Copy,
-    CheckCircle
+    CheckCircle,
+    EyeOff
 } from 'lucide-react'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
@@ -51,6 +52,8 @@ export default function OrcamentoManual() {
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
     const [generatedLink, setGeneratedLink] = useState<string | null>(null)
+    const [importUrl, setImportUrl] = useState('')
+    const [showImportUrl, setShowImportUrl] = useState(false)
 
     const [breakdown, setBreakdown] = useState({
         basePrice: 0,
@@ -119,12 +122,13 @@ export default function OrcamentoManual() {
                 const newDocs: DocumentItem[] = []
 
                 for (const file of Array.from(e.target.files)) {
+                    // Only process PDFs for density analysis if possible, but the analyzer handles it
                     try {
                         const analysis = await analyzeDocument(file)
                         newDocs.push({
                             id: crypto.randomUUID(),
                             file: file,
-                            fileName: file.name,
+                            fileName: file.webkitRelativePath || file.name, // Use relative path if from folder
                             count: analysis.totalPages,
                             notarized: false,
                             analysis: analysis,
@@ -136,8 +140,8 @@ export default function OrcamentoManual() {
                         newDocs.push({
                             id: crypto.randomUUID(),
                             file: file,
-                            fileName: file.name,
-                            count: 1,
+                            fileName: file.webkitRelativePath || file.name,
+                            count: 1, // Fallback
                             notarized: false,
                             isSelected: true,
                             handwritten: false
@@ -146,22 +150,59 @@ export default function OrcamentoManual() {
                 }
                 setDocuments(prev => [...prev, ...newDocs])
                 setIsAnalyzing(false)
-                toast.success('Documentos adicionados ao orçamento com sucesso!')
+                toast.success(`${newDocs.length} documentos adicionados ao orçamento.`)
             } else if (serviceType === 'notarization') {
                 const newDocs: DocumentItem[] = []
                 for (const file of Array.from(e.target.files)) {
                     newDocs.push({
                         id: crypto.randomUUID(),
                         file: file,
-                        fileName: file.name,
+                        fileName: file.webkitRelativePath || file.name,
                         count: 1,
                         notarized: true,
                         isSelected: true,
                     } as DocumentItem)
                 }
                 setDocuments(prev => [...prev, ...newDocs])
-                toast.success('Pares de documentos adicionados com sucesso!')
+                toast.success(`${newDocs.length} documentos adicionados com sucesso!`)
             }
+        }
+        // Reset the input value so the same files can be selected again if needed
+        e.target.value = '';
+    }
+
+    const handleImportUrl = () => {
+        if (!importUrl) return;
+
+        try {
+            new URL(importUrl); // Basic validation
+
+            // Create a fake DocumentItem for the link
+            const newDoc: DocumentItem = {
+                id: crypto.randomUUID(),
+                fileName: `Link: ${importUrl.substring(0, 30)}...`,
+                count: 1, // Default to 1 page for links, user might need to adjust manually later if we allow it, or it's just a placeholder
+                notarized: false,
+                isSelected: true,
+                handwritten: false,
+                // We don't have a File object, so we'll need to handle this in the submit logic
+            }
+            // Add a mock analysis so it gets priced at base rate initially if translation
+            if (serviceType === 'translation') {
+                newDoc.analysis = {
+                    totalPages: 1,
+                    totalPrice: globalSettings?.basePrice || 9.00,
+                    pages: [{ pageNumber: 1, wordCount: 0, textDensity: 'low', confidence: 1, price: globalSettings?.basePrice || 9.00 }]
+                }
+            }
+
+            setDocuments(prev => [...prev, newDoc])
+            setImportUrl('')
+            setShowImportUrl(false)
+            toast.success('Link importado e adicionado à lista.')
+
+        } catch (e) {
+            toast.error('Por favor, insira uma URL válida.')
         }
     }
 
@@ -469,45 +510,161 @@ export default function OrcamentoManual() {
                                 </div>
 
                                 {/* Upload Zone */}
-                                <div className="mb-6 relative group cursor-pointer border-2 border-dashed border-slate-200 rounded-2xl p-8 hover:border-[#f58220] hover:bg-orange-50/50 transition-all text-center">
-                                    <input type="file" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleFileUpload} accept=".pdf,.png,.jpg,.jpeg,.heic" />
-                                    <div className="w-12 h-12 rounded-full bg-slate-50 group-hover:bg-[#f58220] flex items-center justify-center mx-auto mb-3 transition-colors shadow-sm text-slate-400 group-hover:text-white">
-                                        <Upload className="h-5 w-5" />
+                                <div className="mb-6">
+                                    <div className="relative group cursor-pointer border-2 border-dashed border-slate-300 rounded-2xl p-8 hover:border-[#f58220] hover:bg-orange-50/50 transition-all text-center">
+                                        {/* Accept multiple and folders */}
+                                        <input
+                                            type="file"
+                                            multiple
+                                            // @ts-ignore - webkitdirectory is non-standard but widely supported
+                                            webkitdirectory={""}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            onChange={handleFileUpload}
+                                        />
+                                        <div className="w-16 h-16 rounded-full bg-slate-100 group-hover:bg-[#f58220] flex items-center justify-center mx-auto mb-4 transition-colors shadow-sm text-slate-500 group-hover:text-white">
+                                            {isAnalyzing ? (
+                                                <div className="w-6 h-6 border-4 border-slate-300 border-t-[#f58220] rounded-full animate-spin"></div>
+                                            ) : (
+                                                <Upload className="h-6 w-6" />
+                                            )}
+                                        </div>
+                                        <p className="font-bold text-slate-700 text-base mb-1">Arraste Arquivos ou Pastas</p>
+                                        <p className="text-xs text-slate-500">ou clique para selecionar do seu computador</p>
                                     </div>
-                                    <p className="font-bold text-slate-700 text-sm">Clique ou arraste Arquivos</p>
+
+                                    {/* Import via Link */}
+                                    <div className="mt-3 text-center">
+                                        {!showImportUrl ? (
+                                            <button
+                                                onClick={() => setShowImportUrl(true)}
+                                                className="text-xs text-slate-500 hover:text-[#f58220] flex items-center justify-center gap-1 mx-auto transition-colors font-medium border border-transparent hover:border-orange-200 px-3 py-1.5 rounded-full"
+                                            >
+                                                <LinkIcon className="w-3.5 h-3.5" /> Ou importar via link (Drive/Dropbox)
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center max-w-md mx-auto bg-white p-1 rounded-lg border border-slate-300 shadow-sm">
+                                                <input
+                                                    type="url"
+                                                    placeholder="Cole a URL do documento aqui..."
+                                                    value={importUrl}
+                                                    onChange={(e) => setImportUrl(e.target.value)}
+                                                    className="flex-1 text-sm px-3 py-2 outline-none bg-transparent"
+                                                />
+                                                <button
+                                                    onClick={handleImportUrl}
+                                                    className="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-slate-700 transition-colors"
+                                                >
+                                                    Adicionar
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Doc List */}
                                 {documents.length > 0 && (
-                                    <div className="space-y-3 mb-8">
-                                        {documents.map((doc) => (
-                                            <div key={doc.id} className="rounded-xl p-3 border border-slate-200 flex items-center justify-between bg-slate-50">
-                                                <div className="flex items-center gap-3">
-                                                    <FileText className="h-5 w-5 text-slate-400" />
-                                                    <div>
-                                                        <h5 className="font-bold text-sm text-slate-700 truncate max-w-[250px]">{doc.fileName}</h5>
-                                                        <span className="text-xs text-slate-500">{doc.count} páginas</span>
+                                    <div className="space-y-4 mb-8">
+                                        {documents.map((doc) => {
+                                            // Calculate document density stats
+                                            let densityLabel = 'N/A'
+                                            let densityColor = 'bg-slate-200 text-slate-500'
+                                            let densityProgress = 0
+                                            let docPrice = doc.count * (globalSettings?.basePrice || 9.00)
+
+                                            if (doc.analysis) {
+                                                const avgConfidence = doc.analysis.pages.reduce((acc, p) => acc + p.confidence, 0) / doc.analysis.pages.length
+                                                densityProgress = Math.round(avgConfidence * 100)
+
+                                                if (densityProgress < 40) {
+                                                    densityLabel = 'Baixa Densidade'
+                                                    densityColor = 'bg-green-100 text-green-700'
+                                                } else if (densityProgress < 70) {
+                                                    densityLabel = 'Média Densidade'
+                                                    densityColor = 'bg-yellow-100 text-yellow-700'
+                                                } else {
+                                                    densityLabel = 'Alta Densidade'
+                                                    densityColor = 'bg-red-100 text-red-700'
+                                                }
+                                                docPrice = doc.analysis.totalPrice
+                                            }
+
+                                            // Apply handwritting modifier for display
+                                            if (serviceType === 'translation' && doc.handwritten) {
+                                                docPrice *= 1.25
+                                            }
+
+                                            return (
+                                                <div
+                                                    key={doc.id}
+                                                    className={`rounded-2xl p-4 border transition-all duration-300 ${doc.isSelected ? 'border-slate-200 bg-white shadow-sm' : 'border-dashed border-slate-200 bg-slate-50 opacity-60 grayscale-[0.2]'}`}
+                                                >
+                                                    <div className="flex items-start justify-between">
+
+                                                        {/* Left: Info */}
+                                                        <div className="flex items-start gap-4">
+                                                            <div className={`mt-1 h-5 w-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${doc.isSelected ? 'bg-[#f58220] border-[#f58220]' : 'border-slate-300 bg-white'}`}
+                                                                onClick={() => updateDocument(doc.id, 'isSelected', !doc.isSelected)}
+                                                            >
+                                                                {doc.isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                                                            </div>
+
+                                                            <div>
+                                                                <h5 className="font-bold text-sm text-slate-800 truncate max-w-[200px] md:max-w-[300px]">{doc.fileName}</h5>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className="text-xs text-slate-500 font-medium">{doc.count} pág.</span>
+
+                                                                    {/* Raio-X Scanner */}
+                                                                    {serviceType === 'translation' && doc.analysis && (
+                                                                        <>
+                                                                            <span className="text-slate-300 text-xs">•</span>
+                                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${densityColor}`}>
+                                                                                {densityLabel} ({densityProgress}%)
+                                                                            </span>
+                                                                        </>
+                                                                    )}
+                                                                    {!doc.isSelected && (
+                                                                        <>
+                                                                            <span className="text-slate-300 text-xs">•</span>
+                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 flex items-center gap-1">
+                                                                                <EyeOff className="w-3 h-3" /> Salvo para depois
+                                                                            </span>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Right: Actions & Price */}
+                                                        <div className="flex flex-col items-end gap-3">
+                                                            {doc.isSelected && serviceType === 'translation' && (
+                                                                <div className="font-mono font-bold text-slate-800">
+                                                                    ${docPrice.toFixed(2)}
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex items-center gap-4">
+                                                                {serviceType === 'translation' && doc.isSelected && (
+                                                                    <>
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                                            <input type="checkbox" checked={doc.notarized} onChange={(e) => updateDocument(doc.id, 'notarized', e.target.checked)} className="rounded accent-[#f58220] w-3.5 h-3.5" />
+                                                                            <span className="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">+ Notarização</span>
+                                                                        </label>
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                                            <input type="checkbox" checked={doc.handwritten} onChange={(e) => updateDocument(doc.id, 'handwritten', e.target.checked)} className="rounded accent-[#f58220] w-3.5 h-3.5" />
+                                                                            <span className="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Manuscrito</span>
+                                                                        </label>
+                                                                    </>
+                                                                )}
+                                                                <button onClick={() => removeDocument(doc.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1" title="Excluir Permanentemente">
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
                                                     </div>
                                                 </div>
-
-                                                {serviceType === 'translation' && (
-                                                    <div className="flex items-center gap-4">
-                                                        <label className="flex items-center gap-2 cursor-pointer">
-                                                            <input type="checkbox" checked={doc.notarized} onChange={(e) => updateDocument(doc.id, 'notarized', e.target.checked)} className="rounded accent-[#f58220]" />
-                                                            <span className="text-xs font-bold text-slate-600">+ Notarização</span>
-                                                        </label>
-                                                        <label className="flex items-center gap-2 cursor-pointer">
-                                                            <input type="checkbox" checked={doc.handwritten} onChange={(e) => updateDocument(doc.id, 'handwritten', e.target.checked)} className="rounded accent-[#f58220]" />
-                                                            <span className="text-xs font-bold text-slate-600">Manuscrito (25%)</span>
-                                                        </label>
-                                                        <button onClick={() => removeDocument(doc.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-                                                    </div>
-                                                )}
-                                                {serviceType === 'notarization' && (
-                                                    <button onClick={() => removeDocument(doc.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-                                                )}
-                                            </div>
-                                        ))}
+                                            )
+                                        })}
                                     </div>
                                 )}
 
