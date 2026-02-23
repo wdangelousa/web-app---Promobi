@@ -18,7 +18,9 @@ import {
     Link as LinkIcon,
     Copy,
     CheckCircle,
-    EyeOff
+    EyeOff,
+    Eye,
+    X
 } from 'lucide-react'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
@@ -54,6 +56,7 @@ export default function OrcamentoManual() {
     const [generatedLink, setGeneratedLink] = useState<string | null>(null)
     const [importUrl, setImportUrl] = useState('')
     const [showImportUrl, setShowImportUrl] = useState(false)
+    const [quicklookData, setQuicklookData] = useState<{ url: string, pageNumber: number } | null>(null) // Added quicklookData state
 
     const [breakdown, setBreakdown] = useState({
         basePrice: 0,
@@ -695,7 +698,20 @@ export default function OrcamentoManual() {
                                                                                 <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
                                                                                     {label}
                                                                                 </span>
-                                                                                <span className="font-mono text-slate-700 font-bold ml-auto">${p.price.toFixed(2)}</span>
+                                                                                <div className="ml-auto flex items-center gap-3">
+                                                                                    <span className="font-mono text-slate-700 font-bold">${p.price.toFixed(2)}</span>
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            // Quicklook Trigger
+                                                                                            const url = doc.file ? URL.createObjectURL(doc.file) : undefined; // doc.originalFileUrl is not defined in DocumentItem type
+                                                                                            if (url) setQuicklookData({ url, pageNumber: p.pageNumber });
+                                                                                        }}
+                                                                                        className="text-slate-400 hover:text-[#f58220] transition-colors p-1 bg-slate-100 hover:bg-orange-50 rounded"
+                                                                                        title="Visualizar Página Original"
+                                                                                    >
+                                                                                        <Eye className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
                                                                         )
                                                                     })}
@@ -757,6 +773,36 @@ export default function OrcamentoManual() {
                     </div>
                 )}
             </div>
+
+            {/* Quicklook Modal */}
+            {quicklookData && (
+                <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 rounded-xl overflow-hidden w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl relative">
+                        <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-800">
+                            <div>
+                                <h3 className="text-white font-bold flex items-center gap-2">
+                                    <Eye className="w-5 h-5 text-[#f58220]" />
+                                    Promobi Quicklook
+                                </h3>
+                                <p className="text-slate-400 text-xs">Página {quicklookData.pageNumber} do formato original</p>
+                            </div>
+                            <button
+                                onClick={() => setQuicklookData(null)}
+                                className="bg-slate-700 hover:bg-red-500 text-white rounded-full p-2 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="flex-1 bg-slate-950 p-4">
+                            <iframe
+                                src={`${quicklookData.url}#page=${quicklookData.pageNumber}`}
+                                className="w-full h-full rounded-lg bg-white"
+                                title="Quicklook Viewer"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

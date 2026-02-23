@@ -3,18 +3,22 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Mail, Smartphone, Zap, ArrowRight, CreditCard, Lock } from 'lucide-react'
+import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Mail, Smartphone, Zap, ArrowRight, CreditCard, Lock, Eye, X } from 'lucide-react'
 import { createCheckoutSession } from '@/app/actions/checkout'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 
 export default function ProposalClient({ order }: { order: any }) {
-    const [expandedDocs, setExpandedDocs] = useState<string[]>([])
+    // Safety check for metadata
+    const metadata = order.metadata ? JSON.parse(order.metadata) : null;
+
+    const [expandedDocs, setExpandedDocs] = useState<number[]>(
+        metadata?.documents?.map((d: any) => d.id) || []
+    )
+    const [quicklookData, setQuicklookData] = useState<{ url: string, pageNumber: number } | null>(null)
     const [paymentMethod, setPaymentMethod] = useState<'STRIPE' | 'ZELLE' | 'PIX' | null>(null)
     const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
     const [isProcessingStripe, setIsProcessingStripe] = useState(false)
 
-    // Safety check for metadata
-    const metadata = order.metadata ? JSON.parse(order.metadata) : null;
     const breakdown = metadata?.breakdown || {};
 
     const { toast } = useUIFeedback()
@@ -33,7 +37,7 @@ export default function ProposalClient({ order }: { order: any }) {
 
     const requires100Upfront = order.urgency === 'urgent' || order.urgency === 'flash';
 
-    const toggleDocExpand = (id: string) => {
+    const toggleDocExpand = (id: number) => {
         setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id])
     }
 
@@ -215,7 +219,20 @@ export default function ProposalClient({ order }: { order: any }) {
                                                                 <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
                                                                     {label}
                                                                 </span>
-                                                                <span className="font-mono text-slate-700 font-bold ml-auto">${p.price.toFixed(2)}</span>
+                                                                <div className="ml-auto flex items-center gap-3">
+                                                                    <span className="font-mono text-slate-700 font-bold">${p.price.toFixed(2)}</span>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            if (doc.originalFileUrl) {
+                                                                                setQuicklookData({ url: doc.originalFileUrl, pageNumber: p.pageNumber });
+                                                                            }
+                                                                        }}
+                                                                        className="text-slate-400 hover:text-[#f58220] transition-colors p-1 bg-slate-100 hover:bg-orange-50 rounded"
+                                                                        title="Visualizar Página Original"
+                                                                    >
+                                                                        <Eye className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         )
                                                     })}
