@@ -131,7 +131,7 @@ export default function OrcamentoManual() {
                         newDocs.push({
                             id: crypto.randomUUID(),
                             file: file,
-                            fileName: file.webkitRelativePath || file.name, // Use relative path if from folder
+                            fileName: (file.webkitRelativePath || file.name).split(/[/\\]/).pop() || file.name, // Extract strictly the final filename
                             count: analysis.totalPages,
                             notarized: false,
                             analysis: analysis,
@@ -160,7 +160,7 @@ export default function OrcamentoManual() {
                     newDocs.push({
                         id: crypto.randomUUID(),
                         file: file,
-                        fileName: file.webkitRelativePath || file.name,
+                        fileName: (file.webkitRelativePath || file.name).split(/[/\\]/).pop() || file.name,
                         count: 1,
                         notarized: true,
                         isSelected: true,
@@ -705,6 +705,13 @@ export default function OrcamentoManual() {
 
                                                             {expandedDocs.includes(doc.id) && (
                                                                 <div className="space-y-2 mt-3 pt-2 pl-6 border-l-2 border-slate-100">
+                                                                    {doc.analysis.pages.some(p => p.density === 'scanned') && (
+                                                                        <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl">
+                                                                            <p className="text-[10px] text-red-800 leading-tight">
+                                                                                <span className="font-bold">Auditoria de Preço Justo:</span> Páginas escaneadas (não-pesquisáveis) requerem extração e formatação manual (DTP). Devido a este processamento humano, estas páginas são classificadas como "Alta Densidade".
+                                                                            </p>
+                                                                        </div>
+                                                                    )}
                                                                     {doc.analysis.pages.map((p: any, pIdx: number) => {
                                                                         let color = 'bg-gray-100 text-gray-500';
                                                                         let label = '⚪ Em Branco';
@@ -719,7 +726,7 @@ export default function OrcamentoManual() {
                                                                                 <span className="text-slate-600 font-medium w-24">{p.wordCount} pal. <span className="text-slate-300 mx-1">→</span></span>
 
                                                                                 <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg">
-                                                                                    {(['blank', 'low', 'medium', 'high'] as const).map((dType) => (
+                                                                                    {(['blank', 'low', 'medium', 'high', 'scanned'] as const).map((dType) => (
                                                                                         <button
                                                                                             key={dType}
                                                                                             onClick={() => updatePageDensity(doc.id, pIdx, dType)}
@@ -727,12 +734,13 @@ export default function OrcamentoManual() {
                                                                                                 ? dType === 'blank' ? 'bg-gray-200 text-gray-700' :
                                                                                                     dType === 'low' ? 'bg-green-500 text-white' :
                                                                                                         dType === 'medium' ? 'bg-yellow-500 text-white' :
-                                                                                                            'bg-red-500 text-white'
+                                                                                                            dType === 'high' ? 'bg-red-500 text-white' :
+                                                                                                                'bg-red-500 text-white'
                                                                                                 : 'text-slate-400 hover:bg-slate-50'
                                                                                                 }`}
                                                                                             title={dType}
                                                                                         >
-                                                                                            {dType === 'blank' ? '0%' : dType === 'low' ? '25%' : dType === 'medium' ? '50%' : '100%'}
+                                                                                            {dType === 'blank' ? '0%' : dType === 'low' ? '25%' : dType === 'medium' ? '50%' : dType === 'high' ? '100%' : 'SCAN'}
                                                                                         </button>
                                                                                     ))}
                                                                                 </div>
