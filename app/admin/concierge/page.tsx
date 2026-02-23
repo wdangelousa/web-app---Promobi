@@ -65,6 +65,7 @@ export default function ConciergePage() {
         totalDiscountApplied: 0
     })
 
+    const [expandedDocs, setExpandedDocs] = useState<string[]>([])
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
     const { confirm, toast } = useUIFeedback()
 
@@ -132,6 +133,11 @@ export default function ConciergePage() {
         ))
     }
 
+    const toggleDocExpand = (id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
+    }
+
     useEffect(() => {
         const selectedDocs = documents.filter(d => d.isSelected)
         let totalBaseAfterFloor = 0
@@ -157,11 +163,7 @@ export default function ConciergePage() {
                 if (doc.handwritten) docPrice *= 1.25
                 totalBaseBeforeFloor += docPrice
 
-                if (docPrice < 10.00) {
-                    totalMinimumAdjustment += (10.00 - docPrice)
-                    docPrice = 10.00
-                    anyDocHitFloor = true
-                }
+                // REMOVED $10 floor for exact summation
                 totalBaseAfterFloor += docPrice
             })
             notary = selectedDocs.reduce((acc, doc) => acc + (doc.notarized ? NOTARY_FEE_PER_DOC : 0), 0)
@@ -236,6 +238,8 @@ export default function ConciergePage() {
                     fileName: d.fileName,
                     count: d.count,
                     notarized: d.notarized,
+                    analysis: d.analysis, // Save density details for the proposal page
+                    handwritten: d.handwritten,
                     uploadedFile: uploaded ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType } : undefined
                 }
             })
@@ -323,18 +327,94 @@ export default function ConciergePage() {
 
                             {/* Document List */}
                             <div className="space-y-3">
-                                {documents.map(doc => (
-                                    <div key={doc.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex justify-between items-center group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-white rounded-lg text-gray-400"><FileText className="w-5 h-5" /></div>
-                                            <div>
-                                                <p className="text-sm font-bold text-gray-800 line-clamp-1">{doc.fileName}</p>
-                                                <p className="text-[10px] text-gray-500">{doc.count} páginas</p>
+                                {documents.map(doc => {
+                                    // Calculate density stats for concierge UI
+                                    let densityLabel = 'N/A'
+                                    let densityColor = 'bg-slate-200 text-slate-500'
+                                    let densityProgress = 0
+                                    let docPrice = doc.count * (globalSettings?.basePrice || 9.00)
+
+                                    if (doc.analysis) {
+                                        const avgFraction = doc.analysis.pages.reduce((acc, p) => acc + p.fraction, 0) / doc.analysis.pages.length
+                                        densityProgress = Math.round(avgFraction * 100)
+
+                                        if (densityProgress === 0) { densityLabel = 'Em Branco'; densityColor = 'bg-gray-100 text-gray-400' }
+                                        else if (densityProgress < 40) { densityLabel = 'Baixa'; densityColor = 'bg-green-100 text-green-700' }
+                                        else if (densityProgress < 70) { densityLabel = 'Média'; densityColor = 'bg-yellow-100 text-yellow-700' }
+                                        else { densityLabel = 'Alta'; densityColor = 'bg-red-100 text-red-700' }
+                                        docPrice = doc.analysis.totalPrice
+                                    }
+                                    if (doc.handwritten) docPrice *= 1.25
+
+                                    return (
+                                        <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:border-[#f58220]/30">
+                                            <div className="p-4 flex justify-between items-center bg-gray-50/50">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-white rounded-lg text-[#f58220] border border-gray-100"><FileText className="w-5 h-5" /></div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-gray-800 line-clamp-1">{doc.fileName}</p>
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">{doc.count} pág.</span>
+                                                            {serviceType === 'translation' && doc.analysis && (
+                                                                <>
+                                                                    <span className="text-gray-300">|</span>
+                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${densityColor} uppercase`}>{densityLabel}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    {serviceType === 'translation' && (
+                                                        <span className="text-sm font-black text-gray-900">${docPrice.toFixed(2)}</span>
+                                                    )}
+                                                    <button onClick={() => removeDocument(doc.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                                </div>
                                             </div>
+
+                                            {/* X-Ray Accordion Mirroring OrcamentoManual */}
+                                            {serviceType === 'translation' && doc.analysis && (
+                                                <div className="px-4 pb-4 bg-white">
+                                                    <div className="h-px bg-gray-100 -mx-4 mb-3"></div>
+
+                                                    <button
+                                                        onClick={(e) => toggleDocExpand(doc.id, e)}
+                                                        className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-[#f58220] transition-colors mb-3"
+                                                    >
+                                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDocs.includes(doc.id) ? 'rotate-180' : ''}`} />
+                                                        Detalhes de Densidade
+                                                    </button>
+
+                                                    {expandedDocs.includes(doc.id) && (
+                                                        <div className="space-y-1.5 border-l-2 border-slate-50 pl-3">
+                                                            {doc.analysis.pages.map((p: any, pIdx: number) => {
+                                                                let pColor = 'bg-gray-100 text-gray-500';
+                                                                let pLabel = '⚪ Vazio';
+                                                                if (p.density === 'high') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Alta'; }
+                                                                else if (p.density === 'medium') { pColor = 'bg-yellow-50 text-yellow-700 border border-yellow-100'; pLabel = '🟡 Média'; }
+                                                                else if (p.density === 'low') { pColor = 'bg-green-50 text-green-700 border border-green-100'; pLabel = '🟢 Baixa'; }
+                                                                else if (p.density === 'scanned') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Scanned'; }
+
+                                                                return (
+                                                                    <div key={pIdx} className="flex items-center justify-between text-[10px] bg-slate-50/50 py-1.5 px-3 rounded-xl border border-slate-100">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-gray-400 font-bold w-7">Pg {p.pageNumber}:</span>
+                                                                            <span className={`font-black px-1.5 py-0.5 rounded text-[8px] uppercase ${pColor}`}>{pLabel}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-3">
+                                                                            <span className="text-gray-500">{p.wordCount} pal.</span>
+                                                                            <span className="font-black text-gray-900">${p.price.toFixed(2)}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <button onClick={() => removeDocument(doc.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
-                                    </div>
-                                ))}
+                                    )
+                                })}
 
                                 <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-[#f58220] hover:bg-orange-50 transition-all group">
                                     <Upload className="w-5 h-5 text-gray-400 group-hover:text-[#f58220]" />

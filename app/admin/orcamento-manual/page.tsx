@@ -237,8 +237,6 @@ export default function OrcamentoManual() {
         let totalMinimumAdjustment = 0
 
         if (serviceType === 'translation') {
-            let anyDocHitFloor = false;
-
             selectedDocs.forEach(doc => {
                 let docPrice = 0;
                 if (doc.analysis) {
@@ -255,17 +253,9 @@ export default function OrcamentoManual() {
                 }
 
                 totalBaseBeforeFloor += docPrice
-
-                if (docPrice < 10.00) {
-                    totalMinimumAdjustment += (10.00 - docPrice)
-                    docPrice = 10.00
-                    anyDocHitFloor = true;
-                }
-
                 totalBaseAfterFloor += docPrice
             })
 
-            minOrderApplied = anyDocHitFloor;
             notary = selectedDocs.reduce((acc, doc) => acc + (doc.notarized ? NOTARY_FEE_PER_DOC : 0), 0)
         } else if (serviceType === 'notarization') {
             notary = selectedDocs.length * NOTARY_FEE_PER_DOC
@@ -283,8 +273,8 @@ export default function OrcamentoManual() {
             notaryFee: notary,
             totalDocs: selectedDocs.length,
             totalCount: totalPages,
-            minOrderApplied,
-            totalMinimumAdjustment,
+            minOrderApplied: false,
+            totalMinimumAdjustment: 0,
             totalDiscountApplied: 0
         })
 
@@ -341,6 +331,8 @@ export default function OrcamentoManual() {
                     fileName: d.fileName,
                     count: d.count,
                     notarized: d.notarized,
+                    analysis: d.analysis, // Include density analysis here
+                    handwritten: d.handwritten,
                     uploadedFile: uploaded
                         ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType }
                         : undefined,
@@ -678,7 +670,7 @@ export default function OrcamentoManual() {
                                                                 className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#f58220] transition-colors mb-2"
                                                             >
                                                                 <ChevronDown className={`w-4 h-4 transition-transform ${expandedDocs.includes(doc.id) ? 'rotate-180' : ''}`} />
-                                                                Ver Detalhamento por Página
+                                                                Detalhes de Densidade
                                                             </button>
 
                                                             {expandedDocs.includes(doc.id) && (
@@ -686,27 +678,26 @@ export default function OrcamentoManual() {
                                                                     {doc.analysis.pages.map((p: any, pIdx: number) => {
                                                                         let color = 'bg-gray-100 text-gray-500';
                                                                         let label = '⚪ Em Branco';
-                                                                        if (p.density === 'high') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta (100%)'; }
-                                                                        else if (p.density === 'medium') { color = 'bg-yellow-100 text-yellow-800'; label = '🟡 Média (50%)'; }
-                                                                        else if (p.density === 'low') { color = 'bg-green-100 text-green-800'; label = '🟢 Baixa (25%)'; }
-                                                                        else if (p.density === 'scanned') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta/Scanned (100%)'; }
+                                                                        if (p.density === 'high') { color = 'bg-red-50 text-red-700 border border-red-100'; label = '🔴 Alta Density'; }
+                                                                        else if (p.density === 'medium') { color = 'bg-yellow-50 text-yellow-700 border border-yellow-100'; label = '🟡 Média Density'; }
+                                                                        else if (p.density === 'low') { color = 'bg-green-50 text-green-700 border border-green-100'; label = '🟢 Baixa Density'; }
+                                                                        else if (p.density === 'scanned') { color = 'bg-red-50 text-red-700 border border-red-100'; label = '🔴 Alta/Scanned'; }
 
                                                                         return (
-                                                                            <div key={pIdx} className="flex items-center gap-3 text-xs bg-white py-1.5 px-3 rounded-lg border border-slate-100 shadow-sm">
-                                                                                <span className="text-slate-400 font-mono w-14">Pg {p.pageNumber}:</span>
-                                                                                <span className="text-slate-600 font-mono w-20">{p.wordCount} pal. <span className="text-slate-300">{'->'}</span></span>
-                                                                                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
+                                                                            <div key={pIdx} className="flex items-center gap-3 text-[11px] bg-slate-50/50 py-2 px-3 rounded-xl border border-slate-100 shadow-sm">
+                                                                                <span className="text-slate-400 font-bold w-12">Pg {p.pageNumber}:</span>
+                                                                                <span className="text-slate-600 font-medium w-24">{p.wordCount} pal. <span className="text-slate-300 mx-1">→</span></span>
+                                                                                <span className={`font-bold px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider ${color}`}>
                                                                                     {label}
                                                                                 </span>
                                                                                 <div className="ml-auto flex items-center gap-3">
-                                                                                    <span className="font-mono text-slate-700 font-bold">${p.price.toFixed(2)}</span>
+                                                                                    <span className="font-mono text-slate-900 font-extrabold text-sm">${p.price.toFixed(2)}</span>
                                                                                     <button
                                                                                         onClick={() => {
-                                                                                            // Quicklook Trigger
-                                                                                            const url = doc.file ? URL.createObjectURL(doc.file) : undefined; // doc.originalFileUrl is not defined in DocumentItem type
+                                                                                            const url = doc.file ? URL.createObjectURL(doc.file) : undefined;
                                                                                             if (url) setQuicklookData({ url, pageNumber: p.pageNumber });
                                                                                         }}
-                                                                                        className="text-slate-400 hover:text-[#f58220] transition-colors p-1 bg-slate-100 hover:bg-orange-50 rounded"
+                                                                                        className="text-slate-400 hover:text-[#f58220] transition-colors p-1.5 bg-white hover:bg-orange-50 rounded-lg border border-slate-100 shadow-sm"
                                                                                         title="Visualizar Página Original"
                                                                                     >
                                                                                         <Eye className="w-3.5 h-3.5" />

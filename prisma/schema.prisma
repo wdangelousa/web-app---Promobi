@@ -29,6 +29,7 @@ model Order {
   urgency              String          @default("normal")
   uspsTracking         String?
   createdAt            DateTime        @default(now())
+  sentAt               DateTime?
   paymentProvider      PaymentProvider @default(STRIPE)
   deliveryUrl          String?
   metadata             String?
