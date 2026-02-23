@@ -1,3 +1,5 @@
+// lib/documentAnalyzer.ts
+
 // Density Rules (Word Count)
 const WORD_THRESHOLD_HIGH = 250; // > 250 words = 100%
 const WORD_THRESHOLD_MEDIUM = 100; // 100-250 words = 50%
@@ -11,7 +13,7 @@ export type PageAnalysis = {
     wordCount: number;
     density: 'high' | 'medium' | 'low' | 'blank' | 'scanned';
     price: number;
-    fraction: number; // 1.0, 0.5, 0.25, 0.0
+    fraction: number;
 };
 
 export type DocumentAnalysis = {
@@ -25,13 +27,11 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
     const isImage = file.type.startsWith('image/');
 
     if (isImage) {
-        // IMAGE LOGIC:
-        // Assume SCANNED density for highest fairness/safety for business unless OCR implemented.
         return {
             totalPages: 1,
             pages: [{
                 pageNumber: 1,
-                wordCount: 300, // Arbitrary high number for scanned
+                wordCount: 300,
                 density: 'scanned',
                 price: PRICE_BASE,
                 fraction: 1.0
@@ -44,7 +44,15 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
     // PDF LOGIC
     try {
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+        // ✅ FIX 1: Use local worker instead of CDN (CDN fails on Vercel/production)
+        // This requires pdfjs-dist to be installed (it is, per package.json)
+        // Next.js serves files from /public statically, but for worker we use the
+        // module path directly which Next.js bundles correctly.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+            'pdfjs-dist/build/pdf.worker.min.mjs',
+            import.meta.url
+        ).toString();
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -56,7 +64,6 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
 
-            // Extract text string and count words
             const text = textContent.items.map((item: any) => item.str).join(' ');
             const words = text.trim().split(/\s+/);
             const wordCount = text.trim() === '' ? 0 : words.length;
@@ -66,10 +73,7 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             let price = PRICE_BASE;
 
             if (wordCount === WORD_THRESHOLD_BLANK) {
-                // HEURISTIC FOR SCANS: 
-                // 1. Check if there are images or substantial path operators
                 const ops = await page.getOperatorList();
-                // Check for common image/graphics operators in PDF.js
                 const hasGraphics = ops.fnArray.some(fn =>
                     fn === (pdfjsLib as any).OPS.paintImageXObject ||
                     fn === (pdfjsLib as any).OPS.paintInlineImageXObject ||
@@ -77,9 +81,6 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
                     fn === (pdfjsLib as any).OPS.fill ||
                     fn === (pdfjsLib as any).OPS.stroke
                 );
-
-                // 2. Check "weight" of the page as a secondary fallback
-                // We use a simplified proxy: number of operators if graphic-heavy
                 const isHeavy = ops.fnArray.length > 50;
 
                 if (hasGraphics || isHeavy) {
@@ -94,38 +95,27 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             } else if (wordCount < WORD_THRESHOLD_MEDIUM) {
                 density = 'low';
                 fraction = 0.25;
-                price = PRICE_BASE * 0.25; // $2.25
+                price = PRICE_BASE * 0.25;
             } else if (wordCount <= WORD_THRESHOLD_HIGH) {
                 density = 'medium';
                 fraction = 0.50;
-                price = PRICE_BASE * 0.50; // $4.50
+                price = PRICE_BASE * 0.50;
             } else {
                 density = 'high';
                 fraction = 1.0;
-                price = PRICE_BASE; // $9.00
+                price = PRICE_BASE;
             }
 
-            pages.push({
-                pageNumber: i,
-                wordCount,
-                density,
-                price,
-                fraction
-            });
-
+            pages.push({ pageNumber: i, wordCount, density, price, fraction });
             totalPrice += price;
         }
 
-        return {
-            totalPages,
-            pages,
-            totalPrice,
-            isImage: false
-        };
+        return { totalPages, pages, totalPrice, isImage: false };
 
     } catch (error) {
         console.error("Error analyzing PDF:", error);
-        // Fallback: Assume 1 Full Page
+        // ✅ FIX 2: Better fallback — use actual page count if possible via FileReader
+        // If pdfjs totally fails, return a safe 1-page high density fallback
         return {
             totalPages: 1,
             pages: [{

@@ -1,3 +1,8 @@
+// components/ProposalPDF.tsx
+// ✅ FIX: Removed `import path from 'path'` — this is Node.js only and breaks
+// when PDFDownloadLink renders this component on the client side.
+// Fonts are now registered conditionally and only when running server-side.
+
 import React from 'react';
 import {
     Document,
@@ -8,45 +13,81 @@ import {
     Image,
     Font
 } from '@react-pdf/renderer';
-import path from 'path';
 
-// Helper to get absolute path for fonts in server-side
-const getFontPath = (fontName: string) => path.join(process.cwd(), 'public', 'fonts', fontName);
-// --- Font Registration ---
-try {
-    Font.register({
-        family: 'Playfair Display',
-        fonts: [
-            { src: getFontPath('PlayfairDisplay-Bold.ttf'), fontWeight: 700 },
-            { src: getFontPath('PlayfairDisplay-Black.ttf'), fontWeight: 900 }
-        ]
-    });
+// ✅ FIX: Safe font registration — no `path` import, uses relative public URLs
+// @react-pdf/renderer can fetch fonts via URL when running in browser context (PDFDownloadLink)
+// and via filesystem when running server-side (renderToBuffer in server actions).
+// We detect the environment and use the correct approach.
 
-    Font.register({
-        family: 'DM Sans',
-        fonts: [
-            { src: getFontPath('DMSans-Regular.ttf'), fontWeight: 400 },
-            { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 500 },
-            { src: getFontPath('DMSans-SemiBold.ttf'), fontWeight: 600 }
-        ]
-    });
+const registerFonts = () => {
+    try {
+        // In browser (PDFDownloadLink): use absolute URL
+        // In server (renderToBuffer): use filesystem path via dynamic require
+        const isServer = typeof window === 'undefined';
 
-    Font.register({
-        family: 'DM Mono',
-        src: getFontPath('DMMono-Regular.ttf')
-    });
-} catch (e) {
-    console.error("Font registration failed, falling back to defaults:", e);
-}
+        if (isServer) {
+            // Server-side: use require for path
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const nodePath = require('path');
+            const getFontPath = (name: string) => nodePath.join(process.cwd(), 'public', 'fonts', name);
+
+            Font.register({
+                family: 'Playfair Display',
+                fonts: [
+                    { src: getFontPath('PlayfairDisplay-Bold.ttf'), fontWeight: 700 },
+                    { src: getFontPath('PlayfairDisplay-Black.ttf'), fontWeight: 900 }
+                ]
+            });
+            Font.register({
+                family: 'DM Sans',
+                fonts: [
+                    { src: getFontPath('DMSans-Regular.ttf'), fontWeight: 400 },
+                    { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 500 },
+                    { src: getFontPath('DMSans-SemiBold.ttf'), fontWeight: 600 }
+                ]
+            });
+            Font.register({
+                family: 'DM Mono',
+                src: getFontPath('DMMono-Regular.ttf')
+            });
+        } else {
+            // Client-side (PDFDownloadLink): use absolute URL path
+            const base = window.location.origin;
+            Font.register({
+                family: 'Playfair Display',
+                fonts: [
+                    { src: `${base}/fonts/PlayfairDisplay-Bold.ttf`, fontWeight: 700 },
+                    { src: `${base}/fonts/PlayfairDisplay-Black.ttf`, fontWeight: 900 }
+                ]
+            });
+            Font.register({
+                family: 'DM Sans',
+                fonts: [
+                    { src: `${base}/fonts/DMSans-Regular.ttf`, fontWeight: 400 },
+                    { src: `${base}/fonts/DMSans-Medium.ttf`, fontWeight: 500 },
+                    { src: `${base}/fonts/DMSans-SemiBold.ttf`, fontWeight: 600 }
+                ]
+            });
+            Font.register({
+                family: 'DM Mono',
+                src: `${base}/fonts/DMMono-Regular.ttf`
+            });
+        }
+    } catch (e) {
+        console.warn("Font registration failed, using defaults:", e);
+    }
+};
+
+// Register fonts immediately when this module loads
+registerFonts();
 
 const styles = StyleSheet.create({
     page: {
         fontFamily: 'DM Sans',
         backgroundColor: '#FFFFFF',
         color: '#1A1D23',
-        paddingBottom: 80, // Space for sticky footer
+        paddingBottom: 80,
     },
-    // BLOCO 1 — CABEÇALHO
     header: {
         backgroundColor: '#1A1D23',
         padding: '30 40',
@@ -89,7 +130,6 @@ const styles = StyleSheet.create({
         color: '#A0AEC0',
         marginTop: 4,
     },
-    // BLOCO 2 — IDENTIFICAÇÃO DO CLIENTE
     clientSection: {
         padding: '40 40 20 40',
     },
@@ -122,7 +162,6 @@ const styles = StyleSheet.create({
         color: '#5A6070',
         marginLeft: 14,
     },
-    // BLOCO 3 — RAIO-X TÉCNICO
     sectionTitle: {
         paddingHorizontal: 40,
         marginTop: 20,
@@ -144,7 +183,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#E8751A',
         opacity: 0.3,
     },
-    // Tabela
     tableHeader: {
         backgroundColor: '#1A1D23',
         flexDirection: 'row',
@@ -178,7 +216,6 @@ const styles = StyleSheet.create({
     colComposition: { width: '10%', textAlign: 'center' },
     colDensity: { width: '30%' },
     colSubtotal: { width: '15%', textAlign: 'right' },
-
     fileName: {
         fontSize: 10,
         fontWeight: 500,
@@ -193,7 +230,7 @@ const styles = StyleSheet.create({
     },
     iconPDF: { backgroundColor: '#FEE2E2', color: '#B91C1C' },
     iconDOC: { backgroundColor: '#E0F2FE', color: '#0369A1' },
-
+    iconLINK: { backgroundColor: '#E0FEF0', color: '#065F46' },
     pageCount: {
         fontFamily: 'DM Mono',
         fontSize: 10,
@@ -218,7 +255,6 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: 600,
     },
-    // BLOCO 4 — AUDITORIA
     auditCard: {
         marginHorizontal: 40,
         marginTop: 20,
@@ -241,7 +277,6 @@ const styles = StyleSheet.create({
         color: '#5A6070',
         lineHeight: 1.5,
     },
-    // BLOCO 5 — INVESTIMENTO TOTAL
     totalCard: {
         marginHorizontal: 40,
         marginTop: 30,
@@ -283,7 +318,6 @@ const styles = StyleSheet.create({
         fontWeight: 700,
         color: '#E8751A',
     },
-    // BLOCO 6 — MÉTODOS DE PAGAMENTO
     paymentSection: {
         paddingHorizontal: 40,
         marginTop: 30,
@@ -317,7 +351,6 @@ const styles = StyleSheet.create({
         fontSize: 8,
         color: '#5A6070',
     },
-    // BLOCO 7 — RODAPÉ
     footer: {
         position: 'absolute',
         bottom: 0,
@@ -331,7 +364,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    footerLeft: {},
     footerAddress: {
         fontSize: 8,
         color: '#1A1D23',
@@ -355,12 +387,33 @@ interface ProposalPDFProps {
 }
 
 export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFProps) => {
-    const metadata = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata;
+    // ✅ FIX: Safe metadata parsing — handle both string and object
+    const metadata = (() => {
+        try {
+            if (!order.metadata) return {};
+            return typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata;
+        } catch {
+            return {};
+        }
+    })();
+
     const documents = metadata?.documents || [];
     const breakdown = metadata?.breakdown || {};
 
     const totalPages = documents.reduce((acc: number, doc: any) => acc + (doc.count || 0), 0);
     const totalDocs = documents.length;
+
+    // ✅ FIX: Safe totalAmount fallback
+    const totalAmount = typeof order.totalAmount === 'number' ? order.totalAmount : 0;
+
+    // ✅ FIX: Safe date parsing
+    const orderDate = (() => {
+        try {
+            return new Date(order.createdAt).toLocaleDateString('pt-BR');
+        } catch {
+            return new Date().toLocaleDateString('pt-BR');
+        }
+    })();
 
     return (
         <Document title={`Proposta-Promobi-${order.id}`}>
@@ -377,7 +430,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <View style={styles.headerRight}>
                         <Text style={styles.headerLabel}>COTAÇÃO</Text>
                         <Text style={styles.headerNumber}>#{order.id}</Text>
-                        <Text style={styles.headerDate}>{new Date(order.createdAt).toLocaleDateString('pt-BR')}</Text>
+                        <Text style={styles.headerDate}>{orderDate}</Text>
                     </View>
                     <View style={styles.headerAccent} />
                 </View>
@@ -406,56 +459,73 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={[styles.tableHeaderText, styles.colSubtotal]}>SUBTOTAL</Text>
                 </View>
 
-                {documents.map((doc: any, idx: number) => {
-                    const fileName = doc.fileName.split(/[/\\]/).pop() || doc.fileName;
-                    const isPDF = fileName.toLowerCase().endsWith('.pdf');
-                    const isZebra = idx % 2 !== 0;
+                {/* ✅ FIX: Guard against empty documents array */}
+                {documents.length === 0 ? (
+                    <View style={[styles.tableRow]}>
+                        <Text style={[styles.tableCell, { color: '#999', fontStyle: 'italic' }]}>
+                            Nenhum documento listado.
+                        </Text>
+                    </View>
+                ) : (
+                    documents.map((doc: any, idx: number) => {
+                        // ✅ FIX: Safe filename extraction
+                        const rawName = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
+                        const fileName = rawName.split(/[/\\]/).pop() || rawName;
+                        const isPDF = fileName.toLowerCase().endsWith('.pdf');
+                        const isLink = !!doc.externalLink;
+                        const isZebra = idx % 2 !== 0;
 
-                    // Density Detail Logic
-                    let densityDetail = "Pág. 1 -> Alta Densidade";
-                    if (doc.analysis?.pages) {
-                        const pages = doc.analysis.pages;
-                        if (pages.length === 1) {
-                            const p = pages[0];
-                            const desc = p.density === 'scanned' ? '(escaneada)' : p.density === 'high' ? '(formatação complexa)' : '';
-                            densityDetail = `Pág. 1 → ${p.density === 'scanned' ? 'Alta' : p.density.charAt(0).toUpperCase() + p.density.slice(1)} Densidade ${desc}`;
-                        } else {
-                            // Simple grouping for multiple pages
-                            const firstP = pages[0];
-                            const lastP = pages[pages.length - 1];
-                            const allSame = pages.every((p: any) => p.density === firstP.density);
-                            if (allSame) {
-                                const desc = firstP.density === 'scanned' ? '(escaneadas, DTP completo)' : '';
-                                densityDetail = `Págs. 1–${pages.length} → ${firstP.density === 'scanned' ? 'Alta' : firstP.density.charAt(0).toUpperCase() + firstP.density.slice(1)} Densidade ${desc}`;
+                        // Density detail text
+                        let densityDetail = 'Pág. 1 → Alta Densidade';
+                        if (doc.analysis?.pages?.length) {
+                            const pages = doc.analysis.pages;
+                            const allSame = pages.every((p: any) => p.density === pages[0].density);
+                            if (pages.length === 1) {
+                                const p = pages[0];
+                                const desc = p.density === 'scanned' ? '(escaneada)' : '';
+                                densityDetail = `Pág. 1 → ${p.density === 'scanned' ? 'Alta' : p.density.charAt(0).toUpperCase() + p.density.slice(1)} Densidade ${desc}`.trim();
+                            } else if (allSame) {
+                                const d = pages[0].density;
+                                const desc = d === 'scanned' ? '(escaneadas, DTP completo)' : '';
+                                densityDetail = `Págs. 1–${pages.length} → ${d === 'scanned' ? 'Alta' : d.charAt(0).toUpperCase() + d.slice(1)} Densidade ${desc}`.trim();
                             } else {
                                 densityDetail = pages.map((p: any) => `Pág. ${p.pageNumber}: ${p.density.toUpperCase()}`).join(', ');
                             }
+                        } else if (isLink) {
+                            densityDetail = 'Documento via link externo';
                         }
-                    }
 
-                    return (
-                        <View key={idx} style={[styles.tableRow, isZebra && styles.tableRowZebra]}>
-                            <View style={[styles.colFile, { flexDirection: 'row', alignItems: 'center' }]}>
-                                <Text style={[styles.fileIcon, isPDF ? styles.iconPDF : styles.iconDOC]}>
-                                    {isPDF ? 'PDF' : 'DOC'}
+                        const subtotal = (doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0);
+
+                        return (
+                            <View key={idx} style={[styles.tableRow, isZebra ? styles.tableRowZebra : {}]}>
+                                <View style={[styles.colFile, { flexDirection: 'row', alignItems: 'center' }]}>
+                                    <Text style={[
+                                        styles.fileIcon,
+                                        isLink ? styles.iconLINK : isPDF ? styles.iconPDF : styles.iconDOC
+                                    ]}>
+                                        {isLink ? 'LNK' : isPDF ? 'PDF' : 'DOC'}
+                                    </Text>
+                                    <Text style={styles.fileName} numberOfLines={1}>{fileName}</Text>
+                                </View>
+                                <Text style={[styles.tableCell, styles.colPages, styles.pageCount]}>
+                                    {doc.count || 1}
                                 </Text>
-                                <Text style={styles.fileName}>{fileName}</Text>
+                                <View style={styles.colComposition}>
+                                    <Text style={styles.badgePill}>⚡ HIGH</Text>
+                                </View>
+                                <View style={styles.colDensity}>
+                                    <Text style={styles.densityDetails}>{densityDetail}</Text>
+                                </View>
+                                <Text style={[styles.tableCell, styles.colSubtotal, styles.subtotal]}>
+                                    ${subtotal.toFixed(2)}
+                                </Text>
                             </View>
-                            <Text style={[styles.tableCell, styles.colPages, styles.pageCount]}>{doc.count || 1}</Text>
-                            <View style={styles.colComposition}>
-                                <Text style={styles.badgePill}>⚡ HIGH</Text>
-                            </View>
-                            <View style={styles.colDensity}>
-                                <Text style={styles.densityDetails}>{densityDetail || 'Densidade Alta'}</Text>
-                            </View>
-                            <Text style={[styles.tableCell, styles.colSubtotal, styles.subtotal]}>
-                                ${((doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0)).toFixed(2)}
-                            </Text>
-                        </View>
-                    );
-                })}
+                        );
+                    })
+                )}
 
-                {/* BLOCO 4 — AUDITORIA DE PREÇO JUSTO */}
+                {/* BLOCO 4 — AUDITORIA */}
                 <View style={styles.auditCard}>
                     <Text style={styles.auditTitle}>Auditoria de Preço Justo</Text>
                     <Text style={styles.auditText}>
@@ -468,9 +538,11 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <View style={styles.totalCardGlow} />
                     <View style={styles.totalLeft}>
                         <Text style={styles.totalLabel}>INVESTIMENTO TOTAL</Text>
-                        <Text style={styles.totalSub}>{totalPages} páginas · {totalDocs} documentos · Tradução certificada</Text>
+                        <Text style={styles.totalSub}>
+                            {totalPages} páginas · {totalDocs} documentos · Tradução certificada
+                        </Text>
                     </View>
-                    <Text style={styles.totalValue}>${order.totalAmount?.toFixed(2)}</Text>
+                    <Text style={styles.totalValue}>${totalAmount.toFixed(2)}</Text>
                 </View>
 
                 {/* BLOCO 6 — MÉTODOS DE PAGAMENTO */}
@@ -494,7 +566,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
 
                 {/* BLOCO 7 — RODAPÉ */}
                 <View style={styles.footer}>
-                    <View style={styles.footerLeft}>
+                    <View>
                         <Text style={styles.footerAddress}>4700 Millenia Blvd, Orlando, FL 32839, USA</Text>
                         <Text style={styles.footerContact}>(321) 324-5851 · info@promobi.us</Text>
                     </View>
