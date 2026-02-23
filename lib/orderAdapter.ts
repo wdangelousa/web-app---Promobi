@@ -38,32 +38,56 @@ export function safeParseJSON(jsonStr: string | null | undefined, fallback: any 
 
 /**
  * Normalizes an order object from Prisma to a safe structure for UI components.
+ * This is EXTREMELY explicit to avoid issues with spreading Prisma proxies
+ * or carrying over circular/non-serializable references.
  */
 export function normalizeOrder(order: any): NormalizedOrder {
+    if (!order) {
+        throw new Error("Cannot normalize null order");
+    }
+
     const defaultUser = { fullName: 'N/A', email: 'N/A' };
 
     // Safely parse metadata
-    const parsedMetadata = typeof order.metadata === 'string'
-        ? safeParseJSON(order.metadata, {})
-        : (order.metadata || {});
+    let parsedMetadata = {};
+    const rawMetadata = order.metadata;
+    if (typeof rawMetadata === 'string') {
+        parsedMetadata = safeParseJSON(rawMetadata, {});
+    } else if (rawMetadata && typeof rawMetadata === 'object') {
+        parsedMetadata = rawMetadata;
+    }
+
+    // Safely handle documents
+    const safeDocuments = Array.isArray(order.documents)
+        ? order.documents.map((doc: any) => ({
+            id: doc.id,
+            docType: doc.docType || 'Documento',
+            originalFileUrl: doc.originalFileUrl || null,
+            translatedFileUrl: doc.translatedFileUrl || null,
+            count: typeof doc.count === 'number' ? doc.count : 1,
+            // Carry over any other primitive fields needed
+            analysis: doc.analysis || null,
+            notarized: !!doc.notarized,
+            translatedText: typeof doc.translatedText === 'string' ? doc.translatedText : null
+        }))
+        : [];
 
     return {
-        ...order,
-        id: typeof order.id === 'number' ? order.id : 0,
-        status: order.status || 'PENDING',
+        id: typeof order.id === 'number' ? order.id : (parseInt(order.id) || 0),
+        status: String(order.status || 'PENDING'),
         totalAmount: typeof order.totalAmount === 'number' ? order.totalAmount : 0,
         createdAt: order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt || Date.now()),
         user: {
-            fullName: order.user?.fullName || defaultUser.fullName,
-            email: order.user?.email || defaultUser.email,
-            phone: order.user?.phone || null,
+            fullName: String(order.user?.fullName || defaultUser.fullName),
+            email: String(order.user?.email || defaultUser.email),
+            phone: order.user?.phone ? String(order.user.phone) : null,
         },
-        documents: Array.isArray(order.documents) ? order.documents : [],
+        documents: safeDocuments,
         metadata: parsedMetadata,
-        urgency: order.urgency || 'standard',
-        uspsTracking: order.uspsTracking || null,
+        urgency: String(order.urgency || 'standard'),
+        uspsTracking: order.uspsTracking ? String(order.uspsTracking) : null,
         requiresHardCopy: !!order.requiresHardCopy,
-        deliveryUrl: order.deliveryUrl || null,
+        deliveryUrl: order.deliveryUrl ? String(order.deliveryUrl) : null,
         hasTranslation: order.hasTranslation !== undefined ? !!order.hasTranslation : true,
         hasNotary: order.hasNotary !== undefined ? !!order.hasNotary : false,
     };

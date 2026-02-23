@@ -9,6 +9,59 @@ import { normalizeOrder } from '@/lib/orderAdapter';
 
 export const dynamic = 'force-dynamic';
 
+// Helper Functions (Outside component to avoid re-creation and potential hydration mismatch issues)
+const getStatusColor = (status: string) => {
+    switch (status) {
+        case 'PAID':
+            return 'bg-green-100 text-green-800 border-green-200';
+        case 'COMPLETED':
+            return 'bg-blue-100 text-blue-800 border-blue-200';
+        case 'PENDING':
+        case 'PENDING_PAYMENT':
+            return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        case 'TRANSLATING':
+            return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+        case 'NOTARIZING':
+            return 'bg-purple-100 text-purple-800 border-purple-200';
+        case 'FAILED':
+        case 'CANCELLED':
+            return 'bg-red-100 text-red-800 border-red-200';
+        case 'READY_FOR_REVIEW':
+            return 'bg-teal-100 text-teal-800 border-teal-200';
+        case 'MANUAL_TRANSLATION_NEEDED':
+            return 'bg-orange-100 text-orange-800 border-orange-200';
+        default:
+            return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+};
+
+const formatCurrency = (amount: number) => {
+    try {
+        const val = typeof amount === 'number' ? amount : 0;
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+        }).format(val);
+    } catch (e) {
+        return '$0.00';
+    }
+};
+
+const formatDate = (date: any) => {
+    if (!date) return 'N/A';
+    try {
+        return new Intl.DateTimeFormat('en-US', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        }).format(new Date(date));
+    } catch (e) {
+        return 'Invalid Date';
+    }
+};
+
 export default async function AdminOrdersPage() {
     const currentUser = await getCurrentUser();
 
@@ -18,19 +71,34 @@ export default async function AdminOrdersPage() {
 
     let rawOrders = [];
     try {
+        // Optimized query: ONLY select what we actually render
         rawOrders = await prisma.order.findMany({
-            include: {
-                user: true,
-                documents: true,
+            select: {
+                id: true,
+                status: true,
+                totalAmount: true,
+                createdAt: true,
+                urgency: true,
+                metadata: true,
+                user: {
+                    select: {
+                        fullName: true,
+                        email: true,
+                    }
+                },
+                documents: {
+                    select: {
+                        id: true,
+                    }
+                }
             },
             orderBy: {
                 createdAt: 'desc',
             },
+            take: 200, // Limit for performance and to prevent payload explosion
         });
     } catch (err) {
         console.error("Critical error fetching orders:", err);
-        // Page level error.tsx will catch this if we re-throw, 
-        // but here we can at least ensure we have an empty array if somehow it fails partially
         throw err;
     }
 
@@ -44,60 +112,13 @@ export default async function AdminOrdersPage() {
         }
     }).filter(Boolean);
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'PAID':
-                return 'bg-green-100 text-green-800 border-green-200';
-            case 'COMPLETED':
-                return 'bg-blue-100 text-blue-800 border-blue-200';
-            case 'PENDING':
-                return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-            case 'TRANSLATING':
-                return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-            case 'NOTARIZING':
-                return 'bg-purple-100 text-purple-800 border-purple-200';
-            case 'FAILED':
-            case 'CANCELLED':
-                return 'bg-red-100 text-red-800 border-red-200';
-            case 'READY_FOR_REVIEW':
-                return 'bg-teal-100 text-teal-800 border-teal-200';
-            case 'MANUAL_TRANSLATION_NEEDED':
-                return 'bg-orange-100 text-orange-800 border-orange-200';
-            default:
-                return 'bg-gray-100 text-gray-800 border-gray-200';
-        }
-    };
-
-    const formatCurrency = (amount: number) => {
-        if (typeof amount !== 'number' || isNaN(amount)) return '$0.00';
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount);
-    };
-
-    const formatDate = (date: any) => {
-        if (!date) return 'N/A';
-        try {
-            return new Intl.DateTimeFormat('en-US', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-            }).format(new Date(date));
-        } catch (e) {
-            return 'Invalid Date';
-        }
-    };
-
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Gerenciamento de Pedidos</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Visualizando {orders.length} pedidos
+                        Visualizando os últimos {orders.length} pedidos
                     </p>
                 </div>
                 <Link
@@ -124,7 +145,7 @@ export default async function AdminOrdersPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {orders.map((order) => (
+                            {orders.map((order: any) => (
                                 <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900">
                                         #{order.id}
@@ -135,18 +156,22 @@ export default async function AdminOrdersPage() {
                                                 <User className="w-4 h-4" />
                                             </div>
                                             <div>
-                                                <div className="font-medium text-gray-900">{order.user?.fullName || 'N/A'}</div>
-                                                <div className="text-xs text-gray-500">{order.user?.email || 'N/A'}</div>
+                                                <div className="font-medium text-gray-900 truncate max-w-[150px]" title={order.user?.fullName}>
+                                                    {order.user?.fullName || 'N/A'}
+                                                </div>
+                                                <div className="text-xs text-gray-500 truncate max-w-[150px]" title={order.user?.email}>
+                                                    {order.user?.email || 'N/A'}
+                                                </div>
                                             </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
                                         <span
-                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(
+                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusColor(
                                                 order.status
                                             )}`}
                                         >
-                                            {order.status}
+                                            {order.status?.replace(/_/g, ' ')}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-gray-500">
@@ -155,22 +180,22 @@ export default async function AdminOrdersPage() {
                                             {formatDate(order.createdAt)}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 font-medium text-gray-900">
+                                    <td className="px-6 py-4 font-bold text-gray-900">
                                         {formatCurrency(order.totalAmount)}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-1 text-gray-500">
                                             <FileText className="w-4 h-4" />
-                                            <span>{order.documents.length} arquivos</span>
+                                            <span>{(order.documents || []).length} arquivos</span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <Link
                                             href={`/admin/orders/${order.id}`}
-                                            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                         >
                                             <Eye className="w-3.5 h-3.5" />
-                                            Ver Detalhes
+                                            Workbench
                                         </Link>
                                     </td>
                                 </tr>
