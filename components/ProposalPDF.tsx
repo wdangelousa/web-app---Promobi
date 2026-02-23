@@ -12,9 +12,7 @@ import path from 'path';
 
 // Helper to get absolute path for fonts in server-side
 const getFontPath = (fontName: string) => path.join(process.cwd(), 'public', 'fonts', fontName);
-
 // --- Font Registration ---
-/*
 try {
     Font.register({
         family: 'Playfair Display',
@@ -29,7 +27,7 @@ try {
         fonts: [
             { src: getFontPath('DMSans-Regular.ttf'), fontWeight: 400 },
             { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 500 },
-            { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 600 }
+            { src: getFontPath('DMSans-SemiBold.ttf'), fontWeight: 600 }
         ]
     });
 
@@ -40,11 +38,10 @@ try {
 } catch (e) {
     console.error("Font registration failed, falling back to defaults:", e);
 }
-*/
 
 const styles = StyleSheet.create({
     page: {
-        fontFamily: 'Helvetica',
+        fontFamily: 'DM Sans',
         backgroundColor: '#FFFFFF',
         color: '#1A1D23',
         paddingBottom: 80, // Space for sticky footer
@@ -81,13 +78,13 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     headerNumber: {
-        fontFamily: 'Helvetica-Bold',
+        fontFamily: 'Playfair Display',
         fontSize: 32,
         fontWeight: 700,
         color: '#FFFFFF',
     },
     headerDate: {
-        fontFamily: 'Courier',
+        fontFamily: 'DM Mono',
         fontSize: 9,
         color: '#A0AEC0',
         marginTop: 4,
@@ -115,7 +112,7 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     clientName: {
-        fontFamily: 'Helvetica-Bold',
+        fontFamily: 'Playfair Display',
         fontSize: 24,
         fontWeight: 700,
         color: '#1A1D23',
@@ -198,7 +195,7 @@ const styles = StyleSheet.create({
     iconDOC: { backgroundColor: '#E0F2FE', color: '#0369A1' },
 
     pageCount: {
-        fontFamily: 'Courier',
+        fontFamily: 'DM Mono',
         fontSize: 10,
     },
     badgePill: {
@@ -211,13 +208,13 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
     },
     densityDetails: {
-        fontFamily: 'Courier',
+        fontFamily: 'DM Mono',
         fontSize: 8,
         color: '#5A6070',
         lineHeight: 1.4,
     },
     subtotal: {
-        fontFamily: 'Courier-Bold',
+        fontFamily: 'DM Mono',
         fontSize: 11,
         fontWeight: 600,
     },
@@ -281,7 +278,7 @@ const styles = StyleSheet.create({
         color: '#718096',
     },
     totalValue: {
-        fontFamily: 'Helvetica-Bold',
+        fontFamily: 'Playfair Display',
         fontSize: 40,
         fontWeight: 700,
         color: '#E8751A',
