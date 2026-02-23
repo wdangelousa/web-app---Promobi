@@ -5,6 +5,8 @@ import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
 import { Role } from '@prisma/client';
 
+import { normalizeOrder } from '@/lib/orderAdapter';
+
 export const dynamic = 'force-dynamic';
 
 export default async function AdminOrdersPage() {
@@ -14,15 +16,33 @@ export default async function AdminOrdersPage() {
     if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
     if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
 
-    const orders = await prisma.order.findMany({
-        include: {
-            user: true,
-            documents: true,
-        },
-        orderBy: {
-            createdAt: 'desc',
-        },
-    });
+    let rawOrders = [];
+    try {
+        rawOrders = await prisma.order.findMany({
+            include: {
+                user: true,
+                documents: true,
+            },
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+    } catch (err) {
+        console.error("Critical error fetching orders:", err);
+        // Page level error.tsx will catch this if we re-throw, 
+        // but here we can at least ensure we have an empty array if somehow it fails partially
+        throw err;
+    }
+
+    // Shield against malformed data right at the source
+    const orders = rawOrders.map(o => {
+        try {
+            return normalizeOrder(o);
+        } catch (e) {
+            console.error(`Failed to normalize order #${o?.id}:`, e);
+            return null;
+        }
+    }).filter(Boolean);
 
     const getStatusColor = (status: string) => {
         switch (status) {

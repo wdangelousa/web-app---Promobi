@@ -120,12 +120,16 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
 
     // Safe Parse Metadata if exists
     let orderMetadata: any = null
-    try {
-        if (order.metadata) {
-            orderMetadata = JSON.parse(order.metadata)
+    if (order.metadata) {
+        if (typeof order.metadata === 'object') {
+            orderMetadata = order.metadata;
+        } else {
+            try {
+                orderMetadata = JSON.parse(order.metadata)
+            } catch (e) {
+                console.error("Failed to parse order metadata", e)
+            }
         }
-    } catch (e) {
-        console.error("Failed to parse order metadata", e)
     }
 
     return (
@@ -272,11 +276,11 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                 </div>
 
                                                 {/* Density Details */}
-                                                {doc.analysis?.pages && (
+                                                {doc.analysis?.pages && Array.isArray(doc.analysis.pages) && (
                                                     <div className="pl-7 text-[10px] text-gray-400 space-y-0.5">
-                                                        {doc.analysis.pages.map((p: any) => (
-                                                            <div key={p.pageNumber}>
-                                                                Pg {p.pageNumber}: {p.density?.toUpperCase()} (${(p.price || 0).toFixed(2)})
+                                                        {doc.analysis.pages.map((p: any, pIdx: number) => (
+                                                            <div key={pIdx}>
+                                                                Pg {p?.pageNumber || '?'}: {p?.density?.toUpperCase() || 'N/A'} (${(p?.price || 0).toFixed(2)})
                                                             </div>
                                                         ))}
                                                     </div>
@@ -307,7 +311,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                         )}
                                         <div className="border-t border-slate-600 pt-2 flex justify-between font-bold text-lg text-white mt-2">
                                             <span>Total (Paid)</span>
-                                            <span>${(order.totalAmount || 0).toFixed(2)}</span>
+                                            <span>${(typeof order.totalAmount === 'number' ? order.totalAmount : 0).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 </div>

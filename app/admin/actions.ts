@@ -3,6 +3,7 @@
 import { OrderStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import prisma from '../../lib/prisma'
+import { normalizeOrder } from '../../lib/orderAdapter'
 
 // Optimized for Kanban Board (Lightweight)
 export async function getKanbanOrders() {
@@ -19,7 +20,8 @@ export async function getKanbanOrders() {
                 metadata: true,
                 user: {
                     select: {
-                        fullName: true
+                        fullName: true,
+                        email: true
                     }
                 },
                 documents: {
@@ -32,7 +34,18 @@ export async function getKanbanOrders() {
                 createdAt: 'desc'
             }
         })
-        return { success: true, data: orders }
+
+        // Shield against malformed data right at the source
+        const safeOrders = orders.map(o => {
+            try {
+                return normalizeOrder(o);
+            } catch (e) {
+                console.error(`Failed to normalize kanban order #${o?.id}:`, e);
+                return null;
+            }
+        }).filter(Boolean);
+
+        return { success: true, data: safeOrders }
     } catch (error) {
         console.error("Failed to fetch orders:", error)
         return { success: false, error: "Failed to fetch orders" }

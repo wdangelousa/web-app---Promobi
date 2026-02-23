@@ -12,7 +12,12 @@ const formatCurrency = (value: number) => {
 
 // Helper to format date
 const formatDate = (dateString: Date | string) => {
-    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    } catch (e) {
+        return 'Inv. Date';
+    }
 }
 
 export default function AdminOrderList({ initialOrders }: { initialOrders: any[] }) {
@@ -148,7 +153,7 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                     </span>
                                 </td>
                                 <td className="p-4 text-right text-slate-400 text-sm">
-                                    {formatDate(order.createdAt)}
+                                    {formatDate(order?.createdAt)}
                                 </td>
                                 <td className="p-4 text-right">
                                     <button
@@ -179,10 +184,10 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                         <div className="p-6 border-b border-slate-700 flex justify-between items-start">
                             <div>
                                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                    Pedido #{selectedOrder.id}
-                                    {selectedOrder.status === 'COMPLETED' && <CheckCircle className="w-5 h-5 text-green-500" />}
+                                    Pedido #{selectedOrder?.id || 'N/A'}
+                                    {selectedOrder?.status === 'COMPLETED' && <CheckCircle className="w-5 h-5 text-green-500" />}
                                 </h3>
-                                <p className="text-sm text-slate-400 mt-1">{selectedOrder.user?.fullName}</p>
+                                <p className="text-sm text-slate-400 mt-1">{selectedOrder?.user?.fullName || 'Cliente N/A'}</p>
                             </div>
                             <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
                                 <X className="w-6 h-6" />
