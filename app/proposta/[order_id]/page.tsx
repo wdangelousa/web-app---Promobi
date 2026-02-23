@@ -2,8 +2,9 @@ import { notFound } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import ProposalClient from './ProposalClient'
 
-export async function generateMetadata({ params }: { params: { order_id: string } }) {
-    const orderId = parseInt(params.order_id, 10)
+export async function generateMetadata({ params }: { params: Promise<{ order_id: string }> }) {
+    const { order_id } = await params;
+    const orderId = parseInt(order_id, 10)
     if (isNaN(orderId)) return { title: 'Proposta Inválida' }
 
     return {
@@ -12,8 +13,9 @@ export async function generateMetadata({ params }: { params: { order_id: string 
     }
 }
 
-export default async function ProposalPage({ params }: { params: { order_id: string } }) {
-    const orderId = parseInt(params.order_id, 10)
+export default async function ProposalPage({ params }: { params: Promise<{ order_id: string }> }) {
+    const { order_id } = await params;
+    const orderId = parseInt(order_id, 10)
     if (isNaN(orderId)) return notFound()
 
     const order = await prisma.order.findUnique({
