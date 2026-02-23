@@ -11,12 +11,14 @@ import {
     Send,
     FileText
 } from 'lucide-react'
+import { getGlobalSettings, GlobalSettings } from '../../actions/settings'
+import { PDFDownloadLink } from '@react-pdf/renderer'
+import { ProposalPDF } from '../../../components/ProposalPDF'
 import { DetailOrder } from './types'
 import { updateOrderStatus, updateTrackingCode } from '../actions'
 import { uploadDelivery } from '../../actions/uploadDelivery'
 import { sendDelivery } from '../../actions/sendDelivery'
 import { OrderStatus } from '@prisma/client'
-import { getGlobalSettings, GlobalSettings } from '../../actions/settings'
 
 type Props = {
     order: DetailOrder | null
@@ -141,9 +143,25 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                         <h3 className="text-xl font-bold text-gray-900">Detalhes do Pedido <span className="text-gray-400">#{order.id}</span></h3>
                         <p className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()} • {order.user.fullName}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
-                        <X className="h-6 w-6 text-gray-500" />
-                    </button>
+                    <div className="flex items-center gap-3">
+                        {globalSettings && (
+                            <PDFDownloadLink
+                                document={<ProposalPDF order={order} globalSettings={globalSettings} />}
+                                fileName={`Proposta-Promobi-${order.id}.pdf`}
+                                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95"
+                            >
+                                {({ loading }) => (
+                                    <>
+                                        <Download className="h-4 w-4" />
+                                        {loading ? 'Preparando...' : 'Exportar Proposta PDF'}
+                                    </>
+                                )}
+                            </PDFDownloadLink>
+                        )}
+                        <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                            <X className="h-6 w-6 text-gray-500" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-8">

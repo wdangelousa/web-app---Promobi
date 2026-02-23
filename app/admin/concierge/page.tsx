@@ -171,6 +171,31 @@ export default function ConciergePage() {
         ))
     }
 
+    const updatePageDensity = (docId: string, pageIdx: number, newDensity: 'high' | 'medium' | 'low' | 'blank' | 'scanned') => {
+        setDocuments(prev => prev.map(doc => {
+            if (doc.id === docId && doc.analysis) {
+                const newPages = [...doc.analysis.pages]
+                const page = newPages[pageIdx]
+                const base = globalSettings?.basePrice || 9.00
+
+                let fraction = 1.0
+                let price = base
+
+                if (newDensity === 'blank') { fraction = 0; price = 0; }
+                else if (newDensity === 'low') { fraction = 0.25; price = base * 0.25; }
+                else if (newDensity === 'medium') { fraction = 0.5; price = base * 0.5; }
+                else { fraction = 1.0; price = base; } // high or scanned
+
+                newPages[pageIdx] = { ...page, density: newDensity, fraction, price }
+
+                const newTotalPrice = newPages.reduce((acc, p) => acc + p.price, 0)
+
+                return { ...doc, analysis: { ...doc.analysis, pages: newPages, totalPrice: newTotalPrice } }
+            }
+            return doc
+        }))
+    }
+
     const toggleDocExpand = (id: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
@@ -412,6 +437,11 @@ export default function ConciergePage() {
                                                                 <>
                                                                     <span className="text-gray-300">|</span>
                                                                     <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${densityColor} uppercase`}>{densityLabel}</span>
+                                                                    {doc.analysis.pages.some(p => p.density === 'scanned') && (
+                                                                        <span className="flex items-center gap-1 text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 animate-pulse">
+                                                                            🔴 SCAN/IMAGE
+                                                                        </span>
+                                                                    )}
                                                                 </>
                                                             )}
                                                         </div>
@@ -449,9 +479,29 @@ export default function ConciergePage() {
                                                                 else if (p.density === 'scanned') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Scanned'; }
 
                                                                 return (
-                                                                    <div key={pIdx} className="flex items-center justify-between text-[10px] bg-slate-50/50 py-1.5 px-3 rounded-xl border border-slate-100">
+                                                                    <div className="flex items-center justify-between text-[10px] bg-slate-50/50 py-1.5 px-3 rounded-xl border border-slate-100">
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="text-gray-400 font-bold w-7">Pg {p.pageNumber}:</span>
+
+                                                                            <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg mr-2">
+                                                                                {(['blank', 'low', 'medium', 'high'] as const).map((dType) => (
+                                                                                    <button
+                                                                                        key={dType}
+                                                                                        onClick={() => updatePageDensity(doc.id, pIdx, dType)}
+                                                                                        className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${p.density === dType
+                                                                                            ? dType === 'blank' ? 'bg-gray-200 text-gray-700' :
+                                                                                                dType === 'low' ? 'bg-green-500 text-white' :
+                                                                                                    dType === 'medium' ? 'bg-yellow-500 text-white' :
+                                                                                                        'bg-red-500 text-white'
+                                                                                            : 'text-slate-400 hover:bg-slate-50'
+                                                                                            }`}
+                                                                                        title={dType}
+                                                                                    >
+                                                                                        {dType === 'blank' ? '0%' : dType === 'low' ? '25%' : dType === 'medium' ? '50%' : '100%'}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+
                                                                             <span className={`font-black px-1.5 py-0.5 rounded text-[8px] uppercase ${pColor}`}>{pLabel}</span>
                                                                         </div>
                                                                         <div className="flex items-center gap-3">

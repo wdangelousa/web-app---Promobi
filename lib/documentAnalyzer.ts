@@ -66,9 +66,27 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
             let price = PRICE_BASE;
 
             if (wordCount === WORD_THRESHOLD_BLANK) {
-                density = 'blank';
-                fraction = 0.0;
-                price = 0.00;
+                // HEURISTIC FOR SCANS: 
+                // If text is empty, check if there are images or substantial path operators
+                const ops = await page.getOperatorList();
+                // Check for common image/graphics operators in PDF.js
+                const hasGraphics = ops.fnArray.some(fn =>
+                    fn === (pdfjsLib as any).OPS.paintImageXObject ||
+                    fn === (pdfjsLib as any).OPS.paintInlineImageXObject ||
+                    fn === (pdfjsLib as any).OPS.constructPath ||
+                    fn === (pdfjsLib as any).OPS.fill ||
+                    fn === (pdfjsLib as any).OPS.stroke
+                );
+
+                if (hasGraphics) {
+                    density = 'scanned';
+                    fraction = 1.0;
+                    price = PRICE_BASE;
+                } else {
+                    density = 'blank';
+                    fraction = 0.0;
+                    price = 0.00;
+                }
             } else if (wordCount < WORD_THRESHOLD_MEDIUM) {
                 density = 'low';
                 fraction = 0.25;

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import ProposalClient from './ProposalClient'
+import { getGlobalSettings } from '@/app/actions/settings'
 
 export async function generateMetadata({ params }: { params: Promise<{ order_id: string }> }) {
     const { order_id } = await params;
@@ -25,6 +26,8 @@ export default async function ProposalPage({ params }: { params: Promise<{ order
 
     if (!order) return notFound()
 
+    const globalSettings = await getGlobalSettings()
+
     // Pass the server-fetched data to the client component for interactivity
-    return <ProposalClient order={order as any} />
+    return <ProposalClient order={order as any} globalSettings={globalSettings} />
 }

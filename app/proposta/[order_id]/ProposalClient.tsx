@@ -7,7 +7,11 @@ import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Mail, Sma
 import { createCheckoutSession } from '@/app/actions/checkout'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 
-export default function ProposalClient({ order }: { order: any }) {
+import { PDFDownloadLink } from '@react-pdf/renderer'
+import { ProposalPDF } from '@/components/ProposalPDF'
+import { Download } from 'lucide-react'
+
+export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
     // Safety check for metadata
     const metadata = order.metadata ? JSON.parse(order.metadata) : null;
 
@@ -110,8 +114,22 @@ export default function ProposalClient({ order }: { order: any }) {
                     </div>
                     <Image src="/logo.png" width={180} height={60} alt="Promobi" className="h-10 w-auto mb-3" />
                     <h1 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">Proposta de Serviços de Tradução Certificada</h1>
-                    <div className="flex items-center gap-2 mt-2 text-sm text-slate-600 font-medium">
+                    <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-600 font-medium">
                         <span className="bg-slate-100 px-3 py-1 rounded-full text-slate-500">Cotação #{order.id}</span>
+                        {globalSettings && (
+                            <PDFDownloadLink
+                                document={<ProposalPDF order={order} globalSettings={globalSettings} />}
+                                fileName={`Proposta-Promobi-${order.id}.pdf`}
+                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95"
+                            >
+                                {({ loading }) => (
+                                    <>
+                                        <Download className="w-3 h-3" />
+                                        {loading ? 'Gerando...' : 'Baixar PDF'}
+                                    </>
+                                )}
+                            </PDFDownloadLink>
+                        )}
                         <span>•</span>
                         <span>{order.user.fullName}</span>
                     </div>
