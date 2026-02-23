@@ -49,10 +49,17 @@ export default async function AdminLayout({
         )
     }
 
+    // Data Sanitization for Admin Sidebar
+    const sanitizedUser = {
+        fullName: user.fullName || 'Analista',
+        email: user.email || '',
+        role: user.role
+    }
+
     return (
         <div className="min-h-screen flex bg-gray-50">
             {/* Sidebar */}
-            <AdminSidebar user={{ fullName: user.fullName, email: user.email, role: user.role }} />
+            <AdminSidebar user={sanitizedUser} />
 
             {/* Main Content */}
             <main className="flex-1 ml-64 p-8">

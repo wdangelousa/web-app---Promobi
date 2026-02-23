@@ -13,11 +13,13 @@ export async function approvePaymentManually(orderId: number) {
         });
 
         if (!order) {
-            return { success: false, error: 'Pedido não encontrado.' };
+            console.error(`[CRITICAL ACTION ERROR]: Order #${orderId} not found during manual bypass.`);
+            return { success: false, message: 'Pedido não encontrado.' };
         }
 
         if (order.status !== 'PENDING' && order.status !== 'PENDING_PAYMENT') {
-            return { success: false, error: `Pedido não pode ser aprovado. Status atual: ${order.status}` };
+            console.error(`[CRITICAL ACTION ERROR]: Order #${orderId} has invalid status: ${order.status}`);
+            return { success: false, message: `Pedido não pode ser aprovado. Status atual: ${order.status}` };
         }
 
         // 2. Update status to PAID
@@ -36,13 +38,13 @@ export async function approvePaymentManually(orderId: number) {
             console.log(`[Manual Bypass] Tradução DeepL concluída para o Pedido #${orderId}`);
             return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL concluída.' };
         } catch (err: any) {
-            console.error(`[Manual Bypass] Erro na task do DeepL para Pedido #${orderId}:`, err);
+            console.error(`[CRITICAL ACTION ERROR]: Erro na task do DeepL para Pedido #${orderId}:`, err);
             // We still return true because payment was approved successfully on Supabase
             return { success: true, message: 'Pagamento aprovado, mas houve falha ao contatar o tradutor automático.' };
         }
 
     } catch (error: any) {
-        console.error(`[Manual Bypass] Erro crítico ao aprovar pedido #${orderId}:`, error);
-        return { success: false, error: 'Falha interna ao aprovar o pagamento. Consulte os logs.' };
+        console.error(`[CRITICAL ACTION ERROR]: Erro crítico ao aprovar pedido #${orderId}:`, error);
+        return { success: false, message: 'Falha interna ao aprovar o pagamento. Consulte os logs da Vercel.' };
     }
 }

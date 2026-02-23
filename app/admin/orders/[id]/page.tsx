@@ -19,6 +19,20 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
         return <div className="p-8 text-center text-red-600">Pedido não encontrado</div>
     }
 
+    // Data Sanitization (Pruning) to prevent serialization errors in production
+    const sanitizedOrder = {
+        ...order,
+        createdAt: order.createdAt.toISOString(),
+        user: {
+            ...order.user,
+            createdAt: order.user.createdAt.toISOString()
+        },
+        documents: order.documents.map(doc => ({
+            ...doc,
+            createdAt: doc.createdAt.toISOString()
+        }))
+    }
+
     return (
         <div className="min-h-screen bg-gray-100 flex flex-col">
             {/* Header */}
@@ -29,22 +43,22 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                     </Link>
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">Workbench de Tradução</h1>
-                        <p className="text-xs text-gray-500">Pedido #{order.id} • {order.user.fullName}</p>
+                        <p className="text-xs text-gray-500">Pedido #{sanitizedOrder.id || '---'} • {sanitizedOrder.user?.fullName || 'Cliente Desconhecido'}</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${order.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                            order.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
-                                'bg-gray-100 text-gray-600 border-gray-200'
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        sanitizedOrder.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
+                            'bg-gray-100 text-gray-600 border-gray-200'
                         }`}>
-                        {order.status}
+                        {sanitizedOrder.status || 'STATUS_ERROR'}
                     </span>
                 </div>
             </div>
 
             {/* Workbench Client Component */}
             <div className="flex-1 overflow-hidden">
-                <Workbench order={order} />
+                <Workbench order={sanitizedOrder as any} />
             </div>
         </div>
     )

@@ -28,7 +28,7 @@ export default function ManualApprovalButton({ orderId }: ManualApprovalButtonPr
                     alert(result.message);
                     router.refresh();
                 } else {
-                    alert("Erro da API: " + result.error);
+                    alert("Erro da API: " + result.message);
                 }
             } catch (err: any) {
                 console.error("Erro no Bypass Manual:", err);
