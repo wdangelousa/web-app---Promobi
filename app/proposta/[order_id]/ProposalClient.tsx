@@ -98,7 +98,12 @@ export default function ProposalClient({ order }: { order: any }) {
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
             {/* A. Cabeçalho Executivo */}
             <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-                <div className="max-w-3xl mx-auto px-6 py-4 flex flex-col items-center justify-center text-center">
+                <div className="max-w-3xl mx-auto px-6 py-4 flex flex-col items-center justify-center text-center relative">
+                    <div className="absolute right-6 top-1/2 -translate-y-1/2 hidden md:block">
+                        <a href="https://wa.me/13213245851" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 font-bold px-4 py-2 rounded-full text-sm transition-colors border border-green-200 shadow-sm">
+                            <Smartphone className="w-4 h-4" /> (321) 324-5851
+                        </a>
+                    </div>
                     <Image src="/logo.png" width={180} height={60} alt="Promobi" className="h-10 w-auto mb-3" />
                     <h1 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">Proposta de Serviços de Tradução Certificada</h1>
                     <div className="flex items-center gap-2 mt-2 text-sm text-slate-600 font-medium">
@@ -154,8 +159,8 @@ export default function ProposalClient({ order }: { order: any }) {
                             <p className="text-xs text-slate-500 mt-1">Análise inteligente página por página</p>
                         </div>
                         <div className="hidden md:block">
-                            <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
-                                <CheckCircle className="w-3.5 h-3.5" /> Preço Justo Garantido
+                            <span className="bg-green-100 text-green-700 text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 max-w-xs text-right leading-tight">
+                                <CheckCircle className="w-5 h-5 shrink-0" /> Auditoria Promobi: Orçamento calculado página por página pela nossa IA. Preço justo garantido.
                             </span>
                         </div>
                     </div>
@@ -196,18 +201,21 @@ export default function ProposalClient({ order }: { order: any }) {
                                             >
                                                 <div className="space-y-3">
                                                     {doc.analysis.pages.map((p: any, pIdx: number) => {
-                                                        const pct = Math.round(p.fraction * 100)
-                                                        let color = 'text-green-600'; let bg = 'bg-green-500'
-                                                        if (pct > 60) { color = 'text-[#f58220]'; bg = 'bg-[#f58220]' }
+                                                        let color = 'bg-gray-100 text-gray-500';
+                                                        let label = '⚪ Em Branco';
+                                                        if (p.density === 'high') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta (100%)'; }
+                                                        else if (p.density === 'medium') { color = 'bg-yellow-100 text-yellow-800'; label = '🟡 Média (50%)'; }
+                                                        else if (p.density === 'low') { color = 'bg-green-100 text-green-800'; label = '🟢 Baixa (25%)'; }
+                                                        else if (p.density === 'scanned') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta/Scanned (100%)'; }
 
                                                         return (
-                                                            <div key={pIdx} className="flex items-center gap-4 text-xs">
-                                                                <span className="text-slate-400 font-mono w-16">Pág. {p.pageNumber}:</span>
-                                                                <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
-                                                                    <div className={`h-full ${bg} rounded-full`} style={{ width: `${pct}%` }}></div>
-                                                                </div>
-                                                                <span className={`font-bold w-12 text-right ${color}`}>{pct}%</span>
-                                                                <span className="font-mono text-slate-600 w-16 text-right">${p.price.toFixed(2)}</span>
+                                                            <div key={pIdx} className="flex items-center gap-3 text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                                                <span className="text-slate-400 font-mono w-14">Pg {p.pageNumber}:</span>
+                                                                <span className="text-slate-600 font-mono w-20">{p.wordCount ?? 0} pal. <span className="text-slate-300">{'->'}</span></span>
+                                                                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
+                                                                    {label}
+                                                                </span>
+                                                                <span className="font-mono text-slate-700 font-bold ml-auto">${p.price.toFixed(2)}</span>
                                                             </div>
                                                         )
                                                     })}
@@ -334,8 +342,8 @@ export default function ProposalClient({ order }: { order: any }) {
                                 {paymentMethod === 'ZELLE' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-purple-200 text-sm">
                                         <div className="bg-white p-4 rounded-lg border border-purple-100 mb-4 text-center">
-                                            <p className="text-slate-500 mb-1">Envie o valor exato para o Zelle abaixo:</p>
-                                            <p className="font-mono font-bold text-lg text-slate-900 select-all">financeiro@promobi.us</p>
+                                            <p className="text-slate-500 mb-1">Envie o valor exato para o número Zelle abaixo:</p>
+                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">(321) 324-5851</p>
                                             <p className="text-xs text-slate-400 mt-2">Promobi Corporate Services LLC</p>
                                         </div>
                                         <button
@@ -400,7 +408,8 @@ export default function ProposalClient({ order }: { order: any }) {
                     </p>
                     <p className="text-xs text-slate-500 font-medium">
                         Promobi Corporate Services LLC<br />
-                        13550 Village Park Dr. Unit 250 - Orlando, FL – 32837
+                        13550 Village Park Dr. Unit 250 - Orlando, FL – 32837<br />
+                        Dúvidas? Fale conosco no WhatsApp (321) 324-5851
                     </p>
                 </footer>
             </main>

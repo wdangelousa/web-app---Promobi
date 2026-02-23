@@ -192,7 +192,7 @@ export default function OrcamentoManual() {
                 newDoc.analysis = {
                     totalPages: 1,
                     totalPrice: globalSettings?.basePrice || 9.00,
-                    pages: [{ pageNumber: 1, charCount: 0, density: 'empty', fraction: 0, price: globalSettings?.basePrice || 9.00 }],
+                    pages: [{ pageNumber: 1, wordCount: 0, density: 'blank', fraction: 0, price: globalSettings?.basePrice || 9.00 }],
                     isImage: false
                 }
             }
@@ -573,10 +573,13 @@ export default function OrcamentoManual() {
                                             let docPrice = doc.count * (globalSettings?.basePrice || 9.00)
 
                                             if (doc.analysis) {
-                                                const avgConfidence = doc.analysis.pages.reduce((acc, p) => acc + p.fraction, 0) / doc.analysis.pages.length
-                                                densityProgress = Math.round(avgConfidence * 100)
+                                                const avgFraction = doc.analysis.pages.reduce((acc, p) => acc + p.fraction, 0) / doc.analysis.pages.length
+                                                densityProgress = Math.round(avgFraction * 100)
 
-                                                if (densityProgress < 40) {
+                                                if (densityProgress === 0) {
+                                                    densityLabel = 'Em Branco'
+                                                    densityColor = 'bg-gray-100 text-gray-500'
+                                                } else if (densityProgress < 40) {
                                                     densityLabel = 'Baixa Densidade'
                                                     densityColor = 'bg-green-100 text-green-700'
                                                 } else if (densityProgress < 70) {
@@ -663,6 +666,44 @@ export default function OrcamentoManual() {
                                                         </div>
 
                                                     </div>
+
+                                                    {/* Accordion Detalhamento por Página */}
+                                                    {serviceType === 'translation' && doc.analysis && (
+                                                        <div className="mt-4 pt-4 border-t border-slate-100">
+                                                            <button
+                                                                onClick={(e) => toggleDocExpand(doc.id, e)}
+                                                                className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#f58220] transition-colors mb-2"
+                                                            >
+                                                                <ChevronDown className={`w-4 h-4 transition-transform ${expandedDocs.includes(doc.id) ? 'rotate-180' : ''}`} />
+                                                                Ver Detalhamento por Página
+                                                            </button>
+
+                                                            {expandedDocs.includes(doc.id) && (
+                                                                <div className="space-y-2 mt-3 pt-2 pl-6 border-l-2 border-slate-100">
+                                                                    {doc.analysis.pages.map((p: any, pIdx: number) => {
+                                                                        let color = 'bg-gray-100 text-gray-500';
+                                                                        let label = '⚪ Em Branco';
+                                                                        if (p.density === 'high') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta (100%)'; }
+                                                                        else if (p.density === 'medium') { color = 'bg-yellow-100 text-yellow-800'; label = '🟡 Média (50%)'; }
+                                                                        else if (p.density === 'low') { color = 'bg-green-100 text-green-800'; label = '🟢 Baixa (25%)'; }
+                                                                        else if (p.density === 'scanned') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta/Scanned (100%)'; }
+
+                                                                        return (
+                                                                            <div key={pIdx} className="flex items-center gap-3 text-xs bg-white py-1.5 px-3 rounded-lg border border-slate-100 shadow-sm">
+                                                                                <span className="text-slate-400 font-mono w-14">Pg {p.pageNumber}:</span>
+                                                                                <span className="text-slate-600 font-mono w-20">{p.wordCount} pal. <span className="text-slate-300">{'->'}</span></span>
+                                                                                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
+                                                                                    {label}
+                                                                                </span>
+                                                                                <span className="font-mono text-slate-700 font-bold ml-auto">${p.price.toFixed(2)}</span>
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                 </div>
                                             )
                                         })}

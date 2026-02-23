@@ -848,7 +848,7 @@ export default function Home() {
 
                                                                     if (p.density === 'high') { label = 'Alta Densidade'; color = 'text-slate-700'; barColor = 'bg-[#f58220]'; }
                                                                     if (p.density === 'low') { label = 'Baixa Densidade'; color = 'text-green-600'; barColor = 'bg-green-500'; }
-                                                                    if (p.density === 'empty') { label = 'Em Branco'; color = 'text-gray-400'; barColor = 'bg-gray-300'; }
+                                                                    if (p.density === 'blank') { label = 'Em Branco'; color = 'text-gray-400'; barColor = 'bg-gray-300'; }
 
                                                                     // Scanned / Image Logic
                                                                     if (p.density === 'scanned') {
