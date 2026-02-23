@@ -506,7 +506,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                                     ]}>
                                         {isLink ? 'LNK' : isPDF ? 'PDF' : 'DOC'}
                                     </Text>
-                                    <Text style={styles.fileName} numberOfLines={1}>{fileName}</Text>
+                                    <Text style={styles.fileName} {...({ numberOfLines: 1 } as any)}>{fileName}</Text>
                                 </View>
                                 <Text style={[styles.tableCell, styles.colPages, styles.pageCount]}>
                                     {doc.count || 1}
