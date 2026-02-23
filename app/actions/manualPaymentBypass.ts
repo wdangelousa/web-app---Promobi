@@ -34,12 +34,12 @@ export async function approvePaymentManually(orderId: number) {
         try {
             await generateTranslationDraft(orderId);
             console.log(`[Manual Bypass] Tradução DeepL concluída para o Pedido #${orderId}`);
-        } catch (err) {
+            return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL concluída.' };
+        } catch (err: any) {
             console.error(`[Manual Bypass] Erro na task do DeepL para Pedido #${orderId}:`, err);
-            // We still return true because payment was approved successfully.
+            // We still return true because payment was approved successfully on Supabase
+            return { success: true, message: 'Pagamento aprovado, mas houve falha ao contatar o tradutor automático.' };
         }
-
-        return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL concluída.' };
 
     } catch (error: any) {
         console.error(`[Manual Bypass] Erro crítico ao aprovar pedido #${orderId}:`, error);

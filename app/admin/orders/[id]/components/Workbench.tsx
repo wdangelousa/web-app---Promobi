@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { Save, Send, FileText, CheckCircle, AlertTriangle } from 'lucide-react'
-import { approvePaymentManually } from '../../../../actions/manualPaymentBypass'
+import ManualApprovalButton from './ManualApprovalButton'
 import 'react-quill-new/dist/quill.snow.css'
 
 // Dynamic import for ReactQuill to avoid SSR issues
@@ -31,7 +31,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id || null)
     const [editorContent, setEditorContent] = useState('')
     const [saving, setSaving] = useState(false)
-    const [bypassing, setBypassing] = useState(false)
 
     const selectedDoc = order.documents.find(d => d.id === selectedDocId)
 
@@ -54,26 +53,6 @@ export default function Workbench({ order }: { order: Order }) {
             setSaving(false);
             alert('Rascunho salvo!');
         }, 1000);
-    }
-
-    const handleBypass = async () => {
-        if (!confirm("Aprovar transação MANUALMENTE e acionar a Inteligência Artificial (DeepL)?")) return;
-        setBypassing(true);
-        try {
-            const result = await approvePaymentManually(order.id);
-            if (result.success) {
-                // Feedback: Exiba um Toast de sucesso
-                alert(result.message);
-                window.location.reload();
-            } else {
-                alert("Erro da API: " + result.error);
-            }
-        } catch (err: any) {
-            console.error(err);
-            alert("Erro de execução: " + (err.message || "Falha na conexão com servidor."));
-        } finally {
-            setBypassing(false);
-        }
     }
 
     const handleFinalize = async () => {
@@ -155,13 +134,7 @@ export default function Workbench({ order }: { order: Order }) {
                     </h3>
                     <div className="flex gap-2">
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
-                            <button
-                                onClick={handleBypass}
-                                disabled={bypassing}
-                                className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 flex items-center gap-1 transition-colors"
-                            >
-                                <CheckCircle className="h-3 w-3" /> {bypassing ? 'Aprovando...' : 'Aprovar Pagamento (Manual)'}
-                            </button>
+                            <ManualApprovalButton orderId={order.id} />
                         )}
                         <button
                             onClick={handleSave}
