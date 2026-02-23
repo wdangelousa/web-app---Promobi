@@ -9,13 +9,12 @@ export async function generatePremiumProposalPDF(order: any, globalSettings: any
     try {
         const logoBase64 = await getLogoBase64();
 
-        // renderToBuffer generates the PDF as a Node.js Buffer
         const buffer = await renderToBuffer(
             React.createElement(ProposalPDF, {
                 order,
                 globalSettings,
                 logoBase64
-            })
+            }) as any
         );
 
         // Return base64 for client-side download
