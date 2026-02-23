@@ -10,6 +10,8 @@ import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { ProposalPDF } from '@/components/ProposalPDF'
 import { Download } from 'lucide-react'
+import { getLogoBase64 } from '@/app/actions/get-logo-base64'
+import { useEffect } from 'react'
 
 export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
     // Safety check for metadata
@@ -22,6 +24,12 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     const [paymentMethod, setPaymentMethod] = useState<'STRIPE' | 'ZELLE' | 'PIX' | null>(null)
     const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
     const [isProcessingStripe, setIsProcessingStripe] = useState(false)
+
+    const [logoBase64, setLogoBase64] = useState<string | null>(null)
+
+    useEffect(() => {
+        getLogoBase64().then(setLogoBase64)
+    }, [])
 
     const breakdown = metadata?.breakdown || {};
 
@@ -118,7 +126,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         <span className="bg-slate-100 px-3 py-1 rounded-full text-slate-500">Cotação #{order.id}</span>
                         {globalSettings && (
                             <PDFDownloadLink
-                                document={<ProposalPDF order={order} globalSettings={globalSettings} />}
+                                document={<ProposalPDF order={order} globalSettings={globalSettings} logoBase64={logoBase64} />}
                                 fileName={`Proposta-Promobi-${order.id}.pdf`}
                                 className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95"
                             >

@@ -19,6 +19,7 @@ import { updateOrderStatus, updateTrackingCode } from '../actions'
 import { uploadDelivery } from '../../actions/uploadDelivery'
 import { sendDelivery } from '../../actions/sendDelivery'
 import { OrderStatus } from '@prisma/client'
+import { getLogoBase64 } from '../../actions/get-logo-base64'
 
 type Props = {
     order: DetailOrder | null
@@ -34,10 +35,22 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
     const [file, setFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
     const [deliveryUrl, setDeliveryUrl] = useState<string | null>(null)
+    const [selectedOrder, setSelectedOrder] = useState<DetailOrder | null>(order)
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+    const [trackingCode, setTrackingCode] = useState(order?.uspsTracking || '')
+    const [isSendingDelivery, setIsSendingDelivery] = useState(false)
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
+    const [logoBase64, setLogoBase64] = useState<string | null>(null)
 
     useEffect(() => {
-        getGlobalSettings().then(setGlobalSettings)
+        const fetchSettings = async () => {
+            const settings = await getGlobalSettings()
+            setGlobalSettings(settings)
+
+            const logo = await getLogoBase64()
+            setLogoBase64(logo)
+        }
+        fetchSettings()
     }, [])
 
     useEffect(() => {
@@ -146,7 +159,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                     <div className="flex items-center gap-3">
                         {globalSettings && (
                             <PDFDownloadLink
-                                document={<ProposalPDF order={order} globalSettings={globalSettings} />}
+                                document={<ProposalPDF order={order} globalSettings={globalSettings} logoBase64={logoBase64} />}
                                 fileName={`Proposta-Promobi-${order.id}.pdf`}
                                 className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95"
                             >

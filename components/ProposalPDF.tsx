@@ -11,169 +11,213 @@ import {
     Font
 } from '@react-pdf/renderer';
 
-// Register Fonts (Optional: Use standard ones or register Google Fonts if needed)
-// For now, using standard sans-serif
-
 const styles = StyleSheet.create({
     page: {
-        padding: 40,
+        padding: 50,
         fontFamily: 'Helvetica',
         fontSize: 10,
-        color: '#334155',
+        color: '#1e293b',
         backgroundColor: '#FFFFFF',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 30,
-        borderBottom: 2,
+        alignItems: 'flex-start',
+        marginBottom: 40,
+        borderBottom: 3,
         borderBottomColor: '#f58220',
-        paddingBottom: 15,
+        paddingBottom: 20,
     },
     logo: {
-        width: 120,
+        width: 140,
     },
-    headerTitle: {
+    headerInfo: {
         textAlign: 'right',
     },
     title: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: 'bold',
         color: '#0f172a',
-        marginBottom: 2,
+        marginBottom: 4,
     },
-    subtitle: {
-        fontSize: 10,
-        color: '#64748b',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    clientSection: {
-        marginBottom: 25,
-        backgroundColor: '#f8fafc',
-        padding: 15,
-        borderRadius: 8,
-    },
-    sectionLabel: {
-        fontSize: 8,
+    quoteNumber: {
+        fontSize: 11,
+        color: '#475569',
         fontWeight: 'bold',
+    },
+    date: {
+        fontSize: 9,
+        color: '#94a3b8',
+        marginTop: 2,
+    },
+    clientBlock: {
+        marginBottom: 35,
+        borderLeft: 4,
+        borderLeftColor: '#f58220',
+        paddingLeft: 15,
+        paddingVertical: 5,
+    },
+    clientLabel: {
+        fontSize: 8,
         color: '#94a3b8',
         textTransform: 'uppercase',
-        marginBottom: 5,
-        letterSpacing: 0.5,
+        letterSpacing: 1,
+        marginBottom: 4,
     },
     clientName: {
         fontSize: 14,
         fontWeight: 'bold',
         color: '#0f172a',
     },
-    clientDetail: {
+    clientEmail: {
         fontSize: 10,
-        color: '#475569',
+        color: '#64748b',
         marginTop: 2,
+    },
+    tableLabel: {
+        fontSize: 9,
+        fontWeight: 'bold',
+        color: '#0f172a',
+        textTransform: 'uppercase',
+        marginBottom: 10,
+        letterSpacing: 0.5,
     },
     tableHeader: {
         flexDirection: 'row',
         backgroundColor: '#0f172a',
-        padding: 8,
-        borderRadius: 4,
-        marginBottom: 8,
+        padding: 10,
+        borderTopLeftRadius: 6,
+        borderTopRightRadius: 6,
     },
     tableHeaderCell: {
         color: '#FFFFFF',
         fontWeight: 'bold',
         fontSize: 9,
+        textTransform: 'uppercase',
     },
     tableRow: {
         flexDirection: 'row',
         borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
-        padding: 8,
+        borderBottomColor: '#e2e8f0',
+        padding: 10,
         alignItems: 'center',
     },
     tableCell: {
         fontSize: 9,
     },
-    colFile: { width: '50%' },
+    colFile: { width: '45%' },
     colPages: { width: '15%', textAlign: 'center' },
-    colDensity: { width: '20%', textAlign: 'center' },
+    colDensity: { width: '25%', textAlign: 'center' },
     colPrice: { width: '15%', textAlign: 'right' },
 
-    densityBadge: {
+    transparencyClause: {
+        marginTop: 15,
+        padding: 12,
+        backgroundColor: '#f8fafc',
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    clauseTitle: {
         fontSize: 8,
         fontWeight: 'bold',
-        padding: '2 6',
-        borderRadius: 4,
-        textAlign: 'center',
+        color: '#475569',
+        textTransform: 'uppercase',
+        marginBottom: 4,
     },
-    densityHigh: { backgroundColor: '#fee2e2', color: '#b91c1c' },
-    densityMedium: { backgroundColor: '#fef9c3', color: '#a16207' },
-    densityLow: { backgroundColor: '#dcfce7', color: '#15803d' },
-    densityBlank: { backgroundColor: '#f1f5f9', color: '#64748b' },
-    densityScanned: { backgroundColor: '#fee2e2', color: '#b91c1c' },
+    clauseText: {
+        fontSize: 8,
+        lineHeight: 1.5,
+        color: '#64748b',
+        fontStyle: 'italic',
+    },
 
-    summarySection: {
+    financialWrapper: {
         marginTop: 30,
-        alignSelf: 'flex-end',
-        width: '40%',
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+    },
+    summaryTable: {
+        width: '45%',
     },
     summaryRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        paddingVertical: 4,
+        paddingVertical: 6,
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
     },
-    totalRow: {
+    summaryLabel: {
+        fontSize: 10,
+        color: '#64748b',
+    },
+    summaryValue: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    totalHighlight: {
+        backgroundColor: '#f8fafc',
+        marginTop: 10,
+        padding: 15,
+        borderRadius: 8,
+        borderWidth: 2,
+        borderColor: '#0f172a',
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 10,
-        paddingTop: 10,
-        borderTopWidth: 2,
-        borderTopColor: '#0f172a',
+        alignItems: 'center',
     },
     totalLabel: {
-        fontSize: 14,
+        fontSize: 12,
         fontWeight: 'bold',
         color: '#0f172a',
     },
     totalValue: {
-        fontSize: 18,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#f58220',
     },
-    paymentInstructions: {
+
+    paymentBox: {
         marginTop: 40,
         padding: 15,
-        backgroundColor: '#f8fafc',
         borderRadius: 8,
         borderWidth: 1,
         borderStyle: 'dashed',
         borderColor: '#cbd5e1',
     },
-    paymentTitle: {
-        fontSize: 10,
+    paymentMethods: {
+        flexDirection: 'row',
+        gap: 15,
+        marginTop: 10,
+    },
+    paymentTag: {
+        fontSize: 8,
         fontWeight: 'bold',
-        color: '#0f172a',
-        marginBottom: 8,
-    },
-    paymentText: {
-        fontSize: 9,
-        lineHeight: 1.4,
         color: '#475569',
+        backgroundColor: '#f1f5f9',
+        padding: '3 8',
+        borderRadius: 4,
     },
+
     footer: {
         position: 'absolute',
         bottom: 30,
-        left: 40,
-        right: 40,
+        left: 50,
+        right: 50,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
-        paddingTop: 10,
-        textAlign: 'center',
+        paddingTop: 15,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
-    footerText: {
+    footerContact: {
+        fontSize: 8,
+        fontWeight: 'bold',
+        color: '#0f172a',
+    },
+    footerAddress: {
         fontSize: 8,
         color: '#94a3b8',
     }
@@ -182,66 +226,63 @@ const styles = StyleSheet.create({
 interface ProposalPDFProps {
     order: any;
     globalSettings: any;
+    logoBase64?: string | null;
 }
 
-export const ProposalPDF = ({ order, globalSettings }: ProposalPDFProps) => {
+export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFProps) => {
     const metadata = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata;
     const documents = metadata?.documents || [];
     const breakdown = metadata?.breakdown || {};
 
     return (
-        <Document title={`Proposta-Comercial-Promobi-${order.id}`}>
+        <Document title={`Proposta-Promobi-${order.id}`}>
             <Page size="A4" style={styles.page}>
                 {/* Header */}
                 <View style={styles.header}>
                     <View>
-                        {/* Note: In production, use absolute URL for image or local path */}
-                        <Image
-                            src={`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/logo.png`}
-                            style={styles.logo}
-                        />
+                        {logoBase64 ? (
+                            <Image src={logoBase64} style={styles.logo} />
+                        ) : (
+                            <Text style={{ color: '#f58220', fontWeight: 'bold', fontSize: 24 }}>PROMOBi</Text>
+                        )}
                     </View>
-                    <View style={styles.headerTitle}>
-                        <Text style={styles.title}>Proposta Comercial</Text>
-                        <Text style={styles.subtitle}>Pedido #{order.id} • {new Date(order.createdAt).toLocaleDateString()}</Text>
+                    <View style={styles.headerInfo}>
+                        <Text style={styles.title}>Proposta de Serviços de Tradução Certificada</Text>
+                        <Text style={styles.quoteNumber}>COTAÇÃO Nº {order.id}</Text>
+                        <Text style={styles.date}>{new Date(order.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</Text>
                     </View>
                 </View>
 
-                {/* Client Info */}
-                <View style={styles.clientSection}>
-                    <Text style={styles.sectionLabel}>Preparado para:</Text>
-                    <Text style={styles.clientName}>{order.user?.fullName}</Text>
-                    <Text style={styles.clientDetail}>{order.email}</Text>
-                    {order.phone && <Text style={styles.clientDetail}>{order.phone}</Text>}
+                {/* Client Block */}
+                <View style={styles.clientBlock}>
+                    <Text style={styles.clientLabel}>Preparado para:</Text>
+                    <Text style={styles.clientName}>{order.user?.fullName?.toUpperCase() || 'CLIENTE'}</Text>
+                    <Text style={styles.clientEmail}>{order.email}</Text>
                 </View>
 
                 {/* Raio-X Table */}
-                <Text style={[styles.sectionLabel, { marginBottom: 10 }]}>Detalhamento Técnico (Raio-X)</Text>
+                <Text style={styles.tableLabel}>Raio-X Técnico dos Documentos</Text>
 
                 <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderCell, styles.colFile]}>Documento</Text>
+                    <Text style={[styles.tableHeaderCell, styles.colFile]}>Nome do Arquivo</Text>
                     <Text style={[styles.tableHeaderCell, styles.colPages]}>Págs</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colDensity]}>Densidade</Text>
+                    <Text style={[styles.tableHeaderCell, styles.colDensity]}>Composição</Text>
                     <Text style={[styles.tableHeaderCell, styles.colPrice]}>Subtotal</Text>
                 </View>
 
                 {documents.map((doc: any, index: number) => {
-                    // Simple average density logic for table
+                    // Extract strictly the final filename
+                    const fileName = doc.fileName.split(/[/\\]/).pop() || doc.fileName;
                     const density = doc.analysis?.density || 'high';
-                    const densityStyle = density === 'high' ? styles.densityHigh :
-                        density === 'medium' ? styles.densityMedium :
-                            density === 'low' ? styles.densityLow :
-                                density === 'blank' ? styles.densityBlank : styles.densityScanned;
+                    const isScanned = doc.analysis?.pages?.some((p: any) => p.density === 'scanned') || density === 'scanned';
 
                     return (
                         <View key={index} style={styles.tableRow}>
-                            <Text style={[styles.tableCell, styles.colFile]}>{doc.fileName}</Text>
+                            <Text style={[styles.tableCell, styles.colFile]}>{fileName}</Text>
                             <Text style={[styles.tableCell, styles.colPages]}>{doc.count || 1}</Text>
-                            <View style={[styles.colDensity, { alignItems: 'center' }]}>
-                                <Text style={[styles.densityBadge, densityStyle]}>
-                                    {density === 'scanned' ? 'SCANNED' : density.toUpperCase()}
-                                </Text>
-                            </View>
+                            <Text style={[styles.tableCell, styles.colDensity, { color: isScanned ? '#b91c1c' : '#475569' }]}>
+                                {isScanned ? 'SCANNED (100%)' : `DENSIDADE ${density.toUpperCase()}`}
+                            </Text>
                             <Text style={[styles.tableCell, styles.colPrice]}>
                                 ${((doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0)).toFixed(2)}
                             </Text>
@@ -249,53 +290,61 @@ export const ProposalPDF = ({ order, globalSettings }: ProposalPDFProps) => {
                     );
                 })}
 
-                {/* Financial Summary */}
-                <View style={styles.summarySection}>
-                    <View style={styles.summaryRow}>
-                        <Text style={{ fontSize: 9 }}>Subtotal Documentos</Text>
-                        <Text style={{ fontSize: 9, fontWeight: 'bold' }}>${(breakdown.basePrice || 0).toFixed(2)}</Text>
-                    </View>
-                    {breakdown.notaryFee > 0 && (
-                        <View style={styles.summaryRow}>
-                            <Text style={{ fontSize: 9 }}>Taxas Notariais</Text>
-                            <Text style={{ fontSize: 9, fontWeight: 'bold' }}>${(breakdown.notaryFee || 0).toFixed(2)}</Text>
-                        </View>
-                    )}
-                    {breakdown.urgencyFee > 0 && (
-                        <View style={styles.summaryRow}>
-                            <Text style={{ fontSize: 9, color: '#f58220' }}>Taxa de Urgência ({order.urgency?.toUpperCase()})</Text>
-                            <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#f58220' }}>${(breakdown.urgencyFee || 0).toFixed(2)}</Text>
-                        </View>
-                    )}
-                    {breakdown.totalDiscountApplied > 0 && (
-                        <View style={styles.summaryRow}>
-                            <Text style={{ fontSize: 9, color: '#15803d' }}>Desconto (Pagamento Integral)</Text>
-                            <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#15803d' }}>-${(breakdown.totalDiscountApplied || 0).toFixed(2)}</Text>
-                        </View>
-                    )}
+                {/* Transparency Clause */}
+                <View style={styles.transparencyClause}>
+                    <Text style={styles.clauseTitle}>Auditoria de Preço Justo</Text>
+                    <Text style={styles.clauseText}>
+                        Páginas escaneadas (não-pesquisáveis) requerem extração e formatação manual (DTP) por nossa equipe. Devido a este processamento humano, estas páginas são classificadas como "Alta Densidade".
+                    </Text>
+                </View>
 
-                    <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Investimento Total</Text>
-                        <Text style={styles.totalValue}>${order.totalAmount?.toFixed(2)}</Text>
+                {/* Financial Summary */}
+                <View style={styles.financialWrapper}>
+                    <View style={styles.summaryTable}>
+                        <View style={styles.summaryRow}>
+                            <Text style={styles.summaryLabel}>Subtotal</Text>
+                            <Text style={styles.summaryValue}>${(breakdown.basePrice || 0).toFixed(2)}</Text>
+                        </View>
+                        {breakdown.notaryFee > 0 && (
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>Taxas Notariais</Text>
+                                <Text style={styles.summaryValue}>${(breakdown.notaryFee || 0).toFixed(2)}</Text>
+                            </View>
+                        )}
+                        {breakdown.urgencyFee > 0 && (
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>Urgência ({order.urgency})</Text>
+                                <Text style={styles.summaryValue}>${(breakdown.urgencyFee || 0).toFixed(2)}</Text>
+                            </View>
+                        )}
+
+                        <View style={styles.totalHighlight}>
+                            <Text style={styles.totalLabel}>INVESTIMENTO TOTAL</Text>
+                            <Text style={styles.totalValue}>${order.totalAmount?.toFixed(2)}</Text>
+                        </View>
                     </View>
                 </View>
 
-                {/* Payment Instructions */}
-                <View style={styles.paymentInstructions}>
-                    <Text style={styles.paymentTitle}>Opções de Pagamento e Próximos Passos</Text>
-                    <Text style={styles.paymentText}>
-                        1. Selecione sua forma de pagamento preferida (Zelle, Stripe ou Pix via Dashboard).{"\n"}
-                        2. Após a confirmação do pagamento, nossa equipe iniciará a tradução imediatamente.{"\n"}
-                        3. Você receberá o kit digital certificado via e-mail e poderá acompanhar o status em tempo real.{"\n"}
-                        4. Validade USCIS garantida para todas as traduções certificadas Promobi.
+                {/* Payment & Next Steps */}
+                <View style={styles.paymentBox}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>Métodos de Pagamento Disponíveis:</Text>
+                    <View style={styles.paymentMethods}>
+                        <Text style={styles.paymentTag}>ZELLE</Text>
+                        <Text style={styles.paymentTag}>PIX / BOLETO</Text>
+                        <Text style={styles.paymentTag}>STRIPE (CARTÃO)</Text>
+                    </View>
+                    <Text style={{ fontSize: 8, color: '#64748b', marginTop: 15, lineHeight: 1.4 }}>
+                        A tradução será iniciada imediatamente após a confirmação do pagamento. O kit digital certificado será enviado para {order.email}.
                     </Text>
                 </View>
 
                 {/* Footer */}
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>
-                        Promobi Group LLC • Florida, USA • www.promobi.us • info@promobi.us
-                    </Text>
+                    <View>
+                        <Text style={styles.footerContact}>WhatsApp: (321) 324-5851 • info@promobi.us</Text>
+                        <Text style={styles.footerAddress}>4700 Millenia Blvd, Orlando, FL 32839, USA</Text>
+                    </View>
+                    <Text style={{ fontSize: 8, color: '#f58220', fontWeight: 'bold' }}>www.promobi.us</Text>
                 </View>
             </Page>
         </Document>

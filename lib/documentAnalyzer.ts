@@ -67,7 +67,7 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
 
             if (wordCount === WORD_THRESHOLD_BLANK) {
                 // HEURISTIC FOR SCANS: 
-                // If text is empty, check if there are images or substantial path operators
+                // 1. Check if there are images or substantial path operators
                 const ops = await page.getOperatorList();
                 // Check for common image/graphics operators in PDF.js
                 const hasGraphics = ops.fnArray.some(fn =>
@@ -78,7 +78,11 @@ export async function analyzeDocument(file: File): Promise<DocumentAnalysis> {
                     fn === (pdfjsLib as any).OPS.stroke
                 );
 
-                if (hasGraphics) {
+                // 2. Check "weight" of the page as a secondary fallback
+                // We use a simplified proxy: number of operators if graphic-heavy
+                const isHeavy = ops.fnArray.length > 50;
+
+                if (hasGraphics || isHeavy) {
                     density = 'scanned';
                     fraction = 1.0;
                     price = PRICE_BASE;
