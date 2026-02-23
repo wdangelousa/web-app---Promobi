@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { Eye, FileText, Calendar, DollarSign, User } from 'lucide-react';
+import { Eye, FileText, Calendar, DollarSign, User, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
@@ -74,6 +74,13 @@ export default async function AdminOrdersPage() {
                         Visualizando {orders.length} pedidos
                     </p>
                 </div>
+                <Link
+                    href="/admin/orcamento-manual"
+                    className="inline-flex items-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                >
+                    <Plus className="w-5 h-5" />
+                    Gerar Proposta Comercial
+                </Link>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
