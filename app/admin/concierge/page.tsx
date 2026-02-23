@@ -36,6 +36,7 @@ type DocumentItem = {
     handwritten?: boolean;
     fileTranslated?: File;
     fileNameTranslated?: string;
+    externalLink?: string;
 }
 
 export default function ConciergePage() {
@@ -53,6 +54,8 @@ export default function ConciergePage() {
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
     const [generatedLink, setGeneratedLink] = useState<string | null>(null)
+    const [showLinkInput, setShowLinkInput] = useState(false)
+    const [externalLink, setExternalLink] = useState('')
 
     const [breakdown, setBreakdown] = useState({
         basePrice: 0,
@@ -91,7 +94,16 @@ export default function ConciergePage() {
             setIsAnalyzing(true)
             const newDocs: DocumentItem[] = []
 
-            for (const file of Array.from(e.target.files)) {
+            // Filter for PDFs Only (especially for folder uploads)
+            const filesToProcess = Array.from(e.target.files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+
+            if (filesToProcess.length === 0 && e.target.files.length > 0) {
+                toast.error('Nenhum arquivo PDF encontrado.')
+                setIsAnalyzing(false)
+                return
+            }
+
+            for (const file of filesToProcess) {
                 try {
                     const analysis = serviceType === 'translation' ? await analyzeDocument(file) : { totalPages: 1, pages: [] }
                     newDocs.push({
@@ -119,8 +131,34 @@ export default function ConciergePage() {
             }
             setDocuments(prev => [...prev, ...newDocs])
             setIsAnalyzing(false)
-            toast.success('Documentos adicionados.')
+            toast.success(`${newDocs.length} documentos adicionados.`)
         }
+    }
+
+    const handleLinkAdd = () => {
+        if (!externalLink) return
+
+        // Extract a "filename" from link
+        let name = 'Documento via Link'
+        try {
+            const url = new URL(externalLink)
+            name = url.pathname.split('/').pop() || 'Documento via Link'
+            if (name.length < 5) name = url.hostname + '...'
+        } catch (e) { }
+
+        const newDoc: DocumentItem = {
+            id: crypto.randomUUID(),
+            fileName: name,
+            count: 1,
+            notarized: serviceType === 'notarization',
+            isSelected: true,
+            handwritten: false,
+            externalLink: externalLink
+        }
+        setDocuments(prev => [...prev, newDoc])
+        setExternalLink('')
+        setShowLinkInput(false)
+        toast.success('Link adicionado à esteira.')
     }
 
     const removeDocument = (id: string) => {
@@ -232,15 +270,30 @@ export default function ConciergePage() {
 
             const orderDocuments = documents.map((d, idx) => {
                 const uploaded = uploadedDocs.find(u => u.docIndex === idx)
+                let finalUploadedFile = uploaded ? {
+                    url: uploaded.url,
+                    fileName: uploaded.fileName,
+                    contentType: uploaded.contentType
+                } : undefined;
+
+                // If it's an external link, we use the link as URL
+                if (!finalUploadedFile && d.externalLink) {
+                    finalUploadedFile = {
+                        url: d.externalLink,
+                        fileName: d.fileName,
+                        contentType: 'link/external'
+                    };
+                }
+
                 return {
                     id: d.id,
-                    type: 'Uploaded File',
+                    type: d.externalLink ? 'External Link' : 'Uploaded File',
                     fileName: d.fileName,
                     count: d.count,
                     notarized: d.notarized,
                     analysis: d.analysis, // Save density details for the proposal page
                     handwritten: d.handwritten,
-                    uploadedFile: uploaded ? { url: uploaded.url, fileName: uploaded.fileName, contentType: uploaded.contentType } : undefined
+                    uploadedFile: finalUploadedFile
                 }
             })
 
@@ -416,13 +469,59 @@ export default function ConciergePage() {
                                     )
                                 })}
 
-                                <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-[#f58220] hover:bg-orange-50 transition-all group">
-                                    <Upload className="w-5 h-5 text-gray-400 group-hover:text-[#f58220]" />
-                                    <span className="text-sm font-bold text-gray-500 group-hover:text-[#f58220]">
-                                        {isAnalyzing ? 'Analisando...' : 'Anexar Documentos'}
-                                    </span>
-                                    <input type="file" multiple className="hidden" onChange={handleFileUpload} />
-                                </label>
+                                <div className="space-y-3">
+                                    <label className="flex items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-[#f58220] hover:bg-orange-50 transition-all group">
+                                        <Upload className="w-5 h-5 text-gray-400 group-hover:text-[#f58220]" />
+                                        <div className="text-center">
+                                            <span className="block text-sm font-bold text-gray-500 group-hover:text-[#f58220]">
+                                                {isAnalyzing ? 'Analisando...' : 'Anexar Documentos ou Pastas'}
+                                            </span>
+                                            <span className="block text-[10px] text-gray-400 font-medium">PDFs serão processados automaticamente</span>
+                                        </div>
+                                        <input
+                                            type="file"
+                                            multiple
+                                            className="hidden"
+                                            onChange={handleFileUpload}
+                                            {...({ webkitdirectory: "", directory: "" } as any)}
+                                        />
+                                    </label>
+
+                                    {!showLinkInput ? (
+                                        <button
+                                            onClick={() => setShowLinkInput(true)}
+                                            className="w-full text-center text-xs font-bold text-gray-400 hover:text-[#f58220] transition-colors flex items-center justify-center gap-1.5"
+                                        >
+                                            <ExternalLink className="w-3 h-3" /> Ou importar via link (Drive/Dropbox)
+                                        </button>
+                                    ) : (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="flex gap-2 p-3 bg-gray-50 rounded-xl border border-gray-100"
+                                        >
+                                            <input
+                                                type="text"
+                                                placeholder="Cole a URL do documento..."
+                                                value={externalLink}
+                                                onChange={e => setExternalLink(e.target.value)}
+                                                className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-[#f58220]"
+                                            />
+                                            <button
+                                                onClick={handleLinkAdd}
+                                                className="bg-[#f58220] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-600 transition-colors"
+                                            >
+                                                Adicionar
+                                            </button>
+                                            <button
+                                                onClick={() => setShowLinkInput(false)}
+                                                className="text-gray-400 hover:text-gray-600 text-xs px-1"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </motion.div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Urgency */}
