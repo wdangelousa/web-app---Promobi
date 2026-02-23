@@ -7,10 +7,9 @@ import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Mail, Sma
 import { createCheckoutSession } from '@/app/actions/checkout'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 
-import { PDFDownloadLink } from '@react-pdf/renderer'
-import { ProposalPDF } from '@/components/ProposalPDF'
 import { Download } from 'lucide-react'
 import { getLogoBase64 } from '@/app/actions/get-logo-base64'
+import { generatePremiumProposalPDF } from '@/app/actions/generate-proposal-pdf'
 import { useEffect } from 'react'
 
 export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
@@ -24,6 +23,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     const [paymentMethod, setPaymentMethod] = useState<'STRIPE' | 'ZELLE' | 'PIX' | null>(null)
     const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
     const [isProcessingStripe, setIsProcessingStripe] = useState(false)
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
     const [logoBase64, setLogoBase64] = useState<string | null>(null)
 
@@ -92,6 +92,28 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         }
     }
 
+    const handleDownloadPDF = async () => {
+        if (isGeneratingPDF) return;
+        setIsGeneratingPDF(true);
+        try {
+            const result = await generatePremiumProposalPDF(order, globalSettings);
+            if (result.success && result.base64) {
+                const link = document.createElement('a');
+                link.href = `data:application/pdf;base64,${result.base64}`;
+                link.download = result.fileName || `Proposta-Promobi-${order.id}.pdf`;
+                link.click();
+                toast.success('PDF gerado com sucesso!');
+            } else {
+                toast.error(result.error || 'Erro ao gerar PDF.');
+            }
+        } catch (err) {
+            console.error('PDF generation error:', err);
+            toast.error('Falha ao gerar PDF.');
+        } finally {
+            setIsGeneratingPDF(false);
+        }
+    }
+
     // Determine initial state gracefully
     if (order.status !== 'PENDING_PAYMENT') {
         return (
@@ -125,18 +147,14 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-600 font-medium">
                         <span className="bg-slate-100 px-3 py-1 rounded-full text-slate-500">Cotação #{order.id}</span>
                         {globalSettings && (
-                            <PDFDownloadLink
-                                document={<ProposalPDF order={order} globalSettings={globalSettings} logoBase64={logoBase64} />}
-                                fileName={`Proposta-Promobi-${order.id}.pdf`}
-                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95"
+                            <button
+                                onClick={handleDownloadPDF}
+                                disabled={isGeneratingPDF}
+                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
                             >
-                                {({ loading }) => (
-                                    <>
-                                        <Download className="w-3 h-3" />
-                                        {loading ? 'Gerando...' : 'Baixar PDF'}
-                                    </>
-                                )}
-                            </PDFDownloadLink>
+                                <Download className="w-3 h-3" />
+                                {isGeneratingPDF ? 'Gerando...' : 'Baixar PDF'}
+                            </button>
                         )}
                         <span>•</span>
                         <span>{order.user.fullName}</span>

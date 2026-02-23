@@ -379,7 +379,7 @@ export default function OrcamentoManual() {
             })
 
             if (!orderResult.success || !orderResult.orderId) {
-                toast.error('Erro ao gerar proposta.')
+                toast.error(orderResult.error || 'Erro ao gerar proposta.')
                 setLoading(false)
                 setUploadProgress(null)
                 return
