@@ -266,7 +266,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                     </div>
                                                     <div className="text-right">
                                                         <p className="font-mono font-bold text-gray-900">
-                                                            ${(doc.analysis?.totalPrice + (doc.notarized ? (globalSettings?.notaryFee || 25.00) : 0)).toFixed(2)}
+                                                            ${((doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25.00) : 0)).toFixed(2)}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -276,7 +276,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                     <div className="pl-7 text-[10px] text-gray-400 space-y-0.5">
                                                         {doc.analysis.pages.map((p: any) => (
                                                             <div key={p.pageNumber}>
-                                                                Pg {p.pageNumber}: {p.density?.toUpperCase()} (${p.price?.toFixed(2)})
+                                                                Pg {p.pageNumber}: {p.density?.toUpperCase()} (${(p.price || 0).toFixed(2)})
                                                             </div>
                                                         ))}
                                                     </div>
@@ -289,15 +289,15 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                     <div className="bg-slate-800 text-slate-200 rounded-xl p-4 text-sm space-y-2 mt-4">
                                         <div className="flex justify-between">
                                             <span>Base Price (Docs)</span>
-                                            <span>${orderMetadata.breakdown?.basePrice?.toFixed(2)}</span>
+                                            <span>${(orderMetadata.breakdown?.basePrice || 0).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span>Notary Fees</span>
-                                            <span>${orderMetadata.breakdown?.notaryFee?.toFixed(2)}</span>
+                                            <span>${(orderMetadata.breakdown?.notaryFee || 0).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between text-orange-300">
                                             <span>Urgency Fee ({orderMetadata.urgency})</span>
-                                            <span>${orderMetadata.breakdown?.urgencyFee?.toFixed(2)}</span>
+                                            <span>${(orderMetadata.breakdown?.urgencyFee || 0).toFixed(2)}</span>
                                         </div>
                                         {orderMetadata.breakdown?.minOrderApplied && (
                                             <div className="flex justify-between text-yellow-400 font-bold">
@@ -307,7 +307,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                         )}
                                         <div className="border-t border-slate-600 pt-2 flex justify-between font-bold text-lg text-white mt-2">
                                             <span>Total (Paid)</span>
-                                            <span>${order.totalAmount.toFixed(2)}</span>
+                                            <span>${(order.totalAmount || 0).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 </div>

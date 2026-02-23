@@ -49,20 +49,26 @@ export default async function AdminOrdersPage() {
     };
 
     const formatCurrency = (amount: number) => {
+        if (typeof amount !== 'number' || isNaN(amount)) return '$0.00';
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
         }).format(amount);
     };
 
-    const formatDate = (date: Date) => {
-        return new Intl.DateTimeFormat('en-US', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        }).format(date);
+    const formatDate = (date: any) => {
+        if (!date) return 'N/A';
+        try {
+            return new Intl.DateTimeFormat('en-US', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            }).format(new Date(date));
+        } catch (e) {
+            return 'Invalid Date';
+        }
     };
 
     return (
@@ -109,7 +115,6 @@ export default async function AdminOrdersPage() {
                                                 <User className="w-4 h-4" />
                                             </div>
                                             <div>
-                                                {/* Exibir User ou N/A se null */}
                                                 <div className="font-medium text-gray-900">{order.user?.fullName || 'N/A'}</div>
                                                 <div className="text-xs text-gray-500">{order.user?.email || 'N/A'}</div>
                                             </div>
@@ -141,7 +146,7 @@ export default async function AdminOrdersPage() {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <Link
-                                            href={`/admin/orders/${order.id}`} // Verifique se essa rota de detalhe existe ou crie
+                                            href={`/admin/orders/${order.id}`}
                                             className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                         >
                                             <Eye className="w-3.5 h-3.5" />
@@ -153,13 +158,6 @@ export default async function AdminOrdersPage() {
                         </tbody>
                     </table>
                 </div>
-                {orders.length === 0 && (
-                    <div className="p-12 text-center text-gray-500 bg-gray-50 bg-opacity-50">
-                        <User className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <h3 className="text-lg font-medium text-gray-900">Nenhum pedido encontrado</h3>
-                        <p>Os novos pedidos aparecerão aqui.</p>
-                    </div>
-                )}
             </div>
         </div>
     );
