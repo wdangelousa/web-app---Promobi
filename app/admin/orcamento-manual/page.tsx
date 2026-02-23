@@ -192,7 +192,8 @@ export default function OrcamentoManual() {
                 newDoc.analysis = {
                     totalPages: 1,
                     totalPrice: globalSettings?.basePrice || 9.00,
-                    pages: [{ pageNumber: 1, wordCount: 0, textDensity: 'low', confidence: 1, price: globalSettings?.basePrice || 9.00 }]
+                    pages: [{ pageNumber: 1, charCount: 0, density: 'empty', fraction: 0, price: globalSettings?.basePrice || 9.00 }],
+                    isImage: false
                 }
             }
 
@@ -572,7 +573,7 @@ export default function OrcamentoManual() {
                                             let docPrice = doc.count * (globalSettings?.basePrice || 9.00)
 
                                             if (doc.analysis) {
-                                                const avgConfidence = doc.analysis.pages.reduce((acc, p) => acc + p.confidence, 0) / doc.analysis.pages.length
+                                                const avgConfidence = doc.analysis.pages.reduce((acc, p) => acc + p.fraction, 0) / doc.analysis.pages.length
                                                 densityProgress = Math.round(avgConfidence * 100)
 
                                                 if (densityProgress < 40) {

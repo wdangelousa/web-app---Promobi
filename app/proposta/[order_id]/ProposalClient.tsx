@@ -196,7 +196,7 @@ export default function ProposalClient({ order }: { order: any }) {
                                             >
                                                 <div className="space-y-3">
                                                     {doc.analysis.pages.map((p: any, pIdx: number) => {
-                                                        const pct = Math.round(p.confidence * 100)
+                                                        const pct = Math.round(p.fraction * 100)
                                                         let color = 'text-green-600'; let bg = 'bg-green-500'
                                                         if (pct > 60) { color = 'text-[#f58220]'; bg = 'bg-[#f58220]' }
 
