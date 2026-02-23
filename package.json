@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
-    "build": "npx prisma db push --accept-data-loss && npx prisma generate && next build",
+    "build": "npx prisma migrate deploy && npx prisma generate && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -15,7 +15,6 @@
   "type": "module",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.3",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19.2.14",
@@ -27,13 +26,11 @@
     "tailwindcss": "^4.1.18"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.4.0",
     "@prisma/client": "^6.19.2",
     "@react-email/components": "^1.0.8",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.97.0",
     "@types/react-transition-group": "^4.4.12",
-    "better-sqlite3": "^12.6.2",
     "clsx": "^2.1.1",
     "deepl-node": "^1.24.0",
     "framer-motion": "^12.34.1",
