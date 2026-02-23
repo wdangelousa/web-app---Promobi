@@ -30,6 +30,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id || null)
     const [editorContent, setEditorContent] = useState('')
     const [saving, setSaving] = useState(false)
+    const [bypassing, setBypassing] = useState(false)
 
     const selectedDoc = order.documents.find(d => d.id === selectedDocId)
 
@@ -52,6 +53,27 @@ export default function Workbench({ order }: { order: Order }) {
             setSaving(false);
             alert('Rascunho salvo!');
         }, 1000);
+    }
+
+    const handleBypass = async () => {
+        if (!confirm("Aprovar transação MANUALMENTE e acionar a Inteligência Artificial (DeepL)?")) return;
+        setBypassing(true);
+        try {
+            const { approvePaymentManually } = await import('../../../../actions/manualPaymentBypass');
+            const result = await approvePaymentManually(order.id);
+            if (result.success) {
+                // Feedback: Exiba um Toast de sucesso
+                alert(result.message);
+                window.location.reload();
+            } else {
+                alert("Erro: " + result.error);
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao tentar aprovar pagamento.");
+        } finally {
+            setBypassing(false);
+        }
     }
 
     const handleFinalize = async () => {
@@ -132,6 +154,15 @@ export default function Workbench({ order }: { order: Order }) {
                         <FileText className="h-4 w-4 text-blue-600" /> Editor de Tradução
                     </h3>
                     <div className="flex gap-2">
+                        {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
+                            <button
+                                onClick={handleBypass}
+                                disabled={bypassing}
+                                className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 flex items-center gap-1 transition-colors"
+                            >
+                                <CheckCircle className="h-3 w-3" /> {bypassing ? 'Aprovando...' : 'Aprovar Pagamento (Manual)'}
+                            </button>
+                        )}
                         <button
                             onClick={handleSave}
                             disabled={saving}
