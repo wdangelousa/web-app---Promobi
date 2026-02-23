@@ -8,27 +8,37 @@ import {
     Image,
     Font
 } from '@react-pdf/renderer';
+import path from 'path';
+
+// Helper to get absolute path for fonts in server-side
+const getFontPath = (fontName: string) => path.join(process.cwd(), 'public', 'fonts', fontName);
 
 // --- Font Registration ---
-// Registering Google Fonts for a premium look
-Font.register({
-    family: 'Playfair Display',
-    fonts: [
-        { src: 'https://fonts.gstatic.com/s/playfairdisplay/v30/nuFvL-7mveOt_EPXG8vGj32Xaj3v6YfK-W7XGfSOTVs.ttf', fontWeight: 700 },
-        { src: 'https://fonts.gstatic.com/s/playfairdisplay/v30/nuFvL-7mveOt_EPXG8vGj32Xaj3v6YfK-W7XGfSOOVs.ttf', fontWeight: 900 }
-    ]
-});
+try {
+    Font.register({
+        family: 'Playfair Display',
+        fonts: [
+            { src: getFontPath('PlayfairDisplay-Bold.ttf'), fontWeight: 700 },
+            { src: getFontPath('PlayfairDisplay-Black.ttf'), fontWeight: 900 }
+        ]
+    });
 
-Font.register({
-    family: 'DM Sans',
-    fonts: [
-        { src: 'https://fonts.gstatic.com/s/dmsans/v14/rP2Fp2ywgxke6LfacOAZX5luXw.ttf', fontWeight: 400 },
-        { src: 'https://fonts.gstatic.com/s/dmsans/v14/rP2Cp2ywgxke6LfacOAZX5tuZ0SX.ttf', fontWeight: 500 },
-        { src: 'https://fonts.gstatic.com/s/dmsans/v14/rP2Cp2ywgxke6LfacOAZX5tuZ0SX.ttf', fontWeight: 600 }
-    ]
-});
+    Font.register({
+        family: 'DM Sans',
+        fonts: [
+            { src: getFontPath('DMSans-Regular.ttf'), fontWeight: 400 },
+            { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 500 },
+            { src: getFontPath('DMSans-Medium.ttf'), fontWeight: 600 }
+        ]
+    });
 
-Font.register({ family: 'DM Mono', src: 'https://fonts.gstatic.com/s/dmmono/v10/Y7bl0m9HnmS7C07LpA.ttf' });
+    Font.register({
+        family: 'DM Mono',
+        src: getFontPath('DMMono-Regular.ttf')
+    });
+} catch (e) {
+    console.error("Font registration failed, falling back to defaults:", e);
+}
 
 const styles = StyleSheet.create({
     page: {
@@ -437,7 +447,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                                 <Text style={styles.badgePill}>⚡ HIGH</Text>
                             </View>
                             <View style={styles.colDensity}>
-                                <Text style={styles.densityDetails}>{densityDetail}</Text>
+                                <Text style={styles.densityDetails}>{densityDetail || 'Densidade Alta'}</Text>
                             </View>
                             <Text style={[styles.tableCell, styles.colSubtotal, styles.subtotal]}>
                                 ${((doc.analysis?.totalPrice || 0) + (doc.notarized ? (globalSettings?.notaryFee || 25) : 0)).toFixed(2)}
