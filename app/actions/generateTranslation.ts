@@ -57,7 +57,8 @@ export async function generateTranslationDraft(orderId: number) {
                 // Check if it's a PDF
                 let extractedText = '';
                 if (doc.docType?.toLowerCase().includes('pdf') || doc.exactNameOnDoc?.toLowerCase().endsWith('.pdf')) {
-                    const { default: pdfParse } = await import('pdf-parse');
+                    // eslint-disable-next-line @typescript-eslint/no-require-imports
+                    const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
                     const data = await pdfParse(dataBuffer);
                     extractedText = data.text;
                 } else {
