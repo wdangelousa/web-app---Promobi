@@ -1,9 +1,7 @@
 'use server'
 
 import * as deepl from 'deepl-node';
-const pdf = require('pdf-parse');
 import prisma from '../../lib/prisma';
-import { OrderStatus } from '@prisma/client';
 
 // Helper to download file from URL to Buffer
 async function downloadFile(url: string): Promise<Buffer> {
@@ -59,7 +57,8 @@ export async function generateTranslationDraft(orderId: number) {
                 // Check if it's a PDF
                 let extractedText = '';
                 if (doc.docType?.toLowerCase().includes('pdf') || doc.exactNameOnDoc?.toLowerCase().endsWith('.pdf')) {
-                    const data = await pdf(dataBuffer);
+                    const { default: pdfParse } = await import('pdf-parse');
+                    const data = await pdfParse(dataBuffer);
                     extractedText = data.text;
                 } else {
                     // TODO: Implement OCR for images if needed. For now, skip or use simple text if it supported.
