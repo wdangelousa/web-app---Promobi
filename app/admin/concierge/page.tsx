@@ -7,8 +7,8 @@ import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
 import {
     ArrowRight, Upload, FileText, ShieldCheck, Trash2,
     ChevronDown, Lock, Globe, FilePlus, Copy, ExternalLink,
-    Sparkles, Zap, FileImage, FileType, CheckCircle2,
-    Loader2, FolderOpen, Files, RotateCcw, Eye
+    Eye, EyeOff, Sparkles, Zap, FileImage, FileType,
+    CheckCircle2, Loader2, FolderOpen, Files, RotateCcw
 } from 'lucide-react'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import {
@@ -58,17 +58,17 @@ function recalcPrice(pages: PageAnalysisWithInclusion[]): number {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AnalysisProgress({ completed, total, title = "Processando arquivos..." }: { completed: number; total: number; title?: string }) {
+function AnalysisProgress({ completed, total }: { completed: number; total: number }) {
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0
     return (
         <motion.div
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 space-y-2 mb-4"
+            className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 space-y-2"
         >
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
-                    <span className="text-sm font-bold text-orange-700">{title}</span>
+                    <span className="text-sm font-bold text-orange-700">Refinando análise de densidade...</span>
                 </div>
                 <span className="text-sm font-black text-orange-600">{completed}/{total}</span>
             </div>
@@ -116,8 +116,6 @@ export default function ConciergePage() {
     const [showLinkInput, setShowLinkInput] = useState(false)
     const [externalLink, setExternalLink] = useState('')
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
-
-    const [fastProgress, setFastProgress] = useState<{ completed: number; total: number } | null>(null)
     const [deepProgress, setDeepProgress] = useState<{ completed: number; total: number } | null>(null)
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
 
@@ -140,6 +138,7 @@ export default function ConciergePage() {
     }
 
     // ─── Core upload processor ────────────────────────────────────────────────
+    // Shared by both folder input and file input
 
     const processFiles = useCallback(async (rawFiles: File[]) => {
         const supported = rawFiles.filter(isSupportedFile)
@@ -153,6 +152,7 @@ export default function ConciergePage() {
             toast.info(`${skipped} arquivo(s) ignorado(s) — formato não suportado.`)
         }
 
+        // 1. Register all docs immediately — appears in UI at once
         const newDocIds: string[] = []
         const newDocs: DocumentItem[] = supported.map(file => {
             const id = crypto.randomUUID()
@@ -170,20 +170,10 @@ export default function ConciergePage() {
         })
         setDocuments(prev => [...prev, ...newDocs])
 
-        setFastProgress({ completed: 0, total: supported.length })
-        let completedFast = 0
-
-        const runWithConcurrency = async (tasks: (() => Promise<void>)[], limit: number) => {
-            const executing: Promise<void>[] = []
-            for (const task of tasks) {
-                const p = task().finally(() => { executing.splice(executing.indexOf(p), 1) })
-                executing.push(p)
-                if (executing.length >= limit) await Promise.race(executing)
-            }
-            await Promise.all(executing)
-        }
-
-        const fastTasks = supported.map((file, i) => async () => {
+        // 2. Fast pass — runs in Web Worker, non-blocking
+        //    Sequential, one at a time — worker handles byte parsing off-thread
+        for (let i = 0; i < supported.length; i++) {
+            const file = supported[i]
             const id = newDocIds[i]
             try {
                 const raw = await fastPassAnalysis(file, BASE)
@@ -196,13 +186,9 @@ export default function ConciergePage() {
                     d.id === id ? { ...d, analysisStatus: 'error' } : d
                 ))
             }
-            completedFast++
-            setFastProgress({ completed: completedFast, total: supported.length })
-        })
+        }
 
-        await runWithConcurrency(fastTasks, 3)
-        setFastProgress(null)
-
+        // 3. Deep pass in background — only PDFs need it
         const needsDeep = supported
             .map((file, i) => ({ file, index: i, id: newDocIds[i] }))
             .filter(({ file }) => detectFileType(file) === 'pdf')
@@ -243,6 +229,7 @@ export default function ConciergePage() {
         e.target.value = ''
     }
 
+    // Drag and drop
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
@@ -450,13 +437,10 @@ export default function ConciergePage() {
                                 </h3>
                             </div>
 
-                            {/* Progress bars */}
+                            {/* Progress bar */}
                             <AnimatePresence>
-                                {fastProgress && fastProgress.completed < fastProgress.total && (
-                                    <AnalysisProgress completed={fastProgress.completed} total={fastProgress.total} title="Extraindo metadados..." />
-                                )}
-                                {!fastProgress && deepProgress && deepProgress.completed < deepProgress.total && (
-                                    <AnalysisProgress completed={deepProgress.completed} total={deepProgress.total} title="Refinando análise de densidade..." />
+                                {deepProgress && deepProgress.completed < deepProgress.total && (
+                                    <AnalysisProgress completed={deepProgress.completed} total={deepProgress.total} />
                                 )}
                             </AnimatePresence>
 
@@ -549,8 +533,8 @@ export default function ConciergePage() {
                                                             </button>
                                                             {expandedDocs.includes(doc.id) && doc.analysisStatus === 'deep' && (
                                                                 <div className="flex gap-2">
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-500 hover:text-white flex items-center gap-1 transition-all">Restaurar Todas</button>
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full hover:bg-red-500 hover:text-white flex items-center gap-1 transition-all">Apagar Todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-500 hover:text-white flex items-center gap-1 transition-all"><RotateCcw className="w-2.5 h-2.5" /> Restaurar Todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full hover:bg-red-500 hover:text-white flex items-center gap-1 transition-all"><Trash2 className="w-2.5 h-2.5" /> Apagar Todas</button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -644,7 +628,9 @@ export default function ConciergePage() {
                                             Arraste arquivos ou pastas aqui — ou use os botões abaixo
                                         </p>
 
+                                        {/* Two explicit buttons */}
                                         <div className="grid grid-cols-2 gap-2">
+                                            {/* Button 1: Folder */}
                                             <label className="flex items-center justify-center gap-2 py-2.5 px-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-xl cursor-pointer transition-all group">
                                                 <FolderOpen className="w-4 h-4 text-orange-500 group-hover:scale-110 transition-transform" />
                                                 <span className="text-xs font-bold text-orange-700">Pasta Inteira</span>
@@ -661,6 +647,7 @@ export default function ConciergePage() {
                                                 />
                                             </label>
 
+                                            {/* Button 2: Individual files */}
                                             <label className="flex items-center justify-center gap-2 py-2.5 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl cursor-pointer transition-all group">
                                                 <Files className="w-4 h-4 text-gray-500 group-hover:scale-110 transition-transform" />
                                                 <span className="text-xs font-bold text-gray-600">Arquivos Avulsos</span>
@@ -745,7 +732,7 @@ export default function ConciergePage() {
                                 <div className="flex justify-between text-sm text-green-400 font-medium"><span>Notarização:</span><span>+${breakdown.notaryFee.toFixed(2)}</span></div>
                             )}
                             <div className="h-px bg-white/10 my-2" />
-                            {deepPending > 0 && !fastProgress && (
+                            {deepPending > 0 && (
                                 <div className="flex items-center gap-2 text-xs text-amber-400">
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                     <span>Refinando {deepPending} doc(s)... preço pode ajustar</span>
@@ -782,7 +769,7 @@ export default function ConciergePage() {
                                     className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors">Criar Outro</button>
                             </div>
                         ) : (
-                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0 || fastProgress !== null}
+                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0}
                                 className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                                 {loading ? <><div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> {uploadProgress}</> : <><Lock className="w-5 h-5" /> Gerar Link de Cobrança</>}
                             </button>
