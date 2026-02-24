@@ -44,11 +44,14 @@ model Document {
   id                Int      @id @default(autoincrement())
   orderId           Int
   docType           String
+  fileName          String?
   originalFileUrl   String
   translatedFileUrl String?
   translatedText    String?
   exactNameOnDoc    String?
   createdAt         DateTime @default(now())
+  translation_status String   @default("pending")
+  delivery_pdf_url   String?
   order             Order    @relation(fields: [orderId], references: [id])
 }
 

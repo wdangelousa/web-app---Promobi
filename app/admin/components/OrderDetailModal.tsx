@@ -20,6 +20,8 @@ import { uploadDelivery } from '../../actions/uploadDelivery'
 import { sendDelivery } from '../../actions/sendDelivery'
 import { OrderStatus } from '@prisma/client'
 import { getLogoBase64 } from '../../actions/get-logo-base64'
+import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
+import { getCurrentUser } from '@/app/actions/auth'
 
 type Props = {
     order: DetailOrder | null
@@ -41,6 +43,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
     const [isSendingDelivery, setIsSendingDelivery] = useState(false)
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
     const [logoBase64, setLogoBase64] = useState<string | null>(null)
+    const [currentUser, setCurrentUser] = useState<any>(null)
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -49,6 +52,9 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
 
             const logo = await getLogoBase64()
             setLogoBase64(logo)
+
+            const user = await getCurrentUser()
+            setCurrentUser(user)
         }
         fetchSettings()
     }, [])
@@ -189,6 +195,14 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                 <p className="font-bold text-gray-900 text-lg">{order.user.fullName}</p>
                                 <p className="text-gray-600">{order.email}</p>
                                 {order.phone && <p className="text-gray-600">{order.phone}</p>}
+
+                                <div className="mt-4">
+                                    <ConfirmPaymentButton
+                                        order={order as any}
+                                        confirmedByName={currentUser?.fullName || 'Analista'}
+                                        onConfirmed={() => onUpdate({ ...order, status: 'TRANSLATING' })}
+                                    />
+                                </div>
                             </div>
 
                             {/* --- FINAL DELIVERY SECTION --- */}

@@ -9,7 +9,8 @@ import {
     LogOut,
     DollarSign,
     UserCircle,
-    FilePlus
+    FilePlus,
+    Monitor
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import Image from 'next/image'
@@ -66,7 +67,15 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/orders') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
                 >
                     <ListTodo className={`h-5 w-5 ${isActive('/admin/orders') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                    <span>Operações</span>
+                    <span>Operações (Kanban)</span>
+                </Link>
+
+                <Link
+                    href="/admin/workbench"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/workbench') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                >
+                    <Monitor className={`h-5 w-5 ${isActive('/admin/workbench') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                    <span>Mesa de Operações</span>
                 </Link>
 
                 {user.role !== 'TECHNICAL' && (
