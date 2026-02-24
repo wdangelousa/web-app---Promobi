@@ -153,7 +153,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                         <div className="flex items-center gap-3">
                                             <FileText className="w-5 h-5 text-gray-400" />
                                             <div>
-                                                <p className="text-sm font-bold text-slate-700">{doc.fileName}</p>
+                                                <p className="text-sm font-bold text-slate-700">{doc.exactNameOnDoc}</p>
                                                 <p className="text-[10px] text-slate-400">{doc.count} páginas {doc.notarized && '· +Notarização'}</p>
                                             </div>
                                         </div>

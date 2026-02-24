@@ -295,8 +295,8 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                     <div className="flex items-center gap-2 overflow-hidden">
                                                         <FileText className="h-5 w-5 text-gray-400 flex-shrink-0" />
                                                         <div>
-                                                            <p className="font-bold text-gray-800 text-sm truncate max-w-[200px]" title={doc.fileName}>
-                                                                {doc.fileName}
+                                                            <p className="font-bold text-gray-800 text-sm truncate max-w-[200px]" title={doc.exactNameOnDoc}>
+                                                                {doc.exactNameOnDoc}
                                                             </p>
                                                             <div className="flex items-center gap-2 text-xs text-gray-500">
                                                                 <span className="bg-white border px-1.5 rounded">{doc.count} pgs</span>

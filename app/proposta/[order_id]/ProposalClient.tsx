@@ -267,7 +267,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                             </div>
                                             <div className="min-w-0">
                                                 {/* break-words para não truncar nomes longos */}
-                                                <p className="font-bold text-sm text-slate-800 break-words leading-snug">{doc.fileName}</p>
+                                                <p className="font-bold text-sm text-slate-800 break-words leading-snug">{doc.exactNameOnDoc}</p>
                                                 <p className="text-xs text-slate-500">{doc.count} página(s)</p>
                                             </div>
                                         </div>

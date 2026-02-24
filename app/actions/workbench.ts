@@ -83,7 +83,7 @@ export async function releaseToClient(
         documents: {
           select: {
             id: true,
-            fileName: true,
+            exactNameOnDoc: true,
             delivery_pdf_url: true,
             translation_status: true,
           },
@@ -146,13 +146,13 @@ export async function releaseToClient(
 async function sendDeliveryEmail(order: any) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
-  const docs = order.documents as Array<{ id: number; fileName: string | null; delivery_pdf_url: string | null }>
+  const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
 
   // Build download links list
   const docLinks = docs
     .filter(d => d.delivery_pdf_url)
     .map((d, i) => {
-      const name = (d.fileName ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
+      const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
       return `
         <div style="display:flex; align-items:center; justify-content:space-between;
                     border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;

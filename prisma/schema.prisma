@@ -44,7 +44,6 @@ model Document {
   id                Int      @id @default(autoincrement())
   orderId           Int
   docType           String
-  fileName          String?
   originalFileUrl   String
   translatedFileUrl String?
   translatedText    String?

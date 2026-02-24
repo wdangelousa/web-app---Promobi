@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
             url: urlData.publicUrl,
             storagePath,
-            fileName: file.name,
+            exactNameOnDoc: file.name,
             contentType,
         });
 
