@@ -84,7 +84,7 @@ export default function OrcamentoManual() {
     const [showImportUrl, setShowImportUrl] = useState(false)
 
     // Quicklook: stores a blob URL of a single extracted page
-    const [quicklookData, setQuicklookData] = useState<{ url: string; pageNumber: number; isBlob: boolean } | null>(null)
+    const [quicklookData, setQuicklookData] = useState<{ url: string; pageNumber: number; isBlob: boolean; isImage: boolean } | null>(null)
 
     const [breakdown, setBreakdown] = useState({
         basePrice: 0, urgencyFee: 0, notaryFee: 0,
@@ -261,16 +261,16 @@ export default function OrcamentoManual() {
                 // Cast to any to avoid TypeScript error with ArrayBufferLike/SharedArrayBuffer
                 const blob = new Blob([bytes as any], { type: 'application/pdf' })
                 const url = URL.createObjectURL(blob)
-                setQuicklookData({ url, pageNumber, isBlob: true })
+                setQuicklookData({ url, pageNumber, isBlob: true, isImage: false })
             } catch {
                 // Fallback: open full doc with page hash
                 const url = URL.createObjectURL(doc.file)
-                setQuicklookData({ url, pageNumber, isBlob: false })
+                setQuicklookData({ url, pageNumber, isBlob: false, isImage: false })
             }
         } else {
-            // Images — single page anyway
+            // Imagem — página única, renderiza com <img> no modal
             const url = URL.createObjectURL(doc.file)
-            setQuicklookData({ url, pageNumber, isBlob: false })
+            setQuicklookData({ url, pageNumber, isBlob: true, isImage: true })
         }
     }
 
@@ -772,8 +772,22 @@ export default function OrcamentoManual() {
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="flex-1 bg-slate-950 p-4">
-                            <iframe src={quicklookData.url} className="w-full h-full rounded-lg bg-white" title="Quicklook Viewer" />
+                        <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-auto">
+                            {quicklookData.isImage ? (
+                                // Imagem — usa <img>, iframe não renderiza jpg/png
+                                <img
+                                    src={quicklookData.url}
+                                    alt={`Página ${quicklookData.pageNumber}`}
+                                    className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
+                                />
+                            ) : (
+                                // PDF — usa iframe normalmente
+                                <iframe
+                                    src={quicklookData.url}
+                                    className="w-full h-full rounded-lg bg-white"
+                                    title="Quicklook Viewer"
+                                />
+                            )}
                         </div>
                     </div>
                 </div>
