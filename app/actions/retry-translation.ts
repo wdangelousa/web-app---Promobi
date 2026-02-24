@@ -1,12 +1,26 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import prisma from '@/lib/prisma'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function retryTranslation(orderId: number) {
     try {
+        console.log(`[retryTranslation] Resetting error documents for order #${orderId}`)
+
+        // Reset any documents in 'error' status back to 'pending'
+        await prisma.document.updateMany({
+            where: {
+                orderId: orderId,
+                translation_status: 'error'
+            },
+            data: {
+                translation_status: 'pending'
+            }
+        })
+
         console.log(`[retryTranslation] Triggering DeepL for order #${orderId}`)
 
         const edgeFnUrl = `${SUPABASE_URL}/functions/v1/translate-order`

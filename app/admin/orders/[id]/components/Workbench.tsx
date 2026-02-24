@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Save, Send, FileText, CheckCircle, AlertTriangle, ChevronRight, Clock, ShieldCheck, Eye } from 'lucide-react'
+import { Save, Send, FileText, CheckCircle, AlertTriangle, ChevronRight, Clock, ShieldCheck, Eye, Upload, Check, Loader2 } from 'lucide-react'
 import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
 import { saveDocumentDraft } from '@/app/actions/save-draft'
 import { retryTranslation } from '@/app/actions/retry-translation'
@@ -20,6 +20,7 @@ type Document = {
     translatedText: string | null
     exactNameOnDoc?: string | null
     translation_status?: string | null
+    delivery_pdf_url?: string | null
 }
 
 type Order = {
@@ -38,6 +39,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id || null)
     const [editorContent, setEditorContent] = useState('')
     const [saving, setSaving] = useState(false)
+    const [uploading, setUploading] = useState(false)
     const { toast } = useUIFeedback()
 
     const selectedDoc = order.documents.find(d => d.id === selectedDocId)
@@ -135,6 +137,39 @@ export default function Workbench({ order }: { order: Order }) {
             setSaving(false);
         }
     }
+
+    const handleUploadTranslation = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedDoc) return;
+
+        if (file.type !== 'application/pdf') {
+            toast.error('Por favor, envie um arquivo PDF.');
+            return;
+        }
+
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('docId', String(selectedDoc.id));
+            formData.append('orderId', String(order.id));
+
+            const res = await fetch('/api/workbench/upload-delivery', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Falha no upload');
+
+            toast.success('PDF de tradução enviado com sucesso!');
+            window.location.reload(); // Refresh to get the new delivery_pdf_url
+        } catch (err: any) {
+            toast.error('Erro no upload: ' + err.message);
+        } finally {
+            setUploading(false);
+        }
+    };
 
     if (!order.documents || order.documents.length === 0) return <div className="p-8 text-center text-gray-500">Nenhum documento encontrado.</div>
     if (!selectedDoc) return <div className="p-8 text-center text-gray-500">Documento selecionado não encontrado.</div>
@@ -268,6 +303,23 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     </header>
 
+                    {/* STATUS BANNER */}
+                    {(selectedDoc.translation_status === 'error' || selectedDoc.translation_status === 'needs_manual') && (
+                        <div className={`p-3 border-b flex items-start gap-3 ${selectedDoc.translation_status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+                            <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'}`} />
+                            <div>
+                                <p className={`text-xs font-bold ${selectedDoc.translation_status === 'error' ? 'text-red-800' : 'text-amber-800'}`}>
+                                    {selectedDoc.translation_status === 'error' ? 'Falha na tradução automática' : 'Tradução manual necessária'}
+                                </p>
+                                <p className={`text-[10px] ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                                    {selectedDoc.translation_status === 'error'
+                                        ? 'Ocorreu um erro técnico. Você pode tentar novamente ou fazer o upload do PDF manual abaixo.'
+                                        : 'Documento escaneado ou imagem não compatível com DeepL. Traduza manualmente.'}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex-1 overflow-hidden">
                         <ReactQuill
                             theme="snow"
@@ -289,13 +341,34 @@ export default function Workbench({ order }: { order: Order }) {
                         <div className="text-[10px] text-slate-400 font-medium">
                             Auto-save via <kbd className="bg-slate-200 px-1 rounded text-slate-600">Cmd+S</kbd>
                         </div>
-                        <button
-                            onClick={handleFinalize}
-                            disabled={saving}
-                            className="bg-[#f58220] hover:bg-orange-600 active:scale-[0.98] text-white px-5 py-2.5 rounded-xl font-black text-sm shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all disabled:opacity-50"
-                        >
-                            <CheckCircle className="h-4 w-4" /> Certificar e Finalizar Pedido
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="file"
+                                accept=".pdf"
+                                onChange={handleUploadTranslation}
+                                className="hidden"
+                                id="pdf-upload"
+                                disabled={uploading}
+                            />
+                            <label
+                                htmlFor="pdf-upload"
+                                className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer transition-all border shadow-sm ${selectedDoc.delivery_pdf_url
+                                    ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                                    : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                                    } ${uploading ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                {selectedDoc.delivery_pdf_url ? 'Substituir PDF Traduzido' : 'Upload PDF Traduzido'}
+                            </label>
+
+                            <button
+                                onClick={handleFinalize}
+                                disabled={saving || !selectedDoc.delivery_pdf_url}
+                                className="bg-[#f58220] hover:bg-orange-600 active:scale-[0.98] text-white h-10 px-6 rounded-xl font-black text-sm shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all disabled:opacity-50 disabled:bg-slate-300 disabled:shadow-none"
+                            >
+                                <CheckCircle className="h-4 w-4" /> Certificar e Finalizar Pedido
+                            </button>
+                        </div>
                     </footer>
                 </div>
             </main>
