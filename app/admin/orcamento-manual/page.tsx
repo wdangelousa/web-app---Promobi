@@ -195,8 +195,11 @@ export default function OrcamentoManual() {
                 newDoc.analysis = {
                     totalPages: 1,
                     totalPrice: globalSettings?.basePrice || 9.00,
-                    pages: [{ pageNumber: 1, wordCount: 0, density: 'blank', fraction: 0, price: globalSettings?.basePrice || 9.00 }],
-                    isImage: false
+                    originalTotalPrice: globalSettings?.basePrice || 9.00,
+                    pages: [{ pageNumber: 1, wordCount: 0, density: 'blank', fraction: 0, price: globalSettings?.basePrice || 9.00, included: true }],
+                    isImage: false,
+                    phase: 'deep',
+                    fileType: 'unknown'
                 }
             }
 
