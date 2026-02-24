@@ -28,5 +28,9 @@ export default async function ProposalPage({ params }: { params: Promise<{ order
 
     const globalSettings = await getGlobalSettings()
 
-    return <ProposalClient order={order as any} globalSettings={globalSettings} />
+    // Solução Definitiva: Serializa o objeto inteiro para converter todas as datas 
+    // e evitar o erro "Only plain objects can be passed to Client Components" no Next.js
+    const sanitizedOrder = JSON.parse(JSON.stringify(order))
+
+    return <ProposalClient order={sanitizedOrder} globalSettings={globalSettings} />
 }

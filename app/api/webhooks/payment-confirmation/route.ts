@@ -41,18 +41,8 @@ export async function POST(request: NextRequest) {
             const orderId = session.metadata?.orderId ? parseInt(session.metadata.orderId) : null;
             if (orderId) {
                 console.log(`Processing Order #${orderId} payment confirmation.`);
-
-                // 1. Mark as PAID
-                await prisma.order.update({
-                    where: { id: orderId },
-                    data: { status: 'PAID' }
-                });
-
-                // 2. Trigger Automation (Async)
-                // We don't await this to avoid timing out the webhook
-                generateTranslationDraft(orderId).catch(err =>
-                    console.error("Failed to trigger translation via webhook:", err)
-                );
+                const { confirmPayment } = await import('@/app/actions/confirm-payment');
+                await confirmPayment(orderId, 'STRIPE');
             }
             break;
         default:

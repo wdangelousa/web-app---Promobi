@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
             const orderId = session.metadata?.orderId ? parseInt(session.metadata.orderId) : null;
 
             if (orderId) {
-                await processPaymentSuccess(orderId, 'STRIPE');
+                const { confirmPayment } = await import('@/app/actions/confirm-payment');
+                await confirmPayment(orderId, 'STRIPE');
             }
         }
 
@@ -56,7 +57,8 @@ export async function POST(request: NextRequest) {
 
             if (!isNaN(orderId)) {
                 console.log('Parcelado USA Payment approved:', orderId);
-                await processPaymentSuccess(orderId, 'PARCELADO_USA');
+                const { confirmPayment } = await import('@/app/actions/confirm-payment');
+                await confirmPayment(orderId, 'PARCELADO_USA');
                 return NextResponse.json({ status: 'success' });
             }
         }
