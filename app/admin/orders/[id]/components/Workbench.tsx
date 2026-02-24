@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { Save, Send, FileText, CheckCircle, AlertTriangle, ChevronRight, Clock, ShieldCheck, Eye } from 'lucide-react'
 import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
 import { saveDocumentDraft } from '@/app/actions/save-draft'
+import { retryTranslation } from '@/app/actions/retry-translation'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import 'react-quill-new/dist/quill.snow.css'
 
@@ -43,7 +44,17 @@ export default function Workbench({ order }: { order: Order }) {
 
     useEffect(() => {
         if (selectedDoc) {
-            setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
+            let initialContent = selectedDoc.translatedText;
+            if (!initialContent) {
+                if (selectedDoc.translation_status === 'error') {
+                    initialContent = '<p style="color: #ef4444; font-weight: bold;">⚠️ Erro na tradução automática. Verifique os logs ou clique em "Tentar Novamente (DeepL)" no cabeçalho.</p>';
+                } else if (selectedDoc.translation_status === 'needs_manual') {
+                    initialContent = '<p style="color: #f59e0b; font-weight: bold;">✍️ Documento de imagem/complexo. Requer tradução manual ou OCR externo.</p>';
+                } else {
+                    initialContent = '<p>Aguardando tradução...</p>';
+                }
+            }
+            setEditorContent(initialContent || '<p>Aguardando tradução...</p>')
         }
     }, [selectedDocId, selectedDoc])
 
@@ -103,6 +114,23 @@ export default function Workbench({ order }: { order: Order }) {
         } catch (error: any) {
             console.error(error);
             toast.error("Erro ao finalizar: " + error.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const handleRetryDeepL = async () => {
+        if (saving) return;
+        setSaving(true);
+        try {
+            const res = await retryTranslation(order.id);
+            if (res.success) {
+                toast.success('Gatilho disparado! Atualize a página em alguns instantes.');
+            } else {
+                toast.error('Erro: ' + res.error);
+            }
+        } catch (err: any) {
+            toast.error('Erro inesperado: ' + err.message);
         } finally {
             setSaving(false);
         }
@@ -211,13 +239,22 @@ export default function Workbench({ order }: { order: Order }) {
                         <div className="flex items-center gap-2">
                             {['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
                                 <div className="flex items-center gap-2">
-                                    {/* Using the unified and robust confirmation button */}
                                     <ConfirmPaymentButton
                                         order={order as any}
-                                        confirmedByName="Isabele" // Default label for the operator
+                                        confirmedByName="Isabele"
                                         onConfirmed={() => window.location.reload()}
                                     />
                                 </div>
+                            )}
+                            {order.status === 'TRANSLATING' && order.documents.some(d => d.translation_status === 'error') && (
+                                <button
+                                    onClick={handleRetryDeepL}
+                                    disabled={saving}
+                                    className="h-8 bg-orange-500 text-white px-3 rounded-lg text-xs font-bold hover:bg-orange-600 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+                                >
+                                    <Clock className={`w-3.5 h-3.5 ${saving ? 'animate-spin' : ''}`} />
+                                    Tentar Novamente (DeepL)
+                                </button>
                             )}
                             <button
                                 onClick={handleSave}
