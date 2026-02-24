@@ -32,22 +32,22 @@ export type DocumentAnalysisExt = Omit<DocumentAnalysis, 'pages'> & {
 type AnalysisStatus = 'pending' | 'fast' | 'deep' | 'error'
 
 type DocumentItem = {
-    id:             string
-    file?:          File
-    fileName:       string
-    count:          number
-    notarized:      boolean
-    analysis?:      DocumentAnalysisExt
+    id: string
+    file?: File
+    fileName: string
+    count: number
+    notarized: boolean
+    analysis?: DocumentAnalysisExt
     analysisStatus: AnalysisStatus
-    isSelected:     boolean
-    handwritten?:   boolean
-    externalLink?:  string
+    isSelected: boolean
+    handwritten?: boolean
+    externalLink?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toExt(raw: DocumentAnalysis): DocumentAnalysisExt {
-    const pages      = raw.pages.map(p => ({ ...p, included: p.included ?? true }))
+    const pages = raw.pages.map(p => ({ ...p, included: p.included ?? true }))
     const totalPrice = pages.filter(p => p.included).reduce((s, p) => s + p.price, 0)
     return { ...raw, pages, totalPrice, originalTotalPrice: raw.totalPrice }
 }
@@ -58,17 +58,17 @@ function recalcPrice(pages: PageAnalysisWithInclusion[]): number {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AnalysisProgress({ completed, total }: { completed: number; total: number }) {
+function AnalysisProgress({ completed, total, title = "Processando arquivos..." }: { completed: number; total: number; title?: string }) {
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0
     return (
         <motion.div
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 space-y-2"
+            className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 space-y-2 mb-4"
         >
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
-                    <span className="text-sm font-bold text-orange-700">Refinando análise de densidade...</span>
+                    <span className="text-sm font-bold text-orange-700">{title}</span>
                 </div>
                 <span className="text-sm font-black text-orange-600">{completed}/{total}</span>
             </div>
@@ -85,8 +85,8 @@ function AnalysisProgress({ completed, total }: { completed: number; total: numb
 }
 
 function StatusIcon({ status }: { status: AnalysisStatus }) {
-    if (status === 'deep')  return <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-    if (status === 'fast')  return <Zap className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
+    if (status === 'deep') return <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+    if (status === 'fast') return <Zap className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
     if (status === 'error') return <span className="text-red-400 text-xs font-bold shrink-0">!</span>
     return <Loader2 className="w-4 h-4 text-gray-300 animate-spin shrink-0" />
 }
@@ -101,48 +101,50 @@ function FileTypeIcon({ fileName }: { fileName: string }) {
 
 export default function ConciergePage() {
     const [serviceType, setServiceType] = useState<'translation' | 'notarization' | null>(null)
-    const [documents,   setDocuments]   = useState<DocumentItem[]>([])
-    const [urgency,     setUrgency]     = useState('standard')
+    const [documents, setDocuments] = useState<DocumentItem[]>([])
+    const [urgency, setUrgency] = useState('standard')
     const [paymentPlan, setPaymentPlan] = useState<'upfront_discount' | 'upfront' | 'split'>('upfront')
-    const [totalPrice,  setTotalPrice]  = useState(0)
+    const [totalPrice, setTotalPrice] = useState(0)
 
     const [fullName, setFullName] = useState('')
-    const [email,    setEmail]    = useState('')
-    const [phone,    setPhone]    = useState('')
+    const [email, setEmail] = useState('')
+    const [phone, setPhone] = useState('')
 
-    const [loading,        setLoading]        = useState(false)
+    const [loading, setLoading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
-    const [generatedLink,  setGeneratedLink]  = useState<string | null>(null)
-    const [showLinkInput,  setShowLinkInput]  = useState(false)
-    const [externalLink,   setExternalLink]   = useState('')
-    const [expandedDocs,   setExpandedDocs]   = useState<string[]>([])
-    const [deepProgress,   setDeepProgress]   = useState<{ completed: number; total: number } | null>(null)
+    const [generatedLink, setGeneratedLink] = useState<string | null>(null)
+    const [showLinkInput, setShowLinkInput] = useState(false)
+    const [externalLink, setExternalLink] = useState('')
+    const [expandedDocs, setExpandedDocs] = useState<string[]>([])
+
+    // Progress States
+    const [fastProgress, setFastProgress] = useState<{ completed: number; total: number } | null>(null)
+    const [deepProgress, setDeepProgress] = useState<{ completed: number; total: number } | null>(null)
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
 
     const { toast } = useUIFeedback()
     const deepCancelRef = useRef(false)
-    const folderInputRef   = useRef<HTMLInputElement>(null)
-    const filesInputRef    = useRef<HTMLInputElement>(null)
+    const folderInputRef = useRef<HTMLInputElement>(null)
+    const filesInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         getGlobalSettings().then(setGlobalSettings)
         return () => { deepCancelRef.current = true }
     }, [])
 
-    const BASE       = globalSettings?.basePrice || 9.00
-    const NOTARY_FEE = globalSettings?.notaryFee  || 25.00
+    const BASE = globalSettings?.basePrice || 9.00
+    const NOTARY_FEE = globalSettings?.notaryFee || 25.00
     const URGENCY_MUL: Record<string, number> = {
         standard: 1.0,
-        urgent:   1.0 + (globalSettings?.urgencyRate || 0.3),
-        flash:    1.0 + (globalSettings?.urgencyRate ? globalSettings.urgencyRate * 2 : 0.6),
+        urgent: 1.0 + (globalSettings?.urgencyRate || 0.3),
+        flash: 1.0 + (globalSettings?.urgencyRate ? globalSettings.urgencyRate * 2 : 0.6),
     }
 
     // ─── Core upload processor ────────────────────────────────────────────────
-    // Shared by both folder input and file input
 
     const processFiles = useCallback(async (rawFiles: File[]) => {
         const supported = rawFiles.filter(isSupportedFile)
-        const skipped   = rawFiles.length - supported.length
+        const skipped = rawFiles.length - supported.length
 
         if (supported.length === 0) {
             toast.error('Nenhum arquivo suportado. (PDF, DOCX, JPG, PNG)')
@@ -152,31 +154,42 @@ export default function ConciergePage() {
             toast.info(`${skipped} arquivo(s) ignorado(s) — formato não suportado.`)
         }
 
-        // 1. Register all docs immediately — appears in UI at once
+        // 1. Register all docs immediately
         const newDocIds: string[] = []
         const newDocs: DocumentItem[] = supported.map(file => {
             const id = crypto.randomUUID()
             newDocIds.push(id)
             return {
                 id, file,
-                fileName:       file.name,
-                count:          1,
-                notarized:      serviceType === 'notarization',
-                analysis:       undefined,
+                fileName: file.name,
+                count: 1,
+                notarized: serviceType === 'notarization',
+                analysis: undefined,
                 analysisStatus: 'pending' as AnalysisStatus,
-                isSelected:     true,
-                handwritten:    false,
+                isSelected: true,
+                handwritten: false,
             }
         })
         setDocuments(prev => [...prev, ...newDocs])
 
-        // 2. Fast pass — runs in Web Worker, non-blocking
-        //    Sequential, one at a time — worker handles byte parsing off-thread
-        for (let i = 0; i < supported.length; i++) {
-            const file = supported[i]
-            const id   = newDocIds[i]
+        // 2. Fast pass — Com controle de concorrência (evita estourar a memória)
+        setFastProgress({ completed: 0, total: supported.length })
+        let completedFast = 0
+
+        const runWithConcurrency = async (tasks: (() => Promise<void>)[], limit: number) => {
+            const executing: Promise<void>[] = []
+            for (const task of tasks) {
+                const p = task().finally(() => { executing.splice(executing.indexOf(p), 1) })
+                executing.push(p)
+                if (executing.length >= limit) await Promise.race(executing)
+            }
+            await Promise.all(executing)
+        }
+
+        const fastTasks = supported.map((file, i) => async () => {
+            const id = newDocIds[i]
             try {
-                const raw      = await fastPassAnalysis(file, BASE)
+                const raw = await fastPassAnalysis(file, BASE)
                 const analysis = toExt(raw)
                 setDocuments(prev => prev.map(d =>
                     d.id === id ? { ...d, count: analysis.totalPages, analysis, analysisStatus: 'fast' } : d
@@ -186,7 +199,12 @@ export default function ConciergePage() {
                     d.id === id ? { ...d, analysisStatus: 'error' } : d
                 ))
             }
-        }
+            completedFast++
+            setFastProgress({ completed: completedFast, total: supported.length })
+        })
+
+        await runWithConcurrency(fastTasks, 3) // Limite de 3 arquivos por vez
+        setFastProgress(null)
 
         // 3. Deep pass in background — only PDFs need it
         const needsDeep = supported
@@ -271,7 +289,7 @@ export default function ConciergePage() {
     const togglePageInclusion = (docId: string, pageIdx: number) => {
         setDocuments(prev => prev.map(doc => {
             if (doc.id !== docId || !doc.analysis) return doc
-            const newPages   = doc.analysis.pages.map((p, i) => i === pageIdx ? { ...p, included: !p.included } : p)
+            const newPages = doc.analysis.pages.map((p, i) => i === pageIdx ? { ...p, included: !p.included } : p)
             const totalPrice = recalcPrice(newPages)
             return { ...doc, count: newPages.filter(p => p.included).length || 1, analysis: { ...doc.analysis, pages: newPages, totalPrice } }
         }))
@@ -308,11 +326,11 @@ export default function ConciergePage() {
                 if (doc.analysis) {
                     const inc = doc.analysis.pages.filter(p => p.included)
                     let price = inc.reduce((s, p) => s + p.price, 0)
-                    let orig  = doc.analysis.pages.reduce((s, p) => s + p.price, 0)
+                    let orig = doc.analysis.pages.reduce((s, p) => s + p.price, 0)
                     if (doc.handwritten) { price *= 1.25; orig *= 1.25 }
                     base += price; original += orig
                     totalPages += inc.length
-                    excluded   += doc.analysis.pages.filter(p => !p.included).length
+                    excluded += doc.analysis.pages.filter(p => !p.included).length
                 } else {
                     const p = (doc.count || 1) * BASE
                     base += p; original += p; totalPages += doc.count || 1
@@ -325,7 +343,7 @@ export default function ConciergePage() {
 
         const baseWithUrgency = base * (URGENCY_MUL[urgency] ?? 1.0)
         let total = baseWithUrgency + notary
-        let disc  = 0
+        let disc = 0
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') { disc = total * 0.05; total *= 0.95 }
 
         setBreakdown({
@@ -341,7 +359,7 @@ export default function ConciergePage() {
 
     const handleCreateConciergeOrder = async () => {
         if (!fullName || !email || !phone) { toast.error('Preencha os dados do cliente.'); return }
-        if (documents.length === 0)        { toast.error('Adicione pelo menos um documento.'); return }
+        if (documents.length === 0) { toast.error('Adicione pelo menos um documento.'); return }
         setLoading(true); setUploadProgress('Enviando arquivos...')
         try {
             const uploadedDocs: any[] = []
@@ -437,10 +455,13 @@ export default function ConciergePage() {
                                 </h3>
                             </div>
 
-                            {/* Progress bar */}
+                            {/* Progress bars */}
                             <AnimatePresence>
-                                {deepProgress && deepProgress.completed < deepProgress.total && (
-                                    <AnalysisProgress completed={deepProgress.completed} total={deepProgress.total} />
+                                {fastProgress && fastProgress.completed < fastProgress.total && (
+                                    <AnalysisProgress completed={fastProgress.completed} total={fastProgress.total} title="Extraindo metadados..." />
+                                )}
+                                {!fastProgress && deepProgress && deepProgress.completed < deepProgress.total && (
+                                    <AnalysisProgress completed={deepProgress.completed} total={deepProgress.total} title="Refinando análise de densidade..." />
                                 )}
                             </AnimatePresence>
 
@@ -448,30 +469,30 @@ export default function ConciergePage() {
                             <div className="space-y-3">
                                 <AnimatePresence initial={false}>
                                     {documents.map(doc => {
-                                        const isLink     = !!doc.externalLink
+                                        const isLink = !!doc.externalLink
                                         const isFastOnly = doc.analysisStatus === 'fast'
-                                        let docPrice     = 0
+                                        let docPrice = 0
                                         let densityLabel = 'N/A'
                                         let densityColor = 'bg-slate-200 text-slate-500'
 
                                         if (doc.analysis) {
                                             const inc = doc.analysis.pages.filter(p => p.included)
-                                            docPrice  = recalcPrice(inc.length > 0 ? inc : doc.analysis.pages)
+                                            docPrice = recalcPrice(inc.length > 0 ? inc : doc.analysis.pages)
                                             const avg = inc.length > 0 ? inc.reduce((s, p) => s + p.fraction, 0) / inc.length : 0
                                             const pct = Math.round(avg * 100)
-                                            if (pct === 0)     { densityLabel = 'Em Branco'; densityColor = 'bg-gray-100 text-gray-400' }
-                                            else if (pct < 40) { densityLabel = 'Baixa';     densityColor = 'bg-green-100 text-green-700' }
-                                            else if (pct < 70) { densityLabel = 'Média';     densityColor = 'bg-yellow-100 text-yellow-700' }
-                                            else               { densityLabel = 'Alta';      densityColor = 'bg-red-100 text-red-700' }
+                                            if (pct === 0) { densityLabel = 'Em Branco'; densityColor = 'bg-gray-100 text-gray-400' }
+                                            else if (pct < 40) { densityLabel = 'Baixa'; densityColor = 'bg-green-100 text-green-700' }
+                                            else if (pct < 70) { densityLabel = 'Média'; densityColor = 'bg-yellow-100 text-yellow-700' }
+                                            else { densityLabel = 'Alta'; densityColor = 'bg-red-100 text-red-700' }
                                         } else {
                                             docPrice = (doc.count || 1) * BASE
                                         }
                                         if (doc.handwritten) docPrice *= 1.25
 
                                         const includedCount = doc.analysis?.pages.filter(p => p.included).length ?? doc.count
-                                        const totalCount    = doc.analysis?.pages.length ?? doc.count
+                                        const totalCount = doc.analysis?.pages.length ?? doc.count
                                         const excludedCount = doc.analysis?.pages.filter(p => !p.included).length ?? 0
-                                        const docSavings    = (doc.analysis?.originalTotalPrice ?? docPrice) - (doc.analysis?.totalPrice ?? docPrice)
+                                        const docSavings = (doc.analysis?.originalTotalPrice ?? docPrice) - (doc.analysis?.totalPrice ?? docPrice)
 
                                         return (
                                             <motion.div
@@ -549,10 +570,10 @@ export default function ConciergePage() {
                                                                     ) : doc.analysis.pages.map((p, pIdx) => {
                                                                         const isInc = p.included
                                                                         let pColor = 'bg-gray-100 text-gray-500', pLabel = '⚪ Vazio'
-                                                                        if (p.density === 'high')    { pColor = 'bg-red-50 text-red-700 border border-red-100';         pLabel = '🔴 Alta' }
-                                                                        if (p.density === 'medium')  { pColor = 'bg-yellow-50 text-yellow-700 border border-yellow-100'; pLabel = '🟡 Média' }
-                                                                        if (p.density === 'low')     { pColor = 'bg-green-50 text-green-700 border border-green-100';    pLabel = '🟢 Baixa' }
-                                                                        if (p.density === 'scanned') { pColor = 'bg-red-50 text-red-700 border border-red-100';          pLabel = '🔴 Scan' }
+                                                                        if (p.density === 'high') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Alta' }
+                                                                        if (p.density === 'medium') { pColor = 'bg-yellow-50 text-yellow-700 border border-yellow-100'; pLabel = '🟡 Média' }
+                                                                        if (p.density === 'low') { pColor = 'bg-green-50 text-green-700 border border-green-100'; pLabel = '🟢 Baixa' }
+                                                                        if (p.density === 'scanned') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Scan' }
                                                                         return (
                                                                             <div key={pIdx}
                                                                                 className={`flex items-center justify-between text-[10px] py-1.5 px-3 rounded-xl border transition-all ${isInc ? 'bg-slate-50/50 border-slate-100' : 'bg-gray-50 border-dashed border-gray-200 opacity-60'}`}>
@@ -707,7 +728,7 @@ export default function ConciergePage() {
                                 <div className="flex justify-between text-sm text-green-400 font-medium"><span>Notarização:</span><span>+${breakdown.notaryFee.toFixed(2)}</span></div>
                             )}
                             <div className="h-px bg-white/10 my-2" />
-                            {deepPending > 0 && (
+                            {deepPending > 0 && !fastProgress && (
                                 <div className="flex items-center gap-2 text-xs text-amber-400">
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                     <span>Refinando {deepPending} doc(s)... preço pode ajustar</span>
@@ -744,7 +765,7 @@ export default function ConciergePage() {
                                     className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors">Criar Outro</button>
                             </div>
                         ) : (
-                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0}
+                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0 || fastProgress !== null}
                                 className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                                 {loading ? <><div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> {uploadProgress}</> : <><Lock className="w-5 h-5" /> Gerar Link de Cobrança</>}
                             </button>
