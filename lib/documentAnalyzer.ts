@@ -1,12 +1,8 @@
 // lib/documentAnalyzer.ts
-//
 // Main thread interface — spawns Web Workers for all heavy work.
 // The main thread NEVER blocks. All pdfjs and byte parsing runs in workers.
-//
-// Architecture:
-//   - Pool of up to 4 workers (reused across requests)
-//   - Fast pass: byte scan in worker (~1ms), fires immediately for each file
-//   - Deep pass: full pdfjs in worker, 4 concurrent, queue for rest
+
+import { PDFDocument } from 'pdf-lib'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,47 +10,47 @@ export type DensityType = 'high' | 'medium' | 'low' | 'blank' | 'scanned'
 
 export type PageAnalysis = {
     pageNumber: number
-    wordCount:  number
-    density:    DensityType
-    price:      number
-    fraction:   number
-    included:   boolean
+    wordCount: number
+    density: DensityType
+    price: number
+    fraction: number
+    included: boolean
 }
 
 export type DocumentAnalysis = {
-    totalPages:         number
-    pages:              PageAnalysis[]
-    totalPrice:         number
+    totalPages: number
+    pages: PageAnalysis[]
+    totalPrice: number
     originalTotalPrice: number
-    isImage:            boolean
-    phase:              'fast' | 'deep'
-    fileType:           'pdf' | 'image' | 'docx' | 'unknown'
+    isImage: boolean
+    phase: 'fast' | 'deep'
+    fileType: 'pdf' | 'image' | 'docx' | 'unknown'
 }
 
 export type BatchProgress = {
     fileIndex: number
-    fileName:  string
-    analysis:  DocumentAnalysis
+    fileName: string
+    analysis: DocumentAnalysis
     completed: number
-    total:     number
+    total: number
 }
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
-const WORKER_POOL_SIZE = 4  // Matches typical CPU core count for browser workers
-const DEEP_CONCURRENCY = 4  // Max simultaneous deep analyses
+const WORKER_POOL_SIZE = 4
+const DEEP_CONCURRENCY = 4
 
-let   workerPool: Worker[]      = []
+let workerPool: Worker[] = []
 const pendingMap = new Map<string, { resolve: (r: DocumentAnalysis) => void; reject: (e: Error) => void }>()
 
 function getOrCreatePool(): Worker[] {
-    if (typeof window === 'undefined') return []  // SSR guard
+    if (typeof window === 'undefined') return []
     if (workerPool.length === 0) {
         for (let i = 0; i < WORKER_POOL_SIZE; i++) {
             try {
                 const w = new Worker(new URL('./documentAnalyzer.worker.ts', import.meta.url))
                 w.onmessage = handleWorkerMessage
-                w.onerror   = (e) => console.error('[DocumentAnalyzer Worker Error]', e)
+                w.onerror = (e) => console.error('[DocumentAnalyzer Worker Error]', e)
                 workerPool.push(w)
             } catch (err) {
                 console.error('[DocumentAnalyzer] Failed to create worker:', err)
@@ -77,7 +73,6 @@ function handleWorkerMessage(e: MessageEvent) {
     }
 }
 
-// Round-robin worker selection
 let workerIndex = 0
 function getNextWorker(): Worker | null {
     const pool = getOrCreatePool()
@@ -95,7 +90,6 @@ function sendToWorker(
     return new Promise(async (resolve, reject) => {
         const worker = getNextWorker()
 
-        // Fallback: if workers unavailable (SSR, old browser), run inline
         if (!worker) {
             try {
                 resolve(await inlineFallback(type, file, base))
@@ -108,18 +102,15 @@ function sendToWorker(
         const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
         pendingMap.set(id, { resolve, reject })
 
-        // Transfer buffer to worker (zero-copy)
         const buffer = await file.arrayBuffer()
         worker.postMessage({ type, id, buffer, fileName: file.name, base }, [buffer])
     })
 }
 
-// ─── Inline fallback (no worker available) ───────────────────────────────────
-// Used as safety net on environments that don't support workers.
-// Simple and fast — only does fast pass level analysis.
+// ─── Inline fallback ─────────────────────────────────────────────────────────
 
 async function inlineFallback(type: 'fastPass' | 'deepPass', file: File, base: number): Promise<DocumentAnalysis> {
-    const isImg  = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)
+    const isImg = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)
     const isDocx = /\.docx$/i.test(file.name) || file.type.includes('wordprocessingml')
 
     if (isImg) {
@@ -130,14 +121,17 @@ async function inlineFallback(type: 'fastPass' | 'deepPass', file: File, base: n
         return { totalPages: 1, pages: [{ pageNumber: 1, wordCount: 300, density: 'high', price: base, fraction: 1, included: true }], totalPrice: base, originalTotalPrice: base, isImage: false, phase: 'deep', fileType: 'docx' }
     }
 
-    // PDF: byte scan
-    const buf   = await file.arrayBuffer()
-    const view  = new Uint8Array(buf, Math.max(0, buf.byteLength - 32768))
-    const text  = new TextDecoder('latin1').decode(view)
-    const hits  = [...text.matchAll(/\/Count\s+(\d+)/g)]
-    const count = Math.max(1, hits.length ? Math.max(...hits.map(m => parseInt(m[1]))) : 1)
-    const pages = Array.from({ length: count }, (_, i) => ({ pageNumber: i + 1, wordCount: 300, density: 'high' as DensityType, price: base, fraction: 1, included: true }))
-    return { totalPages: count, pages, totalPrice: count * base, originalTotalPrice: count * base, isImage: false, phase: 'fast', fileType: 'pdf' }
+    // PDF: Leitura infalível usando pdf-lib
+    try {
+        const buf = await file.arrayBuffer()
+        const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true })
+        const count = pdfDoc.getPageCount()
+        const pages = Array.from({ length: count }, (_, i) => ({ pageNumber: i + 1, wordCount: 300, density: 'high' as DensityType, price: base, fraction: 1, included: true }))
+        return { totalPages: count, pages, totalPrice: count * base, originalTotalPrice: count * base, isImage: false, phase: 'fast', fileType: 'pdf' }
+    } catch (err) {
+        console.error('[DocumentAnalyzer] Inline fallback failed', err)
+        return { totalPages: 1, pages: [{ pageNumber: 1, wordCount: 300, density: 'high', price: base, fraction: 1, included: true }], totalPrice: base, originalTotalPrice: base, isImage: false, phase: 'fast', fileType: 'pdf' }
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -159,7 +153,6 @@ export async function batchDeepAnalysis(
     const total = files.length
     let completed = 0
 
-    // Process in concurrency chunks
     for (let i = 0; i < files.length; i += concurrency) {
         const chunk = files.slice(i, i + concurrency)
         await Promise.all(chunk.map(async ({ index, file }) => {
@@ -171,9 +164,9 @@ export async function batchDeepAnalysis(
 }
 
 export function detectFileType(file: File): 'pdf' | 'image' | 'docx' | 'unsupported' {
-    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name))                        return 'pdf'
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) return 'pdf'
     if (file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)) return 'image'
-    if (/\.docx$/i.test(file.name) || file.type.includes('wordprocessingml'))                return 'docx'
+    if (/\.docx$/i.test(file.name) || file.type.includes('wordprocessingml')) return 'docx'
     return 'unsupported'
 }
 
@@ -181,7 +174,6 @@ export function isSupportedFile(file: File): boolean {
     return detectFileType(file) !== 'unsupported'
 }
 
-// Legacy compat
 export async function analyzeDocument(file: File, base = 9.00): Promise<DocumentAnalysis> {
     return deepAnalysis(file, base)
 }
