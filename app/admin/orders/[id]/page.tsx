@@ -1,11 +1,13 @@
-import prisma from '../../../../lib/prisma'
+import prisma from '@/lib/prisma'
 import Workbench from './components/Workbench'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { notFound } from 'next/navigation'
 
 export default async function OrderWorkbenchPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
     const orderId = parseInt(id)
+    if (isNaN(orderId)) return notFound()
 
     const order = await prisma.order.findUnique({
         where: { id: orderId },
@@ -15,23 +17,11 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
         }
     })
 
-    if (!order) {
-        return <div className="p-8 text-center text-red-600">Pedido não encontrado</div>
-    }
+    if (!order) return notFound()
 
-    // Data Sanitization (Pruning) com verificação de nulidade para evitar erros na tela
-    const sanitizedOrder = {
-        ...order,
-        createdAt: order.createdAt.toISOString(),
-        user: order.user ? {
-            ...order.user,
-            createdAt: order.user.createdAt.toISOString()
-        } : null,
-        documents: order.documents ? order.documents.map(doc => ({
-            ...doc,
-            createdAt: doc.createdAt.toISOString()
-        })) : []
-    }
+    // Solução Definitiva: Serializa o objeto inteiro para converter todas as datas 
+    // e evitar o erro "Only plain objects can be passed to Client Components" no Next.js
+    const sanitizedOrder = JSON.parse(JSON.stringify(order))
 
     return (
         <div className="min-h-screen bg-gray-100 flex flex-col">
