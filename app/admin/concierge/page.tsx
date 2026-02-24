@@ -151,13 +151,14 @@ export default function ConciergePage() {
         const skipped = rawFiles.length - supported.length
 
         if (supported.length === 0) {
-            toast.error('Nenhum arquivo suportado. (PDF, DOCX, JPG, PNG)')
+            toast.error('Nenhum arquivo suportado. (PDF, DOCX, imagens)')
             return
         }
         if (skipped > 0) {
             toast.info(`${skipped} arquivo(s) ignorado(s) — formato não suportado.`)
         }
 
+        // ── Registra todos os docs na UI instantaneamente (status: pending) ──────
         const newDocIds: string[] = []
         const newDocs: DocumentItem[] = supported.map(file => {
             const id = crypto.randomUUID()
@@ -175,39 +176,30 @@ export default function ConciergePage() {
         })
         setDocuments(prev => [...prev, ...newDocs])
 
-        setFastProgress({ completed: 0, total: supported.length })
-        let completedFast = 0
+        // ── PHASE 1: Fast pass em chunks de 8 ────────────────────────────────────
+        // fastPassAnalysis agora lê apenas os bytes do PDF — sem pdfjs, ~1ms/arquivo
+        const FAST_CONCURRENCY = 8
+        const fastQueue = supported.map((file, i) => ({ file, id: newDocIds[i] }))
 
-        const runWithConcurrency = async (tasks: (() => Promise<void>)[], limit: number) => {
-            const executing: Promise<void>[] = []
-            for (const task of tasks) {
-                const p = task().finally(() => { executing.splice(executing.indexOf(p), 1) })
-                executing.push(p)
-                if (executing.length >= limit) await Promise.race(executing)
-            }
-            await Promise.all(executing)
+        for (let i = 0; i < fastQueue.length; i += FAST_CONCURRENCY) {
+            const chunk = fastQueue.slice(i, i + FAST_CONCURRENCY)
+            await Promise.all(chunk.map(async ({ file, id }) => {
+                try {
+                    const raw = await fastPassAnalysis(file, BASE)
+                    const analysis = toExt(raw)
+                    setDocuments(prev => prev.map(d =>
+                        d.id === id ? { ...d, count: analysis.totalPages, analysis, analysisStatus: 'fast' } : d
+                    ))
+                } catch {
+                    setDocuments(prev => prev.map(d =>
+                        d.id === id ? { ...d, analysisStatus: 'error' } : d
+                    ))
+                }
+            }))
         }
 
-        const fastTasks = supported.map((file, i) => async () => {
-            const id = newDocIds[i]
-            try {
-                const raw = await fastPassAnalysis(file, BASE)
-                const analysis = toExt(raw)
-                setDocuments(prev => prev.map(d =>
-                    d.id === id ? { ...d, count: analysis.totalPages, analysis, analysisStatus: 'fast' } : d
-                ))
-            } catch {
-                setDocuments(prev => prev.map(d =>
-                    d.id === id ? { ...d, analysisStatus: 'error' } : d
-                ))
-            }
-            completedFast++
-            setFastProgress({ completed: completedFast, total: supported.length })
-        })
-
-        await runWithConcurrency(fastTasks, 4)
-        setFastProgress(null)
-
+        // ── PHASE 2: Deep analysis em background, 5 por vez ──────────────────────
+        // Apenas PDFs precisam — imagens e docx já saem do fast pass como 'deep'
         const needsDeep = supported
             .map((file, i) => ({ file, index: i, id: newDocIds[i] }))
             .filter(({ file }) => detectFileType(file) === 'pdf')
@@ -224,17 +216,19 @@ export default function ConciergePage() {
                 if (deepCancelRef.current) return
                 const id = needsDeep[fileIndex]?.id
                 if (!id) return
-                const ext = toExt(analysis)
+                const analysisExt = toExt(analysis)
                 setDocuments(prev => prev.map(d =>
-                    d.id === id ? { ...d, count: ext.totalPages, analysis: ext, analysisStatus: 'deep' } : d
+                    d.id === id
+                        ? { ...d, count: analysisExt.totalPages, analysis: analysisExt, analysisStatus: 'deep' }
+                        : d
                 ))
                 setDeepProgress({ completed, total })
             }
         )
 
         setDeepProgress(null)
-        toast.success(`✓ Análise completa — ${needsDeep.length} PDF(s) processado(s)`)
-    }, [serviceType, BASE, toast])
+        toast.success(`Análise completa — ${needsDeep.length} PDF(s) processado(s).`)
+    }, [BASE, serviceType, toast])
 
     const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return

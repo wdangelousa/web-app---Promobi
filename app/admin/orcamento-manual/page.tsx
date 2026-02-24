@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from '../../actions/create-order'
 import { getGlobalSettings, GlobalSettings } from '../../actions/settings'
@@ -13,7 +13,6 @@ import {
     Check,
     FileText,
     ChevronDown,
-    Plus,
     Upload,
     Link as LinkIcon,
     Copy,
@@ -21,11 +20,25 @@ import {
     EyeOff,
     Eye,
     X,
-    RotateCcw
+    RotateCcw,
+    Save,
+    Clock,
+    FolderOpen,
+    Pencil,
+    DollarSign,
+    AlertCircle,
 } from 'lucide-react'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
 import { PDFDocument } from 'pdf-lib'
+import {
+    saveDraft,
+    listDrafts,
+    deleteDraft,
+    duplicateDraft,
+    updateOrderAmount,
+    type ProposalDraft,
+} from '../../actions/proposal-drafts'
 
 // --- TYPES ---
 type PageWithInclusion = {
@@ -94,6 +107,17 @@ export default function OrcamentoManual() {
 
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
+
+    // ── Draft / rascunho state ───────────────────────────────────────────────
+    const [draftId, setDraftId] = useState<string | null>(null)
+    const [draftOrderId, setDraftOrderId] = useState<number | null>(null)
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+    const [showDraftPanel, setShowDraftPanel] = useState(false)
+    const [draftList, setDraftList] = useState<ProposalDraft[]>([])
+    const [loadingDrafts, setLoadingDrafts] = useState(false)
+    const [editPriceMode, setEditPriceMode] = useState(false)
+    const [editPriceValue, setEditPriceValue] = useState('')
+    const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const { confirm, toast } = useUIFeedback()
 
@@ -279,6 +303,126 @@ export default function OrcamentoManual() {
         setQuicklookData(null)
     }
 
+    // ── Auto-save ────────────────────────────────────────────────────────────
+    // Salva automaticamente 2s após a última alteração de estado relevante.
+    // File objects são removidos antes de serializar (não serializáveis).
+
+    const triggerAutoSave = useCallback(() => {
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+        autoSaveTimer.current = setTimeout(async () => {
+            // Não salva se não tiver nada de conteúdo ainda
+            if (!clientName && !clientEmail && documents.length === 0) return
+
+            setSaveStatus('saving')
+            const cleanDocs = documents.map(({ file, fileTranslated, ...d }) => d)
+            const result = await saveDraft({
+                id: draftId ?? undefined,
+                client_name: clientName,
+                client_email: clientEmail,
+                client_phone: clientPhone,
+                service_type: serviceType,
+                urgency,
+                documents: cleanDocs as any,
+                order_id: draftOrderId,
+                status: draftOrderId ? 'sent' : 'draft',
+                total_amount: totalPrice,
+            })
+
+            if (result.success) {
+                if (!draftId && result.id) setDraftId(result.id)
+                setSaveStatus('saved')
+                setTimeout(() => setSaveStatus('idle'), 3000)
+            } else {
+                setSaveStatus('error')
+            }
+        }, 2000)
+    }, [clientName, clientEmail, clientPhone, serviceType, urgency, documents, totalPrice, draftId, draftOrderId])
+
+    // Dispara auto-save sempre que estado relevante mudar
+    useEffect(() => {
+        triggerAutoSave()
+    }, [triggerAutoSave])
+
+    // ── Draft panel helpers ───────────────────────────────────────────────────
+
+    const openDraftPanel = async () => {
+        setShowDraftPanel(true)
+        setLoadingDrafts(true)
+        const result = await listDrafts()
+        if (result.success) setDraftList(result.data || [])
+        setLoadingDrafts(false)
+    }
+
+    const loadDraft = (draft: ProposalDraft) => {
+        confirm({
+            title: 'Carregar Rascunho',
+            message: 'Isso substituirá o orçamento atual. Continuar?',
+            confirmText: 'Carregar',
+            danger: false,
+            onConfirm: () => {
+                setClientName(draft.client_name)
+                setClientEmail(draft.client_email)
+                setClientPhone(draft.client_phone || '')
+                setServiceType(draft.service_type as any)
+                setUrgency(draft.urgency)
+                setDocuments((draft.documents as any[]).map(d => ({ ...d, file: undefined })))
+                setDraftId(draft.id)
+                setDraftOrderId(draft.order_id)
+                setGeneratedLink(draft.order_id ? `${window.location.origin}/proposta/${draft.order_id}` : null)
+                setExpandedDocs([])
+                setShowDraftPanel(false)
+                toast.success('Rascunho carregado!')
+            }
+        })
+    }
+
+    const handleDuplicateDraft = async (id: string) => {
+        const result = await duplicateDraft(id)
+        if (result.success) {
+            toast.success('Proposta duplicada como novo rascunho!')
+            const refreshed = await listDrafts()
+            if (refreshed.success) setDraftList(refreshed.data || [])
+        } else {
+            toast.error('Erro ao duplicar.')
+        }
+    }
+
+    const handleDeleteDraft = async (id: string) => {
+        confirm({
+            title: 'Excluir Rascunho',
+            message: 'Esta ação não pode ser desfeita.',
+            confirmText: 'Excluir',
+            danger: true,
+            onConfirm: async () => {
+                await deleteDraft(id)
+                const refreshed = await listDrafts()
+                if (refreshed.success) setDraftList(refreshed.data || [])
+                if (draftId === id) { setDraftId(null); setDraftOrderId(null) }
+                toast.success('Rascunho excluído.')
+            }
+        })
+    }
+
+    const handleEditPrice = async () => {
+        if (!draftOrderId) return
+        const newVal = parseFloat(editPriceValue)
+        if (isNaN(newVal) || newVal <= 0) { toast.error('Valor inválido.'); return }
+        const result = await updateOrderAmount(draftOrderId, newVal)
+        if (result.success) {
+            setTotalPrice(newVal)
+            setEditPriceMode(false)
+            toast.success('Preço atualizado na proposta do cliente!')
+        } else {
+            toast.error('Erro ao atualizar preço.')
+        }
+    }
+
+    const resetFlow = () => {
+        setGeneratedLink(null); setDocuments([]); setClientName(''); setClientEmail('')
+        setClientPhone(''); setServiceType(null); setUrgency('standard')
+        setDraftId(null); setDraftOrderId(null); setSaveStatus('idle')
+    }
+
     // --- PRICE CALC ---
     useEffect(() => {
         const sel = documents.filter(d => d.isSelected)
@@ -368,7 +512,24 @@ export default function OrcamentoManual() {
                 return
             }
 
-            setGeneratedLink(`${window.location.origin}/proposta/${orderResult.orderId}`)
+            const newOrderId = orderResult.orderId
+            setGeneratedLink(`${window.location.origin}/proposta/${newOrderId}`)
+            setDraftOrderId(newOrderId)
+
+            // Marca rascunho como enviado e vincula ao pedido
+            await saveDraft({
+                id: draftId ?? undefined,
+                client_name: clientName,
+                client_email: clientEmail,
+                client_phone: clientPhone,
+                service_type: serviceType,
+                urgency,
+                documents: selectedDocs.map(({ file, fileTranslated, ...d }) => d) as any,
+                order_id: newOrderId,
+                status: 'sent',
+                total_amount: totalPrice,
+            }).then(r => { if (!draftId && r.id) setDraftId(r.id) })
+
             toast.success('Proposta gerada! Envie o link ao cliente.')
         } catch (err) {
             console.error('Proposal generation error:', err)
@@ -382,24 +543,47 @@ export default function OrcamentoManual() {
         if (generatedLink) { navigator.clipboard.writeText(generatedLink); toast.success('Link copiado!') }
     }
 
-    const resetFlow = () => {
-        setGeneratedLink(null); setDocuments([]); setClientName(''); setClientEmail('')
-        setClientPhone(''); setServiceType(null); setUrgency('standard')
-    }
-
     // ─── RENDER ───────────────────────────────────────────────────────────────
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 md:p-12">
             <div className="max-w-4xl mx-auto">
 
-                <div className="mb-8 flex items-center justify-between">
+                <div className="mb-8 flex items-center justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-bold">Gerador de Propostas (Concierge)</h1>
-                        <p className="text-slate-500 mt-1">Gere orçamentos e crie links de pagamento exclusivos para clientes VIP.</p>
+                        <div className="flex items-center gap-3 mt-1">
+                            <p className="text-slate-500">Gere orçamentos e crie links de pagamento exclusivos para clientes VIP.</p>
+                            {/* Indicador de auto-save */}
+                            {saveStatus === 'saving' && (
+                                <span className="flex items-center gap-1 text-xs text-slate-400 animate-pulse">
+                                    <Save className="w-3 h-3" /> Salvando...
+                                </span>
+                            )}
+                            {saveStatus === 'saved' && (
+                                <span className="flex items-center gap-1 text-xs text-green-600">
+                                    <CheckCircle className="w-3 h-3" /> Salvo
+                                </span>
+                            )}
+                            {saveStatus === 'error' && (
+                                <span className="flex items-center gap-1 text-xs text-red-500">
+                                    <AlertCircle className="w-3 h-3" /> Erro ao salvar
+                                </span>
+                            )}
+                        </div>
                     </div>
-                    <Link href="/admin/orders" className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors bg-white px-4 py-2 rounded-lg border border-slate-200">
-                        Voltar ao Painel
-                    </Link>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {/* Botão de rascunhos */}
+                        <button
+                            onClick={openDraftPanel}
+                            className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 px-4 py-2 rounded-lg border border-slate-200 transition-all shadow-sm"
+                        >
+                            <FolderOpen className="w-4 h-4" />
+                            Rascunhos & Propostas
+                        </button>
+                        <Link href="/admin/orders" className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors bg-white px-4 py-2 rounded-lg border border-slate-200">
+                            Voltar ao Painel
+                        </Link>
+                    </div>
                 </div>
 
                 {generatedLink ? (
@@ -420,7 +604,44 @@ export default function OrcamentoManual() {
                                 <Copy className="w-4 h-4" /> Copiar Link
                             </button>
                         </div>
-                        <button onClick={resetFlow} className="text-[#f58220] font-bold hover:underline">Gerar Nova Proposta</button>
+                        {/* Editar preço pós-geração */}
+                        <div className="mt-6 mb-4">
+                            {!editPriceMode ? (
+                                <button onClick={() => { setEditPriceMode(true); setEditPriceValue(totalPrice.toFixed(2)) }}
+                                    className="flex items-center gap-2 mx-auto text-sm font-bold text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 px-4 py-2 rounded-lg border border-slate-200 transition-all">
+                                    <DollarSign className="w-4 h-4" /> Ajustar Preço da Proposta
+                                </button>
+                            ) : (
+                                <div className="flex items-center justify-center gap-3">
+                                    <span className="text-sm font-bold text-slate-600">Novo valor: $</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={editPriceValue}
+                                        onChange={e => setEditPriceValue(e.target.value)}
+                                        className="w-28 border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#f58220]/50"
+                                    />
+                                    <button onClick={handleEditPrice}
+                                        className="bg-[#f58220] text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-orange-600 transition-all">
+                                        Salvar
+                                    </button>
+                                    <button onClick={() => setEditPriceMode(false)}
+                                        className="text-slate-400 hover:text-slate-600 px-3 py-2 rounded-lg text-sm transition-all">
+                                        Cancelar
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-center gap-4 flex-wrap">
+                            <button onClick={() => { setGeneratedLink(null) }}
+                                className="flex items-center gap-2 text-slate-600 font-bold hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-lg transition-all text-sm">
+                                <Pencil className="w-4 h-4" /> Editar Esta Proposta
+                            </button>
+                            <button onClick={resetFlow} className="text-[#f58220] font-bold hover:underline text-sm">
+                                Nova Proposta do Zero
+                            </button>
+                        </div>
                     </motion.div>
                 ) : (
                     <div className="bg-white rounded-2xl shadow-lg border border-slate-100 p-6 md:p-8">
@@ -793,5 +1014,140 @@ export default function OrcamentoManual() {
                 </div>
             )}
         </div>
+
+            {/* ── Painel de Rascunhos & Propostas ─────────────────────────────── */ }
+    <AnimatePresence>
+        {showDraftPanel && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 bg-black/60 flex justify-end"
+                onClick={() => setShowDraftPanel(false)}
+            >
+                <motion.div
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                    className="bg-white w-full max-w-lg h-full flex flex-col shadow-2xl"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-slate-50">
+                        <div>
+                            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <FolderOpen className="w-5 h-5 text-[#f58220]" /> Rascunhos & Propostas
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-0.5">Clique para carregar, duplicar ou excluir</p>
+                        </div>
+                        <button onClick={() => setShowDraftPanel(false)}
+                            className="p-2 hover:bg-slate-200 rounded-lg transition-colors">
+                            <X className="w-5 h-5 text-slate-500" />
+                        </button>
+                    </div>
+
+                    {/* List */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {loadingDrafts ? (
+                            <div className="flex items-center justify-center py-20">
+                                <div className="w-8 h-8 border-4 border-slate-200 border-t-[#f58220] rounded-full animate-spin" />
+                            </div>
+                        ) : draftList.length === 0 ? (
+                            <div className="text-center py-20 text-slate-400">
+                                <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                <p className="font-medium">Nenhum rascunho salvo ainda</p>
+                                <p className="text-sm mt-1">Os rascunhos são salvos automaticamente enquanto você edita</p>
+                            </div>
+                        ) : (
+                            draftList.map(draft => (
+                                <div key={draft.id}
+                                    className={`rounded-xl border p-4 transition-all hover:shadow-md ${draft.id === draftId
+                                            ? 'border-[#f58220] bg-orange-50'
+                                            : 'border-slate-200 bg-white hover:border-slate-300'
+                                        }`}
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            {/* Status badge */}
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${draft.status === 'sent'
+                                                        ? 'bg-green-100 text-green-700'
+                                                        : 'bg-slate-100 text-slate-600'
+                                                    }`}>
+                                                    {draft.status === 'sent' ? '✅ Enviada' : '📝 Rascunho'}
+                                                </span>
+                                                {draft.id === draftId && (
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                                                        ← Em edição
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <p className="font-bold text-sm text-slate-800 leading-snug">{draft.title}</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">{draft.client_email}</p>
+
+                                            <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                                <span className="text-xs font-mono font-bold text-slate-700">
+                                                    ${draft.total_amount.toFixed(2)}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                    <Clock className="w-3 h-3" />
+                                                    {new Date(draft.updated_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                {draft.order_id && (
+                                                    <a
+                                                        href={`${window.location.origin}/proposta/${draft.order_id}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-[10px] text-blue-600 hover:underline flex items-center gap-1"
+                                                        onClick={e => e.stopPropagation()}
+                                                    >
+                                                        <LinkIcon className="w-3 h-3" /> Ver proposta
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="flex flex-col gap-1.5 shrink-0">
+                                            <button
+                                                onClick={() => loadDraft(draft)}
+                                                className="text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg transition-all"
+                                                title="Carregar para edição"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDuplicateDraft(draft.id)}
+                                                className="text-xs font-bold bg-blue-50 hover:bg-blue-500 text-blue-600 hover:text-white px-3 py-1.5 rounded-lg transition-all border border-blue-100"
+                                                title="Duplicar como novo rascunho"
+                                            >
+                                                <Copy className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteDraft(draft.id)}
+                                                className="text-xs font-bold bg-red-50 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1.5 rounded-lg transition-all border border-red-100"
+                                                title="Excluir rascunho"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-4 border-t border-slate-200 bg-slate-50">
+                        <p className="text-xs text-slate-400 text-center">
+                            Rascunhos salvos automaticamente · Arquivos não são armazenados (apenas análise)
+                        </p>
+                    </div>
+                </motion.div>
+            </motion.div>
+        )}
+    </AnimatePresence>
     )
 }
