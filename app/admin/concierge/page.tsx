@@ -7,8 +7,8 @@ import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
 import {
     ArrowRight, Upload, FileText, ShieldCheck, Trash2,
     ChevronDown, Lock, Globe, FilePlus, Copy, ExternalLink,
-    Eye, EyeOff, Sparkles, Zap, FileImage, FileType,
-    CheckCircle2, Loader2, FolderOpen, Files,
+    Sparkles, Zap, FileImage, FileType, CheckCircle2,
+    Loader2, FolderOpen, Files, Eye, EyeOff
 } from 'lucide-react'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import {
@@ -117,7 +117,6 @@ export default function ConciergePage() {
     const [externalLink, setExternalLink] = useState('')
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
 
-    // Progress States
     const [fastProgress, setFastProgress] = useState<{ completed: number; total: number } | null>(null)
     const [deepProgress, setDeepProgress] = useState<{ completed: number; total: number } | null>(null)
     const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
@@ -154,7 +153,6 @@ export default function ConciergePage() {
             toast.info(`${skipped} arquivo(s) ignorado(s) — formato não suportado.`)
         }
 
-        // 1. Register all docs immediately
         const newDocIds: string[] = []
         const newDocs: DocumentItem[] = supported.map(file => {
             const id = crypto.randomUUID()
@@ -172,7 +170,6 @@ export default function ConciergePage() {
         })
         setDocuments(prev => [...prev, ...newDocs])
 
-        // 2. Fast pass — Com controle de concorrência (evita estourar a memória)
         setFastProgress({ completed: 0, total: supported.length })
         let completedFast = 0
 
@@ -203,10 +200,9 @@ export default function ConciergePage() {
             setFastProgress({ completed: completedFast, total: supported.length })
         })
 
-        await runWithConcurrency(fastTasks, 3) // Limite de 3 arquivos por vez
+        await runWithConcurrency(fastTasks, 3)
         setFastProgress(null)
 
-        // 3. Deep pass in background — only PDFs need it
         const needsDeep = supported
             .map((file, i) => ({ file, index: i, id: newDocIds[i] }))
             .filter(({ file }) => detectFileType(file) === 'pdf')
@@ -247,7 +243,6 @@ export default function ConciergePage() {
         e.target.value = ''
     }
 
-    // Drag and drop
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
@@ -536,7 +531,7 @@ export default function ConciergePage() {
                                                                 )}
                                                             </div>
                                                         )}
-                                                        <button onClick={() => removeDocument(doc.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                                                        <button onClick={() => removeDocument(doc.id)} className="text-gray-300 hover:text-red-500 transition-colors" title="Excluir Arquivo Todo">
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
@@ -554,8 +549,8 @@ export default function ConciergePage() {
                                                             </button>
                                                             {expandedDocs.includes(doc.id) && doc.analysisStatus === 'deep' && (
                                                                 <div className="flex gap-2">
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full hover:bg-blue-100">Incluir todas</button>
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full hover:bg-gray-200">Excluir todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-500 hover:text-white flex items-center gap-1 transition-all"><Eye className="w-2.5 h-2.5" /> Incluir Todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full hover:bg-red-500 hover:text-white flex items-center gap-1 transition-all"><EyeOff className="w-2.5 h-2.5" /> Excluir Todas</button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -576,15 +571,16 @@ export default function ConciergePage() {
                                                                         if (p.density === 'scanned') { pColor = 'bg-red-50 text-red-700 border border-red-100'; pLabel = '🔴 Scan' }
                                                                         return (
                                                                             <div key={pIdx}
-                                                                                className={`flex items-center justify-between text-[10px] py-1.5 px-3 rounded-xl border transition-all ${isInc ? 'bg-slate-50/50 border-slate-100' : 'bg-gray-50 border-dashed border-gray-200 opacity-60'}`}>
+                                                                                className={`flex items-center justify-between text-[10px] py-1.5 px-3 rounded-xl border transition-all ${isInc ? 'bg-slate-50/50 border-slate-100' : 'bg-red-50/30 border-dashed border-red-100 opacity-60'}`}>
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <span className="text-gray-400 font-bold w-7">Pg {p.pageNumber}:</span>
+                                                                                    <span className={`font-bold w-7 ${isInc ? 'text-gray-500' : 'text-red-400 line-through'}`}>Pg {p.pageNumber}:</span>
                                                                                     <div className="flex items-center gap-0.5 bg-white border border-slate-200 p-0.5 rounded-lg">
                                                                                         {(['blank', 'low', 'medium', 'high'] as const).map(dType => (
                                                                                             <button key={dType} onClick={() => updatePageDensity(doc.id, pIdx, dType)}
+                                                                                                disabled={!isInc}
                                                                                                 className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${p.density === dType
                                                                                                     ? dType === 'blank' ? 'bg-gray-200 text-gray-700' : dType === 'low' ? 'bg-green-500 text-white' : dType === 'medium' ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'
-                                                                                                    : 'text-slate-400 hover:bg-slate-50'}`}>
+                                                                                                    : 'text-slate-400 hover:bg-slate-50'} ${!isInc && 'opacity-50 cursor-not-allowed'}`}>
                                                                                                 {dType === 'blank' ? '0%' : dType === 'low' ? '25%' : dType === 'medium' ? '50%' : '100%'}
                                                                                             </button>
                                                                                         ))}
@@ -593,8 +589,9 @@ export default function ConciergePage() {
                                                                                 </div>
                                                                                 <div className="flex items-center gap-3">
                                                                                     <span className="text-gray-500">{p.wordCount} pal.</span>
-                                                                                    <span className={`font-black ${isInc ? 'text-gray-900' : 'text-gray-400 line-through'}`}>${p.price.toFixed(2)}</span>
+                                                                                    <span className={`font-black ${isInc ? 'text-gray-900' : 'text-red-400 line-through'}`}>${p.price.toFixed(2)}</span>
                                                                                     <button onClick={() => togglePageInclusion(doc.id, pIdx)}
+                                                                                        title={isInc ? "Excluir página do orçamento" : "Incluir página no orçamento"}
                                                                                         className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-bold transition-all ${isInc ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'bg-gray-100 text-gray-400 border border-dashed border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                                                         {isInc ? <><Eye className="w-2.5 h-2.5" /> Incluída</> : <><EyeOff className="w-2.5 h-2.5" /> Excluída</>}
                                                                                     </button>
@@ -624,9 +621,7 @@ export default function ConciergePage() {
                                             Arraste arquivos ou pastas aqui — ou use os botões abaixo
                                         </p>
 
-                                        {/* Two explicit buttons */}
                                         <div className="grid grid-cols-2 gap-2">
-                                            {/* Button 1: Folder */}
                                             <label className="flex items-center justify-center gap-2 py-2.5 px-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-xl cursor-pointer transition-all group">
                                                 <FolderOpen className="w-4 h-4 text-orange-500 group-hover:scale-110 transition-transform" />
                                                 <span className="text-xs font-bold text-orange-700">Pasta Inteira</span>
@@ -643,7 +638,6 @@ export default function ConciergePage() {
                                                 />
                                             </label>
 
-                                            {/* Button 2: Individual files */}
                                             <label className="flex items-center justify-center gap-2 py-2.5 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl cursor-pointer transition-all group">
                                                 <Files className="w-4 h-4 text-gray-500 group-hover:scale-110 transition-transform" />
                                                 <span className="text-xs font-bold text-gray-600">Arquivos Avulsos</span>
