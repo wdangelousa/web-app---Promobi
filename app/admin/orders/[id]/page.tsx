@@ -19,18 +19,18 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
         return <div className="p-8 text-center text-red-600">Pedido não encontrado</div>
     }
 
-    // Data Sanitization (Pruning) to prevent serialization errors in production
+    // Data Sanitization (Pruning) com verificação de nulidade para evitar erros na tela
     const sanitizedOrder = {
         ...order,
         createdAt: order.createdAt.toISOString(),
-        user: {
+        user: order.user ? {
             ...order.user,
             createdAt: order.user.createdAt.toISOString()
-        },
-        documents: order.documents.map(doc => ({
+        } : null,
+        documents: order.documents ? order.documents.map(doc => ({
             ...doc,
             createdAt: doc.createdAt.toISOString()
-        }))
+        })) : []
     }
 
     return (
