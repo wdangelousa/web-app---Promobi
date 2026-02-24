@@ -8,7 +8,7 @@ import {
     ArrowRight, Upload, FileText, ShieldCheck, Trash2,
     ChevronDown, Lock, Globe, FilePlus, Copy, ExternalLink,
     Sparkles, Zap, FileImage, FileType, CheckCircle2,
-    Loader2, FolderOpen, Files, Eye, EyeOff
+    Loader2, FolderOpen, Files, RotateCcw, Eye
 } from 'lucide-react'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import {
@@ -549,8 +549,8 @@ export default function ConciergePage() {
                                                             </button>
                                                             {expandedDocs.includes(doc.id) && doc.analysisStatus === 'deep' && (
                                                                 <div className="flex gap-2">
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-500 hover:text-white flex items-center gap-1 transition-all"><Eye className="w-2.5 h-2.5" /> Incluir Todas</button>
-                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full hover:bg-red-500 hover:text-white flex items-center gap-1 transition-all"><EyeOff className="w-2.5 h-2.5" /> Excluir Todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, true)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-500 hover:text-white flex items-center gap-1 transition-all">Restaurar Todas</button>
+                                                                    <button onClick={() => setAllPagesInclusion(doc.id, false)} className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full hover:bg-red-500 hover:text-white flex items-center gap-1 transition-all">Apagar Todas</button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -590,11 +590,34 @@ export default function ConciergePage() {
                                                                                 <div className="flex items-center gap-3">
                                                                                     <span className="text-gray-500">{p.wordCount} pal.</span>
                                                                                     <span className={`font-black ${isInc ? 'text-gray-900' : 'text-red-400 line-through'}`}>${p.price.toFixed(2)}</span>
-                                                                                    <button onClick={() => togglePageInclusion(doc.id, pIdx)}
-                                                                                        title={isInc ? "Excluir página do orçamento" : "Incluir página no orçamento"}
-                                                                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-bold transition-all ${isInc ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'bg-gray-100 text-gray-400 border border-dashed border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
-                                                                                        {isInc ? <><Eye className="w-2.5 h-2.5" /> Incluída</> : <><EyeOff className="w-2.5 h-2.5" /> Excluída</>}
-                                                                                    </button>
+
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        {/* BOTÃO OLHINHO - Visualizar direto na página */}
+                                                                                        <button
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (doc.externalLink) {
+                                                                                                    window.open(doc.externalLink, '_blank');
+                                                                                                } else if (doc.file) {
+                                                                                                    const url = URL.createObjectURL(doc.file);
+                                                                                                    const isPdf = doc.file.type === 'application/pdf' || doc.file.name.toLowerCase().endsWith('.pdf');
+                                                                                                    window.open(isPdf ? `${url}#page=${p.pageNumber}` : url, '_blank');
+                                                                                                }
+                                                                                            }}
+                                                                                            title={`Visualizar Página ${p.pageNumber}`}
+                                                                                            className="flex items-center justify-center w-6 h-6 rounded-md bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-600 hover:text-white transition-all"
+                                                                                        >
+                                                                                            <Eye className="w-3.5 h-3.5" />
+                                                                                        </button>
+
+                                                                                        {/* BOTÃO LIXEIRA - Excluir/Restaurar do orçamento */}
+                                                                                        <button onClick={() => togglePageInclusion(doc.id, pIdx)}
+                                                                                            title={isInc ? "Excluir página do orçamento" : "Restaurar página"}
+                                                                                            className={`flex items-center justify-center w-6 h-6 rounded-md transition-all ${isInc ? 'bg-red-50 text-red-500 hover:bg-red-600 hover:text-white border border-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100'}`}>
+                                                                                            {isInc ? <Trash2 className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                                                                                        </button>
+                                                                                    </div>
+
                                                                                 </div>
                                                                             </div>
                                                                         )
