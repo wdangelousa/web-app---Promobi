@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { Save, Send, FileText, CheckCircle, AlertTriangle, ChevronRight, Clock, ShieldCheck, Eye } from 'lucide-react'
-import ManualApprovalButton from './ManualApprovalButton'
+import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
 import { saveDocumentDraft } from '@/app/actions/save-draft'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import 'react-quill-new/dist/quill.snow.css'
@@ -127,8 +127,8 @@ export default function Workbench({ order }: { order: Order }) {
                                 key={doc.id}
                                 onClick={() => setSelectedDocId(doc.id)}
                                 className={`w-full text-left p-3 rounded-xl transition-all group relative flex items-start gap-3 ${isActive
-                                        ? 'bg-[#f58220]/10 border border-[#f58220]/20'
-                                        : 'hover:bg-slate-800 border border-transparent'
+                                    ? 'bg-[#f58220]/10 border border-[#f58220]/20'
+                                    : 'hover:bg-slate-800 border border-transparent'
                                     }`}
                             >
                                 <div className={`mt-1 p-1.5 rounded-lg shrink-0 ${isActive ? 'bg-[#f58220] text-white' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'
@@ -205,8 +205,15 @@ export default function Workbench({ order }: { order: Order }) {
                             <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Editor de Tradução</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
-                                <ManualApprovalButton orderId={order.id} />
+                            {['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
+                                <div className="flex items-center gap-2">
+                                    {/* Using the unified and robust confirmation button */}
+                                    <ConfirmPaymentButton
+                                        order={order as any}
+                                        confirmedByName="Isabele" // Default label for the operator
+                                        onConfirmed={() => window.location.reload()}
+                                    />
+                                </div>
                             )}
                             <button
                                 onClick={handleSave}

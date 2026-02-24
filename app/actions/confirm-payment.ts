@@ -62,8 +62,9 @@ export async function confirmPayment(
     }
 
     // Guard: don't double-process
-    if (['TRANSLATING', 'READY_FOR_REVIEW', 'COMPLETED'].includes(order.status)) {
-      return { success: false, error: `Pedido #${orderId} já está em status ${order.status}.` }
+    const terminalStatuses = ['READY_FOR_REVIEW', 'COMPLETED', 'DELIVERED', 'CANCELLED'];
+    if (terminalStatuses.includes(order.status)) {
+      return { success: false, error: `Pedido #${orderId} já está em status finalizado (${order.status}).` }
     }
 
     // 2. Parse existing metadata and add payment confirmation
