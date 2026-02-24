@@ -11,6 +11,7 @@ import {
   Send, RotateCcw, ExternalLink, Check, X, Copy,
 } from 'lucide-react'
 import { approveDocument, saveTranslationDraft, releaseToClient } from '@/app/actions/workbench'
+import { retryTranslation } from '@/app/actions/retry-translation'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,33 +40,33 @@ interface WorkbenchEditorProps {
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
-  pending:      { label: 'Aguardando',     color: 'text-slate-500',  bg: 'bg-slate-100',  icon: '⏳' },
-  ai_draft:     { label: 'Rascunho DeepL', color: 'text-orange-600', bg: 'bg-orange-100', icon: '🤖' },
-  needs_manual: { label: 'Manual',         color: 'text-amber-700',  bg: 'bg-amber-100',  icon: '✍️' },
-  error:        { label: 'Erro DeepL',     color: 'text-red-600',    bg: 'bg-red-100',    icon: '❌' },
-  reviewed:     { label: 'Revisado',       color: 'text-blue-600',   bg: 'bg-blue-100',   icon: '👁️' },
-  approved:     { label: 'Aprovado',       color: 'text-green-700',  bg: 'bg-green-100',  icon: '✅' },
+  pending: { label: 'Aguardando', color: 'text-slate-500', bg: 'bg-slate-100', icon: '⏳' },
+  ai_draft: { label: 'Rascunho DeepL', color: 'text-orange-600', bg: 'bg-orange-100', icon: '🤖' },
+  needs_manual: { label: 'Manual', color: 'text-amber-700', bg: 'bg-amber-100', icon: '✍️' },
+  error: { label: 'Erro DeepL', color: 'text-red-600', bg: 'bg-red-100', icon: '❌' },
+  reviewed: { label: 'Revisado', color: 'text-blue-600', bg: 'bg-blue-100', icon: '👁️' },
+  approved: { label: 'Aprovado', color: 'text-green-700', bg: 'bg-green-100', icon: '✅' },
 }
 const cfg = (s: string) => STATUS_CFG[s] ?? STATUS_CFG.pending
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps) {
-  const [docs, setDocs]           = useState<Doc[]>(order.documents)
+  const [docs, setDocs] = useState<Doc[]>(order.documents)
   const [selectedId, setSelectedId] = useState<number>(order.documents[0]?.id ?? 0)
-  const [edited, setEdited]       = useState<Record<number, string>>({})
+  const [edited, setEdited] = useState<Record<number, string>>({})
   const [uploading, setUploading] = useState<number | null>(null)
   const [releasing, startRelease] = useTransition()
-  const [saving, startSave]       = useTransition()
-  const [released, setReleased]   = useState(false)
-  const [toast, setToast]         = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
-  const fileRef                   = useRef<HTMLInputElement>(null)
+  const [saving, startSave] = useTransition()
+  const [released, setReleased] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  const selected    = docs.find(d => d.id === selectedId) ?? docs[0]
-  const approved    = docs.filter(d => d.translation_status === 'approved').length
-  const total       = docs.length
-  const pct         = total > 0 ? Math.round((approved / total) * 100) : 0
-  const allDone     = approved === total && total > 0 && docs.every(d => !!d.delivery_pdf_url)
+  const selected = docs.find(d => d.id === selectedId) ?? docs[0]
+  const approved = docs.filter(d => d.translation_status === 'approved').length
+  const total = docs.length
+  const pct = total > 0 ? Math.round((approved / total) * 100) : 0
+  const allDone = approved === total && total > 0 && docs.every(d => !!d.delivery_pdf_url)
   const isCompleted = order.status === 'COMPLETED' || released
 
   // Helper: get display text (edited > saved > '')
@@ -114,7 +115,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
       form.append('docId', String(selected.id))
       form.append('orderId', String(order.id))
 
-      const res  = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: form })
+      const res = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok || !data.url) throw new Error(data.error ?? 'Upload falhou')
 
@@ -191,6 +192,22 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
           </div>
 
           <div className="flex items-center gap-3">
+            {docs.some(d => d.translation_status === 'error') && (
+              <button
+                onClick={async () => {
+                  startSave(async () => {
+                    const r = await retryTranslation(order.id)
+                    if (r.success) showToast('Gatilho disparado! ✓')
+                    else showToast(r.error || 'Erro ao re-tentar', 'err')
+                  })
+                }}
+                disabled={saving}
+                className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-700 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Tentar Novamente (DeepL)
+              </button>
+            )}
             <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-400' : 'bg-orange-400'}`}
@@ -216,7 +233,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
 
           <div className="flex-1 overflow-y-auto">
             {docs.map((doc, i) => {
-              const c  = cfg(doc.translation_status)
+              const c = cfg(doc.translation_status)
               const sel = doc.id === selectedId
               return (
                 <button
@@ -349,6 +366,17 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                       <p className="text-xs mt-1">O rascunho aparecerá aqui em breve</p>
                     </div>
                   </div>
+                ) : selected.translation_status === 'error' ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center p-8">
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h3 className="text-lg font-bold text-slate-800">Falha na Tradução Automática</h3>
+                      <p className="text-sm text-slate-500 max-w-sm mx-auto mt-2">
+                        Houve um erro técnico ao processar este documento via DeepL.
+                        Clique em "Tentar Novamente" no cabeçalho ou digite a tradução manualmente.
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     {selected.translation_status === 'needs_manual' && (
@@ -413,8 +441,8 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                       {uploading === selected.id
                         ? <Loader2 className="w-4 h-4 animate-spin" />
                         : selected.delivery_pdf_url
-                        ? <><Check className="w-4 h-4" /> PDF carregado</>
-                        : <><Upload className="w-4 h-4" /> Upload PDF traduzido</>
+                          ? <><Check className="w-4 h-4" /> PDF carregado</>
+                          : <><Upload className="w-4 h-4" /> Upload PDF traduzido</>
                       }
                     </label>
                     {selected.delivery_pdf_url && (

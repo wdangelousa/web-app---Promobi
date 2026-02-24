@@ -68,7 +68,10 @@ export function normalizeOrder(order: any): NormalizedOrder {
             // Carry over any other primitive fields needed
             analysis: doc.analysis || null,
             notarized: !!doc.notarized,
-            translatedText: typeof doc.translatedText === 'string' ? doc.translatedText : null
+            translatedText: typeof doc.translatedText === 'string' ? doc.translatedText : null,
+            translation_status: doc.translation_status || 'pending',
+            delivery_pdf_url: doc.delivery_pdf_url || null,
+            exactNameOnDoc: doc.exactNameOnDoc || null
         }))
         : [];
 
