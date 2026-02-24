@@ -13,7 +13,6 @@ import { generatePremiumProposalPDF } from '@/app/actions/generate-proposal-pdf'
 import { useEffect } from 'react'
 
 export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
-    // Safety check for metadata
     const metadata = order.metadata ? JSON.parse(order.metadata) : null;
 
     const [expandedDocs, setExpandedDocs] = useState<number[]>(
@@ -24,7 +23,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
     const [isProcessingStripe, setIsProcessingStripe] = useState(false)
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
-
     const [logoBase64, setLogoBase64] = useState<string | null>(null)
 
     useEffect(() => {
@@ -32,7 +30,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     }, [])
 
     const breakdown = metadata?.breakdown || {};
-
     const { toast } = useUIFeedback()
 
     const urgencyLabels: Record<string, string> = {
@@ -80,7 +77,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
             })
             if (res.ok) {
                 toast.success('Notificação de pagamento enviada com sucesso!')
-                // Refresh or redirect
                 setTimeout(() => window.location.reload(), 2000)
             } else {
                 toast.error('Ocorreu um erro ao notificar. Tente novamente.')
@@ -114,7 +110,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         }
     }
 
-    // Determine initial state gracefully
     if (order.status !== 'PENDING_PAYMENT') {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -134,37 +129,82 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
-            {/* A. Cabeçalho Executivo */}
+
+            {/* ── HEADER ──────────────────────────────────────────────────────────
+                ANTES: telefone era `absolute right-6` → sobrepunha o título.
+                AGORA:  layout em 3 colunas (espaço | centro | telefone) para que
+                        o título fique sempre centralizado sem colisão.           */}
             <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-                <div className="max-w-3xl mx-auto px-6 py-4 flex flex-col items-center justify-center text-center relative">
-                    <div className="absolute right-6 top-1/2 -translate-y-1/2 hidden md:block">
-                        <a href="https://wa.me/13213245851" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 font-bold px-4 py-2 rounded-full text-sm transition-colors border border-green-200 shadow-sm">
+                <div className="max-w-3xl mx-auto px-6 py-4">
+
+                    {/* Grid 3 colunas: placeholder | conteúdo central | telefone */}
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+
+                        {/* Coluna esquerda — vazia, só para contrabalançar */}
+                        <div className="hidden md:block" />
+
+                        {/* Coluna central */}
+                        <div className="flex flex-col items-center text-center col-start-1 md:col-start-2">
+                            <Image
+                                src="/logo.png"
+                                width={140}
+                                height={46}
+                                alt="Promobi"
+                                className="h-10 w-auto mb-3"
+                                style={{ objectFit: 'contain' }}
+                            />
+                            <h1 className="text-lg md:text-2xl font-black text-slate-900 leading-tight">
+                                Proposta de Serviços de Tradução Certificada
+                            </h1>
+                            <div className="flex flex-wrap items-center justify-center gap-2 mt-2 text-sm text-slate-600 font-medium">
+                                <span className="bg-slate-100 px-3 py-1 rounded-full text-slate-500">
+                                    Cotação #{order.id}
+                                </span>
+                                {globalSettings && (
+                                    <button
+                                        onClick={handleDownloadPDF}
+                                        disabled={isGeneratingPDF}
+                                        className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                                    >
+                                        <Download className="w-3 h-3" />
+                                        {isGeneratingPDF ? 'Gerando...' : 'Baixar PDF'}
+                                    </button>
+                                )}
+                                <span>•</span>
+                                <span>{order.user.fullName}</span>
+                            </div>
+                        </div>
+
+                        {/* Coluna direita — telefone, alinhado à direita */}
+                        <div className="hidden md:flex justify-end">
+                            <a
+                                href="https://wa.me/13213245851"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 font-bold px-4 py-2 rounded-full text-sm transition-colors border border-green-200 shadow-sm whitespace-nowrap"
+                            >
+                                <Smartphone className="w-4 h-4" /> (321) 324-5851
+                            </a>
+                        </div>
+                    </div>
+
+                    {/* Telefone em mobile — aparece abaixo, centralizado */}
+                    <div className="flex justify-center mt-3 md:hidden">
+                        <a
+                            href="https://wa.me/13213245851"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 font-bold px-4 py-2 rounded-full text-sm transition-colors border border-green-200 shadow-sm"
+                        >
                             <Smartphone className="w-4 h-4" /> (321) 324-5851
                         </a>
-                    </div>
-                    <Image src="/logo.png" width={180} height={60} alt="Promobi" className="h-10 w-auto mb-3" />
-                    <h1 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">Proposta de Serviços de Tradução Certificada</h1>
-                    <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-600 font-medium">
-                        <span className="bg-slate-100 px-3 py-1 rounded-full text-slate-500">Cotação #{order.id}</span>
-                        {globalSettings && (
-                            <button
-                                onClick={handleDownloadPDF}
-                                disabled={isGeneratingPDF}
-                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
-                            >
-                                <Download className="w-3 h-3" />
-                                {isGeneratingPDF ? 'Gerando...' : 'Baixar PDF'}
-                            </button>
-                        )}
-                        <span>•</span>
-                        <span>{order.user.fullName}</span>
                     </div>
                 </div>
             </header>
 
             <main className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
 
-                {/* Intro / Executive Summary */}
+                {/* Visão Geral */}
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800">
                         <FileText className="text-[#f58220] w-5 h-5" /> Visão Geral do Pedido
@@ -173,7 +213,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         Analisamos cuidadosamente seus documentos via motor inteligente. Abaixo detalhamos a matemática exata, baseada puramente na densidade de texto (volume de palavras) encontrada nas páginas processadas. Padrão exigido pelo USCIS.
                     </p>
 
-                    {/* C. Prazos, Garantias e Chancelas */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                             <div className="flex items-center gap-2 mb-2">
@@ -197,7 +236,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </section>
 
-                {/* B. O "Raio-X" da Transparência (Densidade) */}
+                {/* Raio-X */}
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <div className="flex justify-between items-end mb-6">
                         <div>
@@ -222,16 +261,17 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                         className="bg-slate-50 p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                                         onClick={() => toggleDocExpand(doc.id)}
                                     >
-                                        <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="flex items-center gap-3 min-w-0">
                                             <div className="bg-white p-2 rounded-lg shadow-sm shrink-0">
                                                 <FileText className="w-5 h-5 text-slate-400" />
                                             </div>
-                                            <div className="overflow-hidden">
-                                                <p className="font-bold text-sm text-slate-800 truncate">{doc.fileName}</p>
+                                            <div className="min-w-0">
+                                                {/* break-words para não truncar nomes longos */}
+                                                <p className="font-bold text-sm text-slate-800 break-words leading-snug">{doc.fileName}</p>
                                                 <p className="text-xs text-slate-500">{doc.count} página(s)</p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-3 shrink-0">
+                                        <div className="flex items-center gap-3 shrink-0 ml-3">
                                             {doc.analysis && (
                                                 <span className="font-bold text-slate-900">${doc.analysis.totalPrice?.toFixed(2)}</span>
                                             )}
@@ -254,16 +294,18 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                                         if (p.density === 'high') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta (100%)'; }
                                                         else if (p.density === 'medium') { color = 'bg-yellow-100 text-yellow-800'; label = '🟡 Média (50%)'; }
                                                         else if (p.density === 'low') { color = 'bg-green-100 text-green-800'; label = '🟢 Baixa (25%)'; }
-                                                        else if (p.density === 'scanned') { color = 'bg-red-100 text-red-800'; label = '🔴 Alta/Scanned (100%)'; }
+                                                        else if (p.density === 'scanned') { color = 'bg-orange-100 text-orange-800'; label = '🟠 Digitalizado'; }
 
                                                         return (
                                                             <div key={pIdx} className="flex items-center gap-3 text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                                                <span className="text-slate-400 font-mono w-14">Pg {p.pageNumber}:</span>
-                                                                <span className="text-slate-600 font-mono w-20">{p.wordCount ?? 0} pal. <span className="text-slate-300">{'->'}</span></span>
+                                                                <span className="text-slate-400 font-mono w-14 shrink-0">Pg {p.pageNumber}:</span>
+                                                                <span className="text-slate-600 font-mono w-20 shrink-0">
+                                                                    {p.wordCount ?? 0} pal. <span className="text-slate-300">{'->'}</span>
+                                                                </span>
                                                                 <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${color}`}>
                                                                     {label}
                                                                 </span>
-                                                                <div className="ml-auto flex items-center gap-3">
+                                                                <div className="ml-auto flex items-center gap-3 shrink-0">
                                                                     <span className="font-mono text-slate-700 font-bold">${p.price.toFixed(2)}</span>
                                                                     <button
                                                                         onClick={() => {
@@ -290,11 +332,9 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </section>
 
-                {/* D. Resumo Financeiro e Condições */}
+                {/* Resumo Financeiro */}
                 <section className="bg-slate-900 rounded-2xl shadow-2xl p-6 md:p-8 text-white relative overflow-hidden">
-                    {/* Background glow */}
                     <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-[#f58220] rounded-full blur-3xl opacity-20"></div>
-
                     <h2 className="text-xl font-bold mb-6 text-slate-100">Resumo Financeiro</h2>
 
                     <div className="space-y-3 mb-6 font-mono text-sm border-b border-slate-700 pb-6">
@@ -341,14 +381,13 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </section>
 
-                {/* E. Central de Pagamento Inteligente */}
+                {/* Pagamento */}
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <h2 className="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">
                         <Lock className="w-5 h-5 text-[#f58220]" /> Pagamento Seguro
                     </h2>
 
                     <div className="space-y-3">
-                        {/* 1. Stripe (Default/Primary) */}
                         <div
                             className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'STRIPE' ? 'border-[#f58220] bg-orange-50' : 'border-slate-200 hover:border-slate-300'}`}
                             onClick={() => setPaymentMethod('STRIPE')}
@@ -365,7 +404,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     {paymentMethod === 'STRIPE' && <div className="w-2.5 h-2.5 bg-[#f58220] rounded-full"></div>}
                                 </div>
                             </div>
-
                             <AnimatePresence>
                                 {paymentMethod === 'STRIPE' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-orange-200">
@@ -381,7 +419,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             </AnimatePresence>
                         </div>
 
-                        {/* 2. Zelle */}
                         <div
                             className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'ZELLE' ? 'border-[#741cd9] bg-purple-50' : 'border-slate-200 hover:border-slate-300'}`}
                             onClick={() => setPaymentMethod('ZELLE')}
@@ -398,7 +435,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     {paymentMethod === 'ZELLE' && <div className="w-2.5 h-2.5 bg-[#741cd9] rounded-full"></div>}
                                 </div>
                             </div>
-
                             <AnimatePresence>
                                 {paymentMethod === 'ZELLE' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-purple-200 text-sm">
@@ -419,7 +455,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             </AnimatePresence>
                         </div>
 
-                        {/* 3. Pix */}
                         <div
                             className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'PIX' ? 'border-[#32bcad] bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}
                             onClick={() => setPaymentMethod('PIX')}
@@ -438,7 +473,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     {paymentMethod === 'PIX' && <div className="w-2.5 h-2.5 bg-[#32bcad] rounded-full"></div>}
                                 </div>
                             </div>
-
                             <AnimatePresence>
                                 {paymentMethod === 'PIX' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-teal-200 text-sm">
@@ -446,7 +480,9 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                             <p className="text-slate-500 mb-2">Chave Pix (Telefone Celular):</p>
                                             <p className="font-mono font-bold text-xl text-slate-900 select-all tracking-wider">+14076396154</p>
                                             <p className="text-xs text-slate-400 mt-2">Nominal/Favorecido: Walter D'Angelo</p>
-                                            <p className="text-xs text-teal-600 font-bold mt-2 mt-4 bg-teal-50 py-1.5 px-3 rounded-full inline-block">Valor em R$: R$ {(order.totalAmount * 5.2).toFixed(2)}</p>
+                                            <p className="text-xs text-teal-600 font-bold mt-4 bg-teal-50 py-1.5 px-3 rounded-full inline-block">
+                                                Valor em R$: R$ {(order.totalAmount * 5.2).toFixed(2)}
+                                            </p>
                                         </div>
                                         <button
                                             disabled={isConfirmingTransfer}
@@ -462,10 +498,10 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </section>
 
-                {/* F. Rodapé Institucional */}
                 <footer className="pt-8 pb-12 text-center border-t border-slate-200 mt-12">
                     <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed mb-4">
-                        Ao prosseguir com o pagamento, você atesta a veracidade dos documentos originais e concorda com nossos <br /><a href="#" className="underline">Termos de Serviço</a>.
+                        Ao prosseguir com o pagamento, você atesta a veracidade dos documentos originais e concorda com nossos{' '}
+                        <a href="#" className="underline">Termos de Serviço</a>.
                     </p>
                     <p className="text-xs text-slate-500 font-medium">
                         Promobi Corporate Services LLC<br />
@@ -474,6 +510,21 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </p>
                 </footer>
             </main>
+
+            {/* Quicklook Modal */}
+            {quicklookData && (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setQuicklookData(null)}>
+                    <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                            <span className="text-sm font-bold text-slate-700">Página {quicklookData.pageNumber}</span>
+                            <button onClick={() => setQuicklookData(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+                        <iframe src={`${quicklookData.url}#page=${quicklookData.pageNumber}`} className="flex-1 w-full" style={{ minHeight: '70vh' }} />
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -112,7 +112,7 @@ export default function OrcamentoManual() {
     const handleServiceSelection = (type: 'translation' | 'notarization') => {
         setServiceType(type)
         setDocuments([])
-        setUrgency('normal')
+        setUrgency('standard')
         setExpandedDocs([])
     }
 
@@ -128,11 +128,11 @@ export default function OrcamentoManual() {
                 message: 'Isso limpará seu orçamento atual. Deseja continuar?',
                 confirmText: 'Sim, alterar',
                 danger: true,
-                onConfirm: () => { setServiceType(null); setDocuments([]); setUrgency('normal') }
+                onConfirm: () => { setServiceType(null); setDocuments([]); setUrgency('standard') }
             })
             return
         }
-        setServiceType(null); setDocuments([]); setUrgency('normal')
+        setServiceType(null); setDocuments([]); setUrgency('standard')
     }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -258,6 +258,7 @@ export default function OrcamentoManual() {
                 const [copied] = await dst.copyPages(src, [pageIdx])
                 dst.addPage(copied)
                 const bytes = await dst.save()
+                // Cast to any to avoid TypeScript error with ArrayBufferLike/SharedArrayBuffer
                 const blob = new Blob([bytes as any], { type: 'application/pdf' })
                 const url = URL.createObjectURL(blob)
                 setQuicklookData({ url, pageNumber, isBlob: true })

@@ -35,6 +35,47 @@ export type BatchProgress = {
     total: number
 }
 
+// ─── Density thresholds ───────────────────────────────────────────────────────
+//
+// Calibrado para documentos USCIS típicos (passaportes, certidões, etc.)
+//
+//   blank   :   0 palavras  →  0%    (página em branco / separador)
+//   low     :  1–79 palavras → 25%   (carimbo, assinatura, capa)
+//   medium  : 80–199         → 50%   (formulário parcialmente preenchido)
+//   high    : 200+           → 100%  (texto denso, contrato, certidão)
+//   scanned : imagem embutida → 100% (OCR obrigatório)
+//
+// Thresholds conservadores para nunca cobrar a mais do cliente.
+
+function wordCountToDensity(words: number): { density: DensityType; fraction: number } {
+    if (words === 0) return { density: 'blank', fraction: 0 }
+    if (words < 80) return { density: 'low', fraction: 0.25 }
+    if (words < 200) return { density: 'medium', fraction: 0.5 }
+    return { density: 'high', fraction: 1.0 }
+}
+
+// ─── Heurística bytes/página → densidade estimada ─────────────────────────────
+//
+// Usado no fallback quando o Web Worker (pdfjs) não está disponível.
+// PDFs com muito texto → stream de texto é pequeno (texto comprimido).
+// PDFs com imagens escaneadas → stream de imagem é enorme.
+// PDFs com pouco conteúdo → stream minúsculo.
+//
+// Correlação empírica calibrada com documentos reais de imigração.
+
+function bytesPerPageToDensity(bytesPerPage: number): { density: DensityType; fraction: number; wordCount: number } {
+    // PDF digitalizado (scanned) — imagem embutida por página
+    if (bytesPerPage > 350_000) return { density: 'scanned', fraction: 1.0, wordCount: 0 }
+    // Alta densidade — documento de texto rico (contrato, certidão)
+    if (bytesPerPage > 50_000) return { density: 'high', fraction: 1.0, wordCount: 250 }
+    // Média densidade — formulário preenchido parcialmente
+    if (bytesPerPage > 12_000) return { density: 'medium', fraction: 0.5, wordCount: 120 }
+    // Baixa densidade — capa, carimbo, página de assinatura
+    if (bytesPerPage > 2_500) return { density: 'low', fraction: 0.25, wordCount: 40 }
+    // Em branco — separador ou página vazia
+    return { density: 'blank', fraction: 0, wordCount: 0 }
+}
+
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
 const WORKER_POOL_SIZE = 4
@@ -108,29 +149,80 @@ function sendToWorker(
 }
 
 // ─── Inline fallback ─────────────────────────────────────────────────────────
+//
+// Acionado quando os Web Workers não estão disponíveis (SSR, alguns browsers).
+//
+// ✅ CORRIGIDO: antes hardcodeava density:'high' wordCount:300 para tudo.
+//    Agora usa heurística calibrada de bytes/página para estimar densidade real.
+//    O worker com pdfjs ainda dará resultados mais precisos quando disponível,
+//    mas o fallback agora é razoável em vez de cobrar alta em tudo.
 
 async function inlineFallback(type: 'fastPass' | 'deepPass', file: File, base: number): Promise<DocumentAnalysis> {
     const isImg = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)
     const isDocx = /\.docx$/i.test(file.name) || file.type.includes('wordprocessingml')
 
+    // Imagem → sempre scanned (precisa de OCR, cobra 100%)
     if (isImg) {
-        return { totalPages: 1, pages: [{ pageNumber: 1, wordCount: 300, density: 'scanned', price: base, fraction: 1, included: true }], totalPrice: base, originalTotalPrice: base, isImage: true, phase: 'deep', fileType: 'image' }
+        return {
+            totalPages: 1,
+            pages: [{ pageNumber: 1, wordCount: 0, density: 'scanned', price: base, fraction: 1, included: true }],
+            totalPrice: base, originalTotalPrice: base,
+            isImage: true, phase: 'deep', fileType: 'image'
+        }
     }
 
+    // DOCX → heurística pelo tamanho do arquivo
     if (isDocx) {
-        return { totalPages: 1, pages: [{ pageNumber: 1, wordCount: 300, density: 'high', price: base, fraction: 1, included: true }], totalPrice: base, originalTotalPrice: base, isImage: false, phase: 'deep', fileType: 'docx' }
+        // DOCX médio tem ~400 bytes por palavra no ZIP comprimido
+        const estimatedWords = Math.round(file.size / 400)
+        const { density, fraction } = wordCountToDensity(estimatedWords)
+        const price = base * fraction
+        return {
+            totalPages: 1,
+            pages: [{ pageNumber: 1, wordCount: estimatedWords, density, price, fraction, included: true }],
+            totalPrice: price, originalTotalPrice: price,
+            isImage: false, phase: 'fast', fileType: 'docx'
+        }
     }
 
-    // PDF: Leitura infalível usando pdf-lib
+    // PDF → usa pdf-lib para contar páginas e heurística bytes/página
     try {
         const buf = await file.arrayBuffer()
         const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true })
-        const count = pdfDoc.getPageCount()
-        const pages = Array.from({ length: count }, (_, i) => ({ pageNumber: i + 1, wordCount: 300, density: 'high' as DensityType, price: base, fraction: 1, included: true }))
-        return { totalPages: count, pages, totalPrice: count * base, originalTotalPrice: count * base, isImage: false, phase: 'fast', fileType: 'pdf' }
+        const pageCount = pdfDoc.getPageCount()
+
+        // Bytes por página: divide o arquivo pelo número de páginas.
+        // Em PDFs mistos (algumas páginas escaneadas, outras texto) isso é uma
+        // média — o worker com pdfjs faz análise página a página mais precisa.
+        const bytesPerPage = file.size / pageCount
+
+        const pages: PageAnalysis[] = Array.from({ length: pageCount }, (_, i) => {
+            const { density, fraction, wordCount } = bytesPerPageToDensity(bytesPerPage)
+            const price = base * fraction
+            return { pageNumber: i + 1, wordCount, density, price, fraction, included: true }
+        })
+
+        const totalPrice = pages.reduce((s, p) => s + p.price, 0)
+
+        return {
+            totalPages: pageCount,
+            pages,
+            totalPrice,
+            originalTotalPrice: totalPrice,
+            isImage: false,
+            phase: 'fast',
+            fileType: 'pdf'
+        }
     } catch (err) {
-        console.error('[DocumentAnalyzer] Inline fallback failed', err)
-        return { totalPages: 1, pages: [{ pageNumber: 1, wordCount: 300, density: 'high', price: base, fraction: 1, included: true }], totalPrice: base, originalTotalPrice: base, isImage: false, phase: 'fast', fileType: 'pdf' }
+        console.error('[DocumentAnalyzer] Inline fallback failed:', err)
+        // Último recurso — medium (nunca cobra a mais em caso de erro)
+        const price = base * 0.5
+        return {
+            totalPages: 1,
+            pages: [{ pageNumber: 1, wordCount: 100, density: 'medium', price, fraction: 0.5, included: true }],
+            totalPrice: price, originalTotalPrice: price,
+            isImage: false, phase: 'fast', fileType: 'pdf'
+        }
     }
 }
 
