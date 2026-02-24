@@ -112,7 +112,7 @@ export default function OrcamentoManual() {
     const handleServiceSelection = (type: 'translation' | 'notarization') => {
         setServiceType(type)
         setDocuments([])
-        setUrgency('standard')
+        setUrgency('normal')
         setExpandedDocs([])
     }
 
@@ -128,11 +128,11 @@ export default function OrcamentoManual() {
                 message: 'Isso limpará seu orçamento atual. Deseja continuar?',
                 confirmText: 'Sim, alterar',
                 danger: true,
-                onConfirm: () => { setServiceType(null); setDocuments([]); setUrgency('standard') }
+                onConfirm: () => { setServiceType(null); setDocuments([]); setUrgency('normal') }
             })
             return
         }
-        setServiceType(null); setDocuments([]); setUrgency('standard')
+        setServiceType(null); setDocuments([]); setUrgency('normal')
     }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

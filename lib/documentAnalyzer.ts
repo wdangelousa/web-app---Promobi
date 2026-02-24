@@ -48,10 +48,10 @@ export type BatchProgress = {
 // Thresholds conservadores para nunca cobrar a mais do cliente.
 
 function wordCountToDensity(words: number): { density: DensityType; fraction: number } {
-    if (words === 0) return { density: 'blank', fraction: 0 }
-    if (words < 80) return { density: 'low', fraction: 0.25 }
-    if (words < 200) return { density: 'medium', fraction: 0.5 }
-    return { density: 'high', fraction: 1.0 }
+    if (words === 0)    return { density: 'blank',  fraction: 0    }
+    if (words < 80)     return { density: 'low',    fraction: 0.25 }
+    if (words < 200)    return { density: 'medium', fraction: 0.5  }
+    return              { density: 'high',   fraction: 1.0  }
 }
 
 // ─── Heurística bytes/página → densidade estimada ─────────────────────────────
@@ -65,15 +65,15 @@ function wordCountToDensity(words: number): { density: DensityType; fraction: nu
 
 function bytesPerPageToDensity(bytesPerPage: number): { density: DensityType; fraction: number; wordCount: number } {
     // PDF digitalizado (scanned) — imagem embutida por página
-    if (bytesPerPage > 350_000) return { density: 'scanned', fraction: 1.0, wordCount: 0 }
+    if (bytesPerPage > 350_000) return { density: 'scanned', fraction: 1.0,  wordCount: 0   }
     // Alta densidade — documento de texto rico (contrato, certidão)
-    if (bytesPerPage > 50_000) return { density: 'high', fraction: 1.0, wordCount: 250 }
+    if (bytesPerPage > 50_000)  return { density: 'high',    fraction: 1.0,  wordCount: 250 }
     // Média densidade — formulário preenchido parcialmente
-    if (bytesPerPage > 12_000) return { density: 'medium', fraction: 0.5, wordCount: 120 }
+    if (bytesPerPage > 12_000)  return { density: 'medium',  fraction: 0.5,  wordCount: 120 }
     // Baixa densidade — capa, carimbo, página de assinatura
-    if (bytesPerPage > 2_500) return { density: 'low', fraction: 0.25, wordCount: 40 }
+    if (bytesPerPage > 2_500)   return { density: 'low',     fraction: 0.25, wordCount: 40  }
     // Em branco — separador ou página vazia
-    return { density: 'blank', fraction: 0, wordCount: 0 }
+    return                       { density: 'blank',   fraction: 0,    wordCount: 0   }
 }
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ function sendToWorker(
 //    mas o fallback agora é razoável em vez de cobrar alta em tudo.
 
 async function inlineFallback(type: 'fastPass' | 'deepPass', file: File, base: number): Promise<DocumentAnalysis> {
-    const isImg = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)
+    const isImg  = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|tiff?)$/i.test(file.name)
     const isDocx = /\.docx$/i.test(file.name) || file.type.includes('wordprocessingml')
 
     // Imagem → sempre scanned (precisa de OCR, cobra 100%)

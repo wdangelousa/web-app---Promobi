@@ -48,7 +48,7 @@ type DocumentItem = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toExt(raw: DocumentAnalysis): DocumentAnalysisExt {
-    const pages = raw.pages.map(p => ({ ...p, included: (p as any).included ?? true }))
+    const pages = raw.pages.map(p => ({ ...p, included: p.included ?? true }))
     const totalPrice = pages.filter(p => p.included).reduce((s, p) => s + p.price, 0)
     return { ...raw, pages, totalPrice, originalTotalPrice: raw.totalPrice }
 }
@@ -143,6 +143,9 @@ export default function ConciergePage() {
     }
 
     // ─── Core upload processor ────────────────────────────────────────────────
+    // ✅ FIX: PDFs NÃO são mais fatiados por página.
+    // Cada arquivo enviado = 1 documento no orçamento.
+    // A análise de densidade por página acontece internamente via documentAnalyzer.
     const processFiles = useCallback(async (rawFiles: File[]) => {
         const supported = rawFiles.filter(isSupportedFile)
         const skipped = rawFiles.length - supported.length
@@ -303,6 +306,8 @@ export default function ConciergePage() {
     }
 
     // ─── Per-page viewer ─────────────────────────────────────────────────────
+    // Opens a single-page blob extracted from the original PDF.
+    // For images/DOCX, falls back to the full file (single-page by nature).
     const openPage = async (doc: DocumentItem, pageIdx: number) => {
         if (doc.externalLink) { window.open(doc.externalLink, '_blank'); return }
         if (!doc.file) return
@@ -321,12 +326,15 @@ export default function ConciergePage() {
                 const blob = new Blob([bytes as any], { type: 'application/pdf' })
                 const url = URL.createObjectURL(blob)
                 window.open(url, '_blank')
+                // Revoke after a short delay so the tab has time to load it
                 setTimeout(() => URL.revokeObjectURL(url), 30_000)
             } catch {
+                // Fallback: open full document
                 const url = URL.createObjectURL(doc.file)
                 window.open(url, '_blank')
             }
         } else {
+            // Images, DOCX — single "page" anyway
             const url = URL.createObjectURL(doc.file)
             window.open(url, '_blank')
         }
@@ -538,6 +546,7 @@ export default function ConciergePage() {
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-1.5">
                                                                 <StatusIcon status={doc.analysisStatus} />
+                                                                {/* ✅ FIX: título completo, sem truncar nomes de arquivo */}
                                                                 <p className="text-sm font-bold text-gray-800 break-all leading-tight">{doc.fileName}</p>
                                                             </div>
                                                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
