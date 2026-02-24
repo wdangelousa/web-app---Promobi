@@ -115,7 +115,6 @@ export default function ConciergePage() {
 
     const [loading, setLoading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
-    const [prepStatus, setPrepStatus] = useState<string | null>(null)
     const [generatedLink, setGeneratedLink] = useState<string | null>(null)
     const [showLinkInput, setShowLinkInput] = useState(false)
     const [externalLink, setExternalLink] = useState('')
@@ -143,45 +142,10 @@ export default function ConciergePage() {
         flash: 1.0 + (globalSettings?.urgencyRate ? globalSettings.urgencyRate * 2 : 0.6),
     }
 
-    // ─── PDF Splitter Logic ───────────────────────────────────────────────────
-    const splitPdfsIfNeeded = async (rawFiles: File[]) => {
-        const result: File[] = [];
-        for (let i = 0; i < rawFiles.length; i++) {
-            const file = rawFiles[i];
-            if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-                try {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-                    const pageCount = pdfDoc.getPageCount();
-
-                    if (pageCount <= 1) {
-                        result.push(file);
-                        continue;
-                    }
-
-                    // Separa cada página do PDF em um arquivo independente
-                    for (let p = 0; p < pageCount; p++) {
-                        const newPdf = await PDFDocument.create();
-                        const [copiedPage] = await newPdf.copyPages(pdfDoc, [p]);
-                        newPdf.addPage(copiedPage);
-                        const pdfBytes = await newPdf.save();
-                        const baseName = file.name.replace(/\.pdf$/i, '');
-                        // Adiciona o sufixo da página no nome
-                        const newFile = new File([pdfBytes as any], `${baseName} (Pág ${p + 1}).pdf`, { type: 'application/pdf' });
-                        result.push(newFile);
-                    }
-                } catch (e) {
-                    console.error("Erro ao dividir PDF", file.name, e);
-                    result.push(file); // Fallback de segurança: mantém original se falhar
-                }
-            } else {
-                result.push(file); // Imagens e DOCX passam direto
-            }
-        }
-        return result;
-    }
-
     // ─── Core upload processor ────────────────────────────────────────────────
+    // ✅ FIX: PDFs NÃO são mais fatiados por página.
+    // Cada arquivo enviado = 1 documento no orçamento.
+    // A análise de densidade por página acontece internamente via documentAnalyzer.
     const processFiles = useCallback(async (rawFiles: File[]) => {
         const supported = rawFiles.filter(isSupportedFile)
         const skipped = rawFiles.length - supported.length
@@ -274,33 +238,22 @@ export default function ConciergePage() {
 
     const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return
-        setPrepStatus('Fatiando PDFs em páginas individuais...')
         const rawFiles = Array.from(e.target.files)
-        const splittedFiles = await splitPdfsIfNeeded(rawFiles)
-        setPrepStatus(null)
-        await processFiles(splittedFiles)
+        await processFiles(rawFiles)
         e.target.value = ''
     }
 
     const handleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return
-        setPrepStatus('Fatiando PDFs em páginas individuais...')
         const rawFiles = Array.from(e.target.files)
-        const splittedFiles = await splitPdfsIfNeeded(rawFiles)
-        setPrepStatus(null)
-        await processFiles(splittedFiles)
+        await processFiles(rawFiles)
         e.target.value = ''
     }
 
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
-        if (files.length) {
-            setPrepStatus('Fatiando PDFs em páginas individuais...')
-            const splittedFiles = await splitPdfsIfNeeded(files)
-            setPrepStatus(null)
-            await processFiles(splittedFiles)
-        }
+        if (files.length) await processFiles(files)
     }
 
     const handleLinkAdd = () => {
@@ -350,6 +303,40 @@ export default function ConciergePage() {
             const newPages = doc.analysis.pages.map(p => ({ ...p, included }))
             return { ...doc, count: included ? newPages.length : 0, analysis: { ...doc.analysis, pages: newPages, totalPrice: recalcPrice(newPages) } }
         }))
+    }
+
+    // ─── Per-page viewer ─────────────────────────────────────────────────────
+    // Opens a single-page blob extracted from the original PDF.
+    // For images/DOCX, falls back to the full file (single-page by nature).
+    const openPage = async (doc: DocumentItem, pageIdx: number) => {
+        if (doc.externalLink) { window.open(doc.externalLink, '_blank'); return }
+        if (!doc.file) return
+
+        const isDocPdf = /\.pdf$/i.test(doc.fileName) || doc.file.type === 'application/pdf'
+
+        if (isDocPdf) {
+            try {
+                const arrayBuffer = await doc.file.arrayBuffer()
+                const src = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true })
+                const dst = await PDFDocument.create()
+                const [copiedPage] = await dst.copyPages(src, [pageIdx])
+                dst.addPage(copiedPage)
+                const bytes = await dst.save()
+                const blob = new Blob([bytes as any], { type: 'application/pdf' })
+                const url = URL.createObjectURL(blob)
+                window.open(url, '_blank')
+                // Revoke after a short delay so the tab has time to load it
+                setTimeout(() => URL.revokeObjectURL(url), 30_000)
+            } catch {
+                // Fallback: open full document
+                const url = URL.createObjectURL(doc.file)
+                window.open(url, '_blank')
+            }
+        } else {
+            // Images, DOCX — single "page" anyway
+            const url = URL.createObjectURL(doc.file)
+            window.open(url, '_blank')
+        }
     }
 
     const toggleDocExpand = (id: string, e?: React.MouseEvent) => {
@@ -506,13 +493,10 @@ export default function ConciergePage() {
 
                             {/* Progress bars */}
                             <AnimatePresence>
-                                {prepStatus && (
-                                    <AnalysisProgress completed={0} total={0} title={prepStatus} />
-                                )}
-                                {!prepStatus && fastProgress && fastProgress.completed < fastProgress.total && (
+                                {fastProgress && fastProgress.completed < fastProgress.total && (
                                     <AnalysisProgress completed={fastProgress.completed} total={fastProgress.total} title="Extraindo metadados..." />
                                 )}
-                                {!prepStatus && !fastProgress && deepProgress && deepProgress.completed < deepProgress.total && (
+                                {!fastProgress && deepProgress && deepProgress.completed < deepProgress.total && (
                                     <AnalysisProgress completed={deepProgress.completed} total={deepProgress.total} title="Refinando análise de densidade..." />
                                 )}
                             </AnimatePresence>
@@ -561,7 +545,8 @@ export default function ConciergePage() {
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-1.5">
                                                                 <StatusIcon status={doc.analysisStatus} />
-                                                                <p className="text-sm font-bold text-gray-800 truncate max-w-[180px]">{doc.fileName}</p>
+                                                                {/* ✅ FIX: título completo, sem truncar nomes de arquivo */}
+                                                                <p className="text-sm font-bold text-gray-800 break-all leading-tight">{doc.fileName}</p>
                                                             </div>
                                                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                                                 <span className="text-[10px] text-gray-400 font-bold uppercase">
@@ -602,7 +587,7 @@ export default function ConciergePage() {
                                                             <button onClick={(e) => toggleDocExpand(doc.id, e)}
                                                                 className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-[#f58220] transition-colors">
                                                                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDocs.includes(doc.id) ? 'rotate-180' : ''}`} />
-                                                                {isFastOnly ? 'Aguardando análise completa...' : 'Auditoria de Densidade'}
+                                                                {isFastOnly ? 'Aguardando análise completa...' : `Auditoria de Densidade — ${totalCount} ${totalCount === 1 ? 'página' : 'páginas'}`}
                                                             </button>
                                                         </div>
                                                         <AnimatePresence>
@@ -643,24 +628,14 @@ export default function ConciergePage() {
                                                                                     <span className={`font-black ${isInc ? 'text-gray-900' : 'text-red-400 line-through'}`}>${p.price.toFixed(2)}</span>
 
                                                                                     <div className="flex items-center gap-1.5">
-                                                                                        {/* OLHINHO */}
                                                                                         <button
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                if (doc.externalLink) {
-                                                                                                    window.open(doc.externalLink, '_blank');
-                                                                                                } else if (doc.file) {
-                                                                                                    const url = URL.createObjectURL(doc.file);
-                                                                                                    window.open(url, '_blank');
-                                                                                                }
-                                                                                            }}
-                                                                                            title="Visualizar Arquivo"
+                                                                                            onClick={(e) => { e.stopPropagation(); openPage(doc, pIdx); }}
+                                                                                            title={`Visualizar pág. ${p.pageNumber}`}
                                                                                             className="flex items-center justify-center w-6 h-6 rounded-md bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-600 hover:text-white transition-all"
                                                                                         >
                                                                                             <Eye className="w-3.5 h-3.5" />
                                                                                         </button>
 
-                                                                                        {/* LIXEIRA OU RESTAURAR */}
                                                                                         <button onClick={() => togglePageInclusion(doc.id, pIdx)}
                                                                                             title={isInc ? "Excluir página do orçamento" : "Restaurar página"}
                                                                                             className={`flex items-center justify-center w-6 h-6 rounded-md transition-all ${isInc ? 'bg-red-50 text-red-500 hover:bg-red-600 hover:text-white border border-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100'}`}>
@@ -685,10 +660,10 @@ export default function ConciergePage() {
                                 <div
                                     onDrop={handleDrop}
                                     onDragOver={e => e.preventDefault()}
-                                    className={`rounded-2xl border-2 border-dashed transition-all ${deepProgress || prepStatus ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200 hover:border-[#f58220]/50'}`}
+                                    className={`rounded-2xl border-2 border-dashed transition-all ${deepProgress ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200 hover:border-[#f58220]/50'}`}
                                 >
                                     <div className="p-5 text-center">
-                                        <Upload className={`w-6 h-6 mx-auto mb-2 ${deepProgress || prepStatus ? 'text-amber-400' : 'text-gray-300'}`} />
+                                        <Upload className={`w-6 h-6 mx-auto mb-2 ${deepProgress ? 'text-amber-400' : 'text-gray-300'}`} />
                                         <p className="text-xs text-gray-400 font-medium mb-4">
                                             Arraste arquivos ou pastas aqui — ou use os botões abaixo
                                         </p>
@@ -831,7 +806,7 @@ export default function ConciergePage() {
                                     className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors">Criar Outro</button>
                             </div>
                         ) : (
-                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0 || fastProgress !== null || prepStatus !== null}
+                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0 || fastProgress !== null}
                                 className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                                 {loading ? <><div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> {uploadProgress}</> : <><Lock className="w-5 h-5" /> Gerar Link de Cobrança</>}
                             </button>
