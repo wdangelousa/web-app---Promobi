@@ -7,8 +7,8 @@ import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
 import {
     ArrowRight, Upload, FileText, ShieldCheck, Trash2,
     ChevronDown, Lock, Globe, FilePlus, Copy, ExternalLink,
-    Eye, EyeOff, Sparkles, Zap, FileImage, FileType,
-    CheckCircle2, Loader2, FolderOpen, Files, RotateCcw
+    Eye, Sparkles, Zap, FileImage, FileType, CheckCircle2,
+    Loader2, FolderOpen, Files, RotateCcw
 } from 'lucide-react'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import {
@@ -591,8 +591,8 @@ export default function ConciergePage() {
                                                                                     <span className="text-gray-500">{p.wordCount} pal.</span>
                                                                                     <span className={`font-black ${isInc ? 'text-gray-900' : 'text-red-400 line-through'}`}>${p.price.toFixed(2)}</span>
 
+                                                                                    {/* 🚀 AQUI ESTÃO OS DOIS BOTÕES LADO A LADO */}
                                                                                     <div className="flex items-center gap-1.5">
-                                                                                        {/* BOTÃO OLHINHO - Visualizar direto na página */}
                                                                                         <button
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
@@ -610,7 +610,6 @@ export default function ConciergePage() {
                                                                                             <Eye className="w-3.5 h-3.5" />
                                                                                         </button>
 
-                                                                                        {/* BOTÃO LIXEIRA - Excluir/Restaurar do orçamento */}
                                                                                         <button onClick={() => togglePageInclusion(doc.id, pIdx)}
                                                                                             title={isInc ? "Excluir página do orçamento" : "Restaurar página"}
                                                                                             className={`flex items-center justify-center w-6 h-6 rounded-md transition-all ${isInc ? 'bg-red-50 text-red-500 hover:bg-red-600 hover:text-white border border-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100'}`}>
