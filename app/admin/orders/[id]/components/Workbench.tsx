@@ -15,6 +15,7 @@ type Document = {
     id: number
     docType: string
     originalFileUrl: string
+    translatedFileUrl?: string | null
     translatedText: string | null
     exactNameOnDoc?: string | null
     translation_status?: string | null
@@ -23,6 +24,8 @@ type Document = {
 type Order = {
     id: number
     status: string
+    totalAmount: number
+    urgency: string
     documents: Document[]
     user: {
         fullName: string
@@ -105,7 +108,8 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    if (!selectedDoc) return <div className="p-8 text-center text-gray-500">Nenhum documento encontrado.</div>
+    if (!order.documents || order.documents.length === 0) return <div className="p-8 text-center text-gray-500">Nenhum documento encontrado.</div>
+    if (!selectedDoc) return <div className="p-8 text-center text-gray-500">Documento selecionado não encontrado.</div>
 
     return (
         <div className="h-[calc(100vh-64px)] flex bg-slate-900 overflow-hidden">

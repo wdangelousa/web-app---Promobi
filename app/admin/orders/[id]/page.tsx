@@ -1,47 +1,85 @@
 import prisma from '@/lib/prisma'
 import Workbench from './components/Workbench'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
-import { notFound } from 'next/navigation'
+import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { notFound, redirect } from 'next/navigation'
+import { getCurrentUser } from '@/app/actions/auth'
+import { Role } from '@prisma/client'
+import { normalizeOrder } from '@/lib/orderAdapter'
+
+export const dynamic = 'force-dynamic'
 
 export default async function OrderWorkbenchPage({ params }: { params: Promise<{ id: string }> }) {
+    const currentUser = await getCurrentUser()
+
+    // Role protection - consistent with orders list
+    if (!currentUser) redirect('/login')
+    if (currentUser.role === Role.FINANCIAL) redirect('/admin/finance')
+    if (currentUser.role === Role.PARTNER) redirect('/admin/executive')
+
     const { id } = await params
     const orderId = parseInt(id)
     if (isNaN(orderId)) return notFound()
 
-    const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        include: {
-            user: true,
-            documents: true
-        }
-    })
+    let sanitizedOrder: any = null
 
-    if (!order) return notFound()
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: {
+                user: {
+                    select: {
+                        fullName: true,
+                        email: true,
+                        phone: true,
+                    }
+                },
+                documents: {
+                    select: {
+                        id: true,
+                        docType: true,
+                        originalFileUrl: true,
+                        translatedFileUrl: true,
+                        translatedText: true,
+                        exactNameOnDoc: true,
+                        translation_status: true,
+                        delivery_pdf_url: true,
+                    }
+                }
+            }
+        })
 
-    // Solução Definitiva: Serializa o objeto inteiro para converter todas as datas 
-    // e evitar o erro "Only plain objects can be passed to Client Components" no Next.js
-    const sanitizedOrder = JSON.parse(JSON.stringify(order))
+        if (!order) return notFound()
+
+        // Use the adapter for robust normalization and serialization stability
+        sanitizedOrder = normalizeOrder(order)
+    } catch (err) {
+        console.error(`[WorkbenchPage] Error loading order #${orderId}:`, err)
+        throw err // Let nextjs error boundary handle it
+    }
 
     return (
         <div className="min-h-screen bg-gray-100 flex flex-col">
             {/* Header */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/admin" className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                    <Link href="/admin/orders" className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                         <ArrowLeft className="h-5 w-5 text-gray-500" />
                     </Link>
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">Workbench de Tradução</h1>
-                        <p className="text-xs text-gray-500">Pedido #{sanitizedOrder.id || '---'} • {sanitizedOrder.user?.fullName || 'Cliente Desconhecido'}</p>
+                        <p className="text-xs text-gray-500">
+                            Pedido #{sanitizedOrder.id} • {sanitizedOrder.user?.fullName || 'Cliente'}
+                        </p>
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                         sanitizedOrder.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
-                            'bg-gray-100 text-gray-600 border-gray-200'
+                            sanitizedOrder.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                'bg-gray-100 text-gray-600 border-gray-200'
                         }`}>
-                        {sanitizedOrder.status || 'STATUS_ERROR'}
+                        {sanitizedOrder.status?.replace(/_/g, ' ')}
                     </span>
                 </div>
             </div>
