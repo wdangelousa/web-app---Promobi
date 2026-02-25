@@ -44,7 +44,8 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                         exactNameOnDoc: true,
                         translation_status: true,
                         delivery_pdf_url: true,
-                    }
+                    },
+                    orderBy: { id: 'asc' }, // P6: deterministic order (matches workbench/[orderId]/page.tsx)
                 }
             }
         })
@@ -73,12 +74,21 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                         </p>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        sanitizedOrder.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
-                            sanitizedOrder.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                'bg-gray-100 text-gray-600 border-gray-200'
-                        }`}>
+                <div className="flex items-center gap-2">
+                    {/* P7 — Urgency badge: only shown for non-standard orders */}
+                    {sanitizedOrder.urgency && sanitizedOrder.urgency !== 'standard' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-black border uppercase tracking-wider bg-red-50 text-red-700 border-red-200 animate-pulse">
+                            🔥 {sanitizedOrder.urgency}
+                        </span>
+                    )}
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${
+                        sanitizedOrder.status === 'READY_FOR_REVIEW'          ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                        sanitizedOrder.status === 'TRANSLATING'               ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                        sanitizedOrder.status === 'COMPLETED'                 ? 'bg-green-50 text-green-700 border-green-200' :
+                        sanitizedOrder.status === 'PAID'                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        sanitizedOrder.status === 'MANUAL_TRANSLATION_NEEDED' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                                                                'bg-gray-100 text-gray-600 border-gray-200'
+                    }`}>
                         {sanitizedOrder.status?.replace(/_/g, ' ')}
                     </span>
                 </div>

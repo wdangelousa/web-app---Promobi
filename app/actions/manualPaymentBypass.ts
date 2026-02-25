@@ -1,50 +1,26 @@
 'use server'
 
-import prisma from '@/lib/prisma'
-import { generateTranslationDraft } from './generateTranslation'
+import { confirmPayment } from './confirm-payment'
 
-export async function approvePaymentManually(orderId: number) {
-    console.log(`[Manual Bypass] Iniciando aprovação manual para o Pedido #${orderId}`);
+export async function approvePaymentManually(orderId: number, confirmedByName: string = 'Isabele') {
+    console.log(`[Manual Bypass] Iniciando aprovação manual para o Pedido #${orderId} por ${confirmedByName}`);
 
-    try {
-        // 1. Fetch order to ensure it exists and is pending
-        const order = await prisma.order.findUnique({
-            where: { id: orderId }
-        });
+    // Delegate to the unified confirmPayment action (ZELLE path) which:
+    //   1. Sets order status → TRANSLATING
+    //   2. Triggers DeepL via Supabase Edge Function (non-blocking)
+    //   3. Notifies Isabele via email
+    //   4. Sends client confirmation email
+    const result = await confirmPayment(orderId, 'ZELLE', {
+        reference: 'MANUAL-BYPASS',
+        confirmedBy: confirmedByName,
+        notes: 'Aprovação manual pelo painel de administração',
+    });
 
-        if (!order) {
-            console.error(`[CRITICAL ACTION ERROR]: Order #${orderId} not found during manual bypass.`);
-            return { success: false, message: 'Pedido não encontrado.' };
-        }
-
-        if (order.status !== 'PENDING' && order.status !== 'PENDING_PAYMENT') {
-            console.error(`[CRITICAL ACTION ERROR]: Order #${orderId} has invalid status: ${order.status}`);
-            return { success: false, message: `Pedido não pode ser aprovado. Status atual: ${order.status}` };
-        }
-
-        // 2. Update status to PAID
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'PAID' }
-        });
-
-        console.log(`[Manual Bypass] Pedido #${orderId} atualizado para PAID com sucesso.`);
-
-        // 3. Trigger DeepL Translation Draft if needed
-        console.log(`[Manual Bypass] Acionando rotina de tradução DeepL para o Pedido #${orderId}`);
-
-        try {
-            await generateTranslationDraft(orderId);
-            console.log(`[Manual Bypass] Tradução DeepL concluída para o Pedido #${orderId}`);
-            return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL concluída.' };
-        } catch (err: any) {
-            console.error(`[CRITICAL ACTION ERROR]: Erro na task do DeepL para Pedido #${orderId}:`, err);
-            // We still return true because payment was approved successfully on Supabase
-            return { success: true, message: 'Pagamento aprovado, mas houve falha ao contatar o tradutor automático.' };
-        }
-
-    } catch (error: any) {
-        console.error(`[CRITICAL ACTION ERROR]: Erro crítico ao aprovar pedido #${orderId}:`, error);
-        return { success: false, message: 'Falha interna ao aprovar o pagamento. Consulte os logs da Vercel.' };
+    if (result.success) {
+        console.log(`[Manual Bypass] ✅ Pedido #${orderId} aprovado com sucesso via confirmPayment.`);
+        return { success: true, message: 'Pagamento aprovado. Tradução automática via DeepL acionada.' };
+    } else {
+        console.error(`[Manual Bypass] ❌ Falha ao aprovar Pedido #${orderId}:`, result.error);
+        return { success: false, message: result.error ?? 'Falha interna ao aprovar o pagamento. Consulte os logs da Vercel.' };
     }
 }

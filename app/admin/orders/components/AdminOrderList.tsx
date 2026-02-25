@@ -70,10 +70,19 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
     const handleNotifyClient = async () => {
         if (!selectedOrder) return;
         setLoadingAction(true);
-        // Simulate notification
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        alert(`E-mail de notificação enviado para ${selectedOrder.user?.email}`);
-        setLoadingAction(false);
+        try {
+            const { sendReviewLink } = await import('@/app/actions/sendNotification');
+            await sendReviewLink({
+                email: selectedOrder.user?.email,
+                name: selectedOrder.user?.fullName ?? 'Cliente',
+                orderId: selectedOrder.id,
+            });
+            setSelectedOrder({ ...selectedOrder, _notified: true });
+        } catch (err) {
+            console.error('[AdminOrderList] Falha ao notificar cliente:', err);
+        } finally {
+            setLoadingAction(false);
+        }
     }
 
     return (
@@ -98,10 +107,15 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                     >
                         <option value="ALL">Todos os Status</option>
                         <option value="PENDING">Pendente</option>
+                        <option value="PENDING_PAYMENT">Aguardando Pagamento</option>
                         <option value="PAID">Pago</option>
-                        <option value="TRANSLATING">Em Tradução</option>
+                        <option value="TRANSLATING">Em Tradução (DeepL)</option>
+                        <option value="MANUAL_TRANSLATION_NEEDED">⚠️ Tradução Manual</option>
+                        <option value="READY_FOR_REVIEW">✅ Pronto p/ Revisão</option>
                         <option value="NOTARIZING">Notarizando</option>
                         <option value="COMPLETED">Concluído</option>
+                        <option value="FAILED">Falhou</option>
+                        <option value="CANCELLED">Cancelado</option>
                     </select>
                 </div>
             </div>
@@ -262,10 +276,11 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                             <div className="pt-4 border-t border-slate-700">
                                 <button
                                     onClick={handleNotifyClient}
-                                    disabled={loadingAction}
-                                    className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-white text-slate-900 py-3 rounded-xl font-bold transition-all disabled:opacity-50"
+                                    disabled={loadingAction || selectedOrder._notified}
+                                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all disabled:opacity-50 ${selectedOrder._notified ? 'bg-green-100 text-green-800' : 'bg-slate-100 hover:bg-white text-slate-900'}`}
                                 >
-                                    <Send className="w-4 h-4" /> Notificar Cliente
+                                    <Send className="w-4 h-4" />
+                                    {selectedOrder._notified ? 'E-mail enviado!' : 'Notificar Cliente'}
                                 </button>
                             </div>
 

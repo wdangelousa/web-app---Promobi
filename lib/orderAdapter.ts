@@ -7,7 +7,7 @@ export interface NormalizedOrder {
     id: number;
     status: string;
     totalAmount: number;
-    createdAt: Date;
+    createdAt: string; // ISO 8601 string — Date objects cannot cross the Server→Client boundary
     user: {
         fullName: string;
         email: string;
@@ -79,7 +79,7 @@ export function normalizeOrder(order: any): NormalizedOrder {
         id: typeof order.id === 'number' ? order.id : (parseInt(order.id) || 0),
         status: String(order.status || 'PENDING'),
         totalAmount: typeof order.totalAmount === 'number' ? order.totalAmount : 0,
-        createdAt: order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt || Date.now()),
+        createdAt: (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt || Date.now())).toISOString(),
         user: {
             fullName: String(order.user?.fullName || defaultUser.fullName),
             email: String(order.user?.email || defaultUser.email),

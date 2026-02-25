@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/app/actions/auth'
 import { redirect, notFound } from 'next/navigation'
 import { WorkbenchEditor } from '@/components/admin/WorkbenchEditor'
+import { normalizeOrder } from '@/lib/orderAdapter'
 
 export default async function WorkbenchOrderPage({
   params,
@@ -41,9 +42,13 @@ export default async function WorkbenchOrderPage({
     redirect('/admin/workbench')
   }
 
+  // normalizeOrder converte createdAt → ISO string e garante que nenhum
+  // objeto Prisma não-serializável cruze a fronteira Server → Client Component.
+  const sanitizedOrder = normalizeOrder(order)
+
   return (
     <WorkbenchEditor
-      order={order as any}
+      order={sanitizedOrder as any}
       currentUserName={user.fullName ?? 'Operador'}
     />
   )

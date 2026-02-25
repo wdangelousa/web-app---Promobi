@@ -10,6 +10,17 @@ async function downloadFile(url: string): Promise<Buffer> {
     return Buffer.from(await response.arrayBuffer());
 }
 
+// Returns true if the document is a PDF based on docType, filename, or storage URL.
+// docType is usually a label like "Certidão de Nascimento", so URL is the most reliable signal.
+function isPDF(doc: { docType?: string | null; exactNameOnDoc?: string | null; originalFileUrl?: string | null }): boolean {
+    return (
+        doc.docType?.toLowerCase().includes('pdf') ||
+        doc.exactNameOnDoc?.toLowerCase().endsWith('.pdf') ||
+        doc.originalFileUrl?.toLowerCase().includes('.pdf') ||
+        false
+    );
+}
+
 export async function generateTranslationDraft(orderId: number) {
     console.log(`[AutoTranslation] Starting for Order #${orderId}`);
 
@@ -24,11 +35,17 @@ export async function generateTranslationDraft(orderId: number) {
             return { success: false, error: 'Order not found' };
         }
 
+        // Mark order as actively translating immediately so the Workbench
+        // shows the correct state and the retry button becomes visible on errors.
+        await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'TRANSLATING' }
+        });
+
         // Initialize DeepL
         const authKey = process.env.DEEPL_API_KEY;
         if (!authKey) {
-            console.error("[AutoTranslation] Missing DEEPL_API_KEY");
-            // We don't fail the whole flow, just mark as manual needed
+            console.error("[AutoTranslation] Missing DEEPL_API_KEY — marking order as MANUAL_TRANSLATION_NEEDED");
             await prisma.order.update({
                 where: { id: orderId },
                 data: { status: 'MANUAL_TRANSLATION_NEEDED' }
@@ -44,44 +61,53 @@ export async function generateTranslationDraft(orderId: number) {
         for (const doc of order.documents) {
             try {
                 if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') {
-                    console.log(`[AutoTranslation] Document #${doc.id} has no file yet.`);
+                    console.log(`[AutoTranslation] Document #${doc.id} has no file yet — skipping.`);
                     continue;
                 }
 
-                console.log(`[AutoTranslation] Processing Document #${doc.id} (${doc.exactNameOnDoc})`);
+                console.log(`[AutoTranslation] Processing Document #${doc.id} (${doc.exactNameOnDoc ?? doc.docType})`);
 
                 // 1. Download
                 const dataBuffer = await downloadFile(doc.originalFileUrl);
 
-                // 2. Extract Text
-                // Check if it's a PDF
+                // 2. Extract Text — PDF only (OCR for images is out of scope for now)
                 let extractedText = '';
-                if (doc.docType?.toLowerCase().includes('pdf') || doc.exactNameOnDoc?.toLowerCase().endsWith('.pdf')) {
+                if (isPDF(doc)) {
                     // eslint-disable-next-line @typescript-eslint/no-require-imports
                     const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
                     const data = await pdfParse(dataBuffer);
                     extractedText = data.text;
+                    console.log(`[AutoTranslation] Extracted ${extractedText.length} chars from Doc #${doc.id}`);
                 } else {
-                    // TODO: Implement OCR for images if needed. For now, skip or use simple text if it supported.
-                    // For now, only PDF text extraction is robustly supported via pdf-parse.
-                    console.warn(`[AutoTranslation] Skipping non-PDF Text Extraction for Doc #${doc.id}`);
+                    console.warn(`[AutoTranslation] Doc #${doc.id} is not a PDF (docType="${doc.docType}", url="${doc.originalFileUrl}") — marking as needs_manual.`);
+                    await prisma.document.update({
+                        where: { id: doc.id },
+                        data: { translation_status: 'needs_manual' }
+                    });
                     continue;
                 }
 
                 if (!extractedText || extractedText.trim().length === 0) {
-                    console.warn(`[AutoTranslation] No text extracted from Doc #${doc.id}`);
+                    console.warn(`[AutoTranslation] No text extracted from Doc #${doc.id} — likely a scanned image PDF. Marking as needs_manual.`);
+                    await prisma.document.update({
+                        where: { id: doc.id },
+                        data: { translation_status: 'needs_manual' }
+                    });
                     continue;
                 }
 
-                // 3. Translate
-                // target_lang: 'en-US' (American English)
+                // 3. Translate to American English
                 const result = await translator.translateText(extractedText, null, 'en-US');
                 const translatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
 
-                // 4. Save Draft
+                // 4. Save Draft — also set translation_status so the Workbench
+                //    badge shows the correct "TRANSLATED" state (not "PENDING").
                 await prisma.document.update({
                     where: { id: doc.id },
-                    data: { translatedText }
+                    data: {
+                        translatedText,
+                        translation_status: 'translated',
+                    }
                 });
 
                 completedCount++;
@@ -89,6 +115,10 @@ export async function generateTranslationDraft(orderId: number) {
 
             } catch (err) {
                 console.error(`[AutoTranslation] Error processing document #${doc.id}:`, err);
+                await prisma.document.update({
+                    where: { id: doc.id },
+                    data: { translation_status: 'error' }
+                }).catch(updateErr => console.error(`[AutoTranslation] Failed to mark doc #${doc.id} as error:`, updateErr));
                 errorCount++;
             }
         }
@@ -99,9 +129,10 @@ export async function generateTranslationDraft(orderId: number) {
                 where: { id: orderId },
                 data: { status: 'READY_FOR_REVIEW' }
             });
+            console.log(`[AutoTranslation] ✅ Order #${orderId} → READY_FOR_REVIEW (${completedCount} docs, ${errorCount} errors)`);
             return { success: true, count: completedCount };
         } else {
-            // If failed to process any, mark manual
+            console.error(`[AutoTranslation] ❌ Order #${orderId} — no documents processed (${errorCount} errors). Marking MANUAL_TRANSLATION_NEEDED.`);
             await prisma.order.update({
                 where: { id: orderId },
                 data: { status: 'MANUAL_TRANSLATION_NEEDED' }
