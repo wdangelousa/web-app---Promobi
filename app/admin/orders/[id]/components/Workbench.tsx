@@ -40,10 +40,6 @@ type Order = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * P1 — Maps the 5 real translation states to distinct visual badges.
- * Previously all non-revised docs collapsed into one ambiguous "PENDENTE" badge.
- */
 function getDocBadge(doc: Document) {
     const hasPdf = !!doc.delivery_pdf_url
     const s = doc.translation_status
@@ -60,7 +56,6 @@ function getDocBadge(doc: Document) {
     return   { label: 'AGUARDANDO',  classes: 'text-slate-500 bg-slate-500/10',   Icon: Clock        }
 }
 
-/** A doc is "done" when the operator has either uploaded its PDF or saved the translation. */
 function isDocDone(doc: Document): boolean {
     return !!(
         doc.delivery_pdf_url ||
@@ -76,7 +71,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
     const [editorContent, setEditorContent]   = useState('')
-    const [savedContent, setSavedContent]     = useState('') // P3: tracks what's in the DB
+    const [savedContent, setSavedContent]     = useState('')
     const [saving, setSaving]                 = useState(false)
     const [uploading, setUploading]           = useState(false)
     const [isTranslating, setIsTranslating]   = useState(false)
@@ -86,23 +81,49 @@ export default function Workbench({ order }: { order: Order }) {
     const currentDocIndex  = order.documents.findIndex(d => d.id === selectedDocId)
     const totalCount       = order.documents.length
 
-    // P2 — Progress
     const doneCount    = order.documents.filter(isDocDone).length
     const progressPct  = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
 
-    // P4 — Finalize is an order-level action: enabled when all docs are handled
     const allDocsHandled = order.documents.every(isDocDone)
 
-    // P3 — Dirty state: true when editor has unsaved changes vs what's in the DB
     const isDirty = editorContent !== savedContent
 
-    // Use a ref so keyboard handler always has the current isDirty without re-registering
     const isDirtyRef = useRef(isDirty)
     isDirtyRef.current = isDirty
 
-    // ── Load editor content when switching documents ──────────────────────────
+    // ─── FIX: Track content set by AI translation ─────────────────────────────
+    // When translateSingleDocument returns, we optimistically set the editor content
+    // immediately. But router.refresh() (fired 800ms later) re-renders the component
+    // with fresh DB data. If that refresh triggers a remount OR if the DB write
+    // wasn't committed yet, the useEffect would overwrite the translated content
+    // with the stale placeholder. This ref acts as a "just translated" guard.
+    const justTranslatedRef = useRef<{ docId: number; text: string } | null>(null)
+
+    // ─── FIX: Track previous docId to distinguish doc-switch from refresh ─────
+    // Needed so the useEffect can tell whether it's running because the user
+    // switched documents (always reload) or because a background refresh brought
+    // new data for the SAME document (only reload if editor is clean).
+    const prevDocIdRef = useRef<number | null>(null)
+
+    // ── Load editor content when switching documents OR when fresh DB data ─────
     useEffect(() => {
         if (!selectedDoc) return
+
+        const isSwitching = prevDocIdRef.current !== selectedDoc.id
+        prevDocIdRef.current = selectedDoc.id
+
+        // When the same doc refreshes in the background, don't clobber unsaved edits.
+        if (!isSwitching && isDirtyRef.current) return
+
+        // FIX: If we just set content from an AI translation for this doc,
+        // use that content instead of whatever the DB has (race condition guard).
+        if (justTranslatedRef.current?.docId === selectedDoc.id) {
+            const localText = justTranslatedRef.current.text
+            justTranslatedRef.current = null  // consume the guard
+            setEditorContent(localText)
+            setSavedContent(localText)
+            return
+        }
 
         let content = selectedDoc.translatedText
         if (!content) {
@@ -116,9 +137,13 @@ export default function Workbench({ order }: { order: Order }) {
         }
         const safeContent = content || '<p>Aguardando tradução...</p>'
         setEditorContent(safeContent)
-        setSavedContent(safeContent) // reset dirty state when switching docs
+        setSavedContent(safeContent)
+
+    // FIX: Added selectedDoc?.translatedText so the effect also fires when
+    // router.refresh() brings updated DB data for the currently selected doc.
+    // The isDirty + justTranslated guards above prevent unwanted overwrites.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedDocId]) // Intentionally only on docId change to avoid resetting mid-edit on background refresh
+    }, [selectedDocId, selectedDoc?.translatedText])
 
     // ── P3: safe doc selector — warns on unsaved changes ──────────────────────
     const handleDocSelect = useCallback((docId: number) => {
@@ -126,7 +151,7 @@ export default function Workbench({ order }: { order: Order }) {
             if (!window.confirm('Você tem alterações não salvas neste documento. Deseja descartá-las?')) return
         }
         setSelectedDocId(docId)
-    }, []) // stable — reads isDirty via ref
+    }, [])
 
     // ── Save draft ────────────────────────────────────────────────────────────
     const handleSave = useCallback(async () => {
@@ -134,7 +159,7 @@ export default function Workbench({ order }: { order: Order }) {
         setSaving(true)
         const res = await saveDocumentDraft(selectedDoc.id, editorContent, order.id)
         if (res.success) {
-            setSavedContent(editorContent) // P3: mark clean
+            setSavedContent(editorContent)
             toast.success('Rascunho salvo!')
         } else {
             toast.error('Erro ao salvar rascunho.')
@@ -152,7 +177,6 @@ export default function Workbench({ order }: { order: Order }) {
                 handleSave()
                 return
             }
-            // P5 — Navigate between documents with Cmd+←→
             if (e.key === 'ArrowRight' && currentDocIndex < totalCount - 1) {
                 e.preventDefault()
                 handleDocSelect(order.documents[currentDocIndex + 1].id)
@@ -203,13 +227,20 @@ export default function Workbench({ order }: { order: Order }) {
             const res = await translateSingleDocument(selectedDoc.id)
             console.log('[Workbench] Resposta da IA:', res)
             if (res.success && res.text) {
-                // Inject the translated text directly — ReactQuill accepts plain text.
+
+                // FIX: Register the translated content in the guard ref BEFORE
+                // calling setEditorContent. This ensures that if router.refresh()
+                // triggers a remount and the useEffect fires, it reads from this
+                // ref instead of the potentially stale DB value.
+                justTranslatedRef.current = { docId: selectedDoc.id, text: res.text }
+
                 setEditorContent(res.text)
-                setSavedContent(res.text) // mark clean — text is already in the DB
+                setSavedContent(res.text)  // isDirty = false → refresh won't overwrite
                 toast.success('Tradução concluída! Revise o texto abaixo.')
-                // Delay the server refresh so React has time to commit the new
-                // editorContent to the DOM before the re-fetch triggers a potential
-                // component re-render/remount that could overwrite it with stale data.
+
+                // Refresh server data to update badges and doc status in the sidebar.
+                // The justTranslatedRef guard above ensures this doesn't erase the
+                // editor content even if the refresh completes before the DB write.
                 setTimeout(() => router.refresh(), 800)
             } else {
                 toast.error(res.error ?? 'Falha na tradução automática.')
@@ -281,7 +312,6 @@ export default function Workbench({ order }: { order: Order }) {
             {/* ── SIDEBAR ────────────────────────────────────────────────── */}
             <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
 
-                {/* P2 — Header with progress */}
                 <div className="p-4 border-b border-slate-800 bg-slate-900/50 space-y-3">
                     <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                         <FileText className="w-4 h-4 text-[#f58220]" />
@@ -305,7 +335,6 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
                 </div>
 
-                {/* Document list */}
                 <nav className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                     {order.documents.map((doc) => {
                         const isActive = doc.id === selectedDocId
@@ -335,7 +364,6 @@ export default function Workbench({ order }: { order: Order }) {
                                     }`}>
                                         {doc.exactNameOnDoc || doc.docType}
                                     </p>
-                                    {/* P1 — Distinct badge per status */}
                                     <span className={`mt-1 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badge.classes}`}>
                                         <BadgeIcon className="w-2.5 h-2.5" />
                                         {badge.label}
@@ -349,7 +377,6 @@ export default function Workbench({ order }: { order: Order }) {
                     })}
                 </nav>
 
-                {/* P4 — Sidebar footer: order-level finalize action */}
                 <div className="p-3 border-t border-slate-800 space-y-2">
                     <button
                         onClick={handleFinalize}
@@ -397,33 +424,56 @@ export default function Workbench({ order }: { order: Order }) {
                     <div className="bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/50 p-3 h-12 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Eye className="w-4 h-4 text-slate-400" />
-                            <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider">Visualização Original</span>
+                            <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider">
+                                {/* FIX: Show which PDF is being viewed — translated (if available) or original */}
+                                {selectedDoc.translatedFileUrl ? 'Visualização — Tradução DeepL' : 'Visualização Original'}
+                            </span>
                         </div>
-                        <div className="text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
-                            {currentDocIndex + 1} / {totalCount}
+                        <div className="flex items-center gap-2">
+                            {/* FIX: Toggle between original and translated PDF views */}
+                            {selectedDoc.translatedFileUrl && (
+                                <a
+                                    href={selectedDoc.translatedFileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] font-bold text-indigo-400 bg-indigo-400/10 border border-indigo-400/20 px-2 py-0.5 rounded-full hover:bg-indigo-400/20 transition-colors flex items-center gap-1"
+                                >
+                                    <Zap className="w-2.5 h-2.5" /> Ver PDF Traduzido ↗
+                                </a>
+                            )}
+                            <div className="text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+                                {currentDocIndex + 1} / {totalCount}
+                            </div>
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        {selectedDoc.originalFileUrl !== 'PENDING_UPLOAD' ? (
-                            <iframe
-                                src={selectedDoc.originalFileUrl}
-                                className="w-full h-full border-0"
-                                title="PDF Viewer"
-                            />
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-500 p-8 text-center">
-                                <AlertTriangle className="w-12 h-12 mb-4 opacity-20" />
-                                <p className="text-sm font-bold">Arquivo pendente de upload</p>
-                                <p className="text-xs opacity-60">Aguarde o processamento do cliente</p>
-                            </div>
-                        )}
+                        {/* FIX: Show translatedFileUrl (DeepL output PDF) if available, otherwise original */}
+                        {(() => {
+                            const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
+                            if (!viewUrl || viewUrl === 'PENDING_UPLOAD') {
+                                return (
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-500 p-8 text-center">
+                                        <AlertTriangle className="w-12 h-12 mb-4 opacity-20" />
+                                        <p className="text-sm font-bold">Arquivo pendente de upload</p>
+                                        <p className="text-xs opacity-60">Aguarde o processamento do cliente</p>
+                                    </div>
+                                )
+                            }
+                            return (
+                                <iframe
+                                    key={viewUrl}  {/* FIX: key forces iframe reload when URL changes */}
+                                    src={viewUrl}
+                                    className="w-full h-full border-0"
+                                    title="PDF Viewer"
+                                />
+                            )
+                        })()}
                     </div>
                 </div>
 
                 {/* EDITOR */}
                 <div className="w-1/2 flex flex-col bg-white border-l border-slate-800">
 
-                    {/* Editor header */}
                     <header className="p-3 h-12 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-blue-600" />
@@ -447,7 +497,6 @@ export default function Workbench({ order }: { order: Order }) {
                                     Tentar Novamente (DeepL)
                                 </button>
                             )}
-                            {/* Per-doc on-demand AI translation */}
                             {!isDocDone(selectedDoc) && (
                                 <button
                                     onClick={handleTranslateWithAI}
@@ -462,7 +511,6 @@ export default function Workbench({ order }: { order: Order }) {
                                     )}
                                 </button>
                             )}
-                            {/* P3 — Save button with dirty indicator */}
                             <button
                                 onClick={handleSave}
                                 disabled={saving}
@@ -483,7 +531,6 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     </header>
 
-                    {/* Status banners */}
                     {(selectedDoc.translation_status === 'error' || selectedDoc.translation_status === 'needs_manual') && (
                         <div className={`p-3 border-b flex items-start gap-3 shrink-0 ${
                             selectedDoc.translation_status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
@@ -508,7 +555,16 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     )}
 
-                    {/* Rich text editor */}
+                    {/* FIX: Banner confirming translation loaded in editor */}
+                    {selectedDoc.translation_status === 'translated' && !isTranslating && (
+                        <div className="p-3 border-b border-indigo-100 bg-indigo-50 flex items-center gap-2 shrink-0">
+                            <Zap className="w-4 h-4 text-indigo-500 shrink-0" />
+                            <p className="text-xs font-bold text-indigo-700">
+                                Rascunho DeepL carregado no editor. Revise, ajuste e salve antes de certificar.
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex-1 overflow-hidden">
                         <ReactQuill
                             theme="snow"
@@ -526,11 +582,9 @@ export default function Workbench({ order }: { order: Order }) {
                         />
                     </div>
 
-                    {/* P5 — Footer: keyboard hints + doc navigation + per-doc upload */}
                     <footer className="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
                         <div className="flex items-center justify-between gap-2">
 
-                            {/* Left: keyboard shortcut hints */}
                             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium flex-wrap">
                                 <kbd className="bg-slate-200 px-1 rounded text-slate-600 text-[9px]">Cmd+S</kbd>
                                 <span>salvar</span>
@@ -539,9 +593,7 @@ export default function Workbench({ order }: { order: Order }) {
                                 <span>navegar</span>
                             </div>
 
-                            {/* Right: nav buttons + upload */}
                             <div className="flex items-center gap-2 shrink-0">
-                                {/* Doc navigation arrows */}
                                 <button
                                     onClick={() => currentDocIndex > 0 && handleDocSelect(order.documents[currentDocIndex - 1].id)}
                                     disabled={currentDocIndex === 0}
@@ -561,7 +613,6 @@ export default function Workbench({ order }: { order: Order }) {
 
                                 <div className="w-px h-5 bg-slate-200" />
 
-                                {/* Per-doc PDF upload */}
                                 <input
                                     type="file"
                                     accept=".pdf"
