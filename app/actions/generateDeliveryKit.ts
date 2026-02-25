@@ -196,8 +196,12 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                 if (originalRes.ok) {
                     const originalBuf = Buffer.from(await originalRes.arrayBuffer())
 
+                    // Per-page rotation map saved by the operator in the Workbench
+                    // @ts-ignore - pageRotations exists in DB; Prisma client cache may be stale
+                    const rotationsMap = (doc.pageRotations as Record<string, number> | null) ?? {}
+
                     if (isImageUrl(doc.originalFileUrl)) {
-                        // Embed image natively — always portrait Letter page
+                        // Images are always 1 page (index 0)
                         let image;
                         if (doc.originalFileUrl.toLowerCase().includes('.png')) {
                             image = await finalPdf.embedPng(originalBuf)
@@ -209,8 +213,8 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                         const scaledWidth = image.width * scale
                         const scaledHeight = image.height * scale
                         const page = finalPdf.addPage([PAGE_WIDTH, 792])
-                        // @ts-ignore - displayRotation exists in DB; Prisma client cache may be stale
-                        if (doc.displayRotation !== 0) page.setRotation(degrees(doc.displayRotation))
+                        const imageRotation = rotationsMap['0'] ?? 0
+                        if (imageRotation !== 0) page.setRotation(degrees(imageRotation))
                         page.drawImage(image, {
                             x: (PAGE_WIDTH - scaledWidth) / 2,
                             y: (792 - scaledHeight) / 2,
@@ -220,10 +224,10 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     } else {
                         const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
                         const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
-                        copied.forEach((p) => {
-                            // User's saved rotation takes priority; fall back to the PDF's own metadata
-                            // @ts-ignore - displayRotation exists in DB; Prisma client cache may be stale
-                            const rotation = doc.displayRotation !== 0 ? doc.displayRotation : p.getRotation().angle
+                        copied.forEach((p, i) => {
+                            // Per-page user rotation takes priority; fall back to the PDF's own metadata
+                            const savedRotation = rotationsMap[i.toString()] ?? 0
+                            const rotation = savedRotation !== 0 ? savedRotation : p.getRotation().angle
                             p.setRotation(degrees(rotation))
                             finalPdf.addPage(p)
                         })

@@ -71,7 +71,10 @@ export function normalizeOrder(order: any): NormalizedOrder {
             translatedText: typeof doc.translatedText === 'string' ? doc.translatedText : null,
             translation_status: doc.translation_status || 'pending',
             delivery_pdf_url: doc.delivery_pdf_url || null,
-            exactNameOnDoc: doc.exactNameOnDoc || null
+            exactNameOnDoc: doc.exactNameOnDoc || null,
+            isReviewed: doc.isReviewed === true,
+            externalTranslationUrl: typeof doc.externalTranslationUrl === 'string' ? doc.externalTranslationUrl : null,
+            pageRotations: (doc.pageRotations && typeof doc.pageRotations === 'object') ? doc.pageRotations : null,
         }))
         : [];
 

@@ -7,6 +7,7 @@ import {
     Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, AlignLeft, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
+import DocPageRotations from './DocPageRotations'
 import 'react-quill-new/dist/quill.snow.css'
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false })
@@ -24,6 +25,7 @@ type Document = {
     translation_status?: string | null
     delivery_pdf_url?: string | null
     isReviewed?: boolean
+    pageRotations?: Record<string, number> | null
 }
 
 type Order = {
@@ -416,6 +418,12 @@ export default function Workbench({ order }: { order: Order }) {
                         <div className="flex items-center justify-center h-full text-white text-sm">Arquivo pendente de upload</div>
                     )}
                 </div>
+                <DocPageRotations
+                    key={selectedDoc.id}
+                    docId={selectedDoc.id}
+                    docUrl={selectedDoc.originalFileUrl}
+                    initialRotations={selectedDoc.pageRotations ?? null}
+                />
             </div>
 
             {/* ── RIGHT: EDITOR & UPLOAD DE PDF ─────────────────────────────────── */}
