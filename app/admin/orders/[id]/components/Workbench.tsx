@@ -201,16 +201,16 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             const { translateSingleDocument } = await import('@/app/actions/generateTranslation')
             const res = await translateSingleDocument(selectedDoc.id)
+            console.log('[Workbench] Resposta da IA:', res)
             if (res.success && res.text) {
                 // Inject the translated text directly — ReactQuill accepts plain text.
-                // Avoid any intermediate HTML conversion: pdf2json returns text with
-                // \r\n line endings and page-separator lines that confuse splitters.
                 setEditorContent(res.text)
                 setSavedContent(res.text) // mark clean — text is already in the DB
                 toast.success('Tradução concluída! Revise o texto abaixo.')
-                // Refresh server data in the background so the sidebar badge and
-                // translation_status reflect the saved state without a manual reload.
-                router.refresh()
+                // Delay the server refresh so React has time to commit the new
+                // editorContent to the DOM before the re-fetch triggers a potential
+                // component re-render/remount that could overwrite it with stale data.
+                setTimeout(() => router.refresh(), 800)
             } else {
                 toast.error(res.error ?? 'Falha na tradução automática.')
             }
