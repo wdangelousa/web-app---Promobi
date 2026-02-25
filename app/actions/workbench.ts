@@ -216,10 +216,15 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     })
     .join('')
 
+  // 🚨 PALIATIVO DE TESTE (Ativo enquanto o domínio promobi.us não é verificado)
+  // No modo sem domínio verificado, o Resend só permite enviar PARA o dono da conta.
+  const isTestMode = true
+  const testRecipient = 'wdangelo81@gmail.com'
+
   const { data, error } = await resend.emails.send({
-    from: 'Promobi <wdangelo81@gmail.com>',
-    to: recipients,
-    subject: `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
+    from: 'Promobi <onboarding@resend.dev>',
+    to: isTestMode ? [testRecipient] : recipients,
+    subject: (isTestMode ? `[TESTE] ` : '') + `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
     html: `
       <!DOCTYPE html>
       <html>
