@@ -217,7 +217,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     .join('')
 
   const { data, error } = await resend.emails.send({
-    from: 'Promobi <entrega@promobi.us>',
+    from: 'Promobi <onboarding@resend.dev>',
     to: recipients,
     subject: `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
     html: `
