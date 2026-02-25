@@ -21,6 +21,73 @@ function isPDF(doc: { docType?: string | null; exactNameOnDoc?: string | null; o
     );
 }
 
+/**
+ * Translates a single document on-demand via DeepL.
+ * Designed for manual "force translate" from the Workbench editor.
+ *
+ * Returns the translated plain text on success so the UI can inject it
+ * immediately without a page refresh.
+ */
+export async function translateSingleDocument(
+    docId: number
+): Promise<{ success: boolean; text?: string; error?: string }> {
+    const authKey = process.env.DEEPL_API_KEY;
+    if (!authKey) return { success: false, error: 'DEEPL_API_KEY não está configurada no servidor.' };
+
+    try {
+        const doc = await prisma.document.findUnique({ where: { id: docId } });
+        if (!doc) return { success: false, error: 'Documento não encontrado.' };
+
+        if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') {
+            return { success: false, error: 'Nenhum arquivo original disponível para este documento.' };
+        }
+
+        // 1. Download
+        const response = await fetch(doc.originalFileUrl);
+        if (!response.ok) {
+            return { success: false, error: `Falha ao baixar o arquivo: ${response.statusText}` };
+        }
+        const dataBuffer = Buffer.from(await response.arrayBuffer());
+
+        // 2. Extract text — PDF only
+        if (!isPDF(doc)) {
+            await prisma.document.update({ where: { id: docId }, data: { translation_status: 'needs_manual' } });
+            return { success: false, error: 'Este documento não é um PDF compatível com extração de texto. Use o upload manual de PDF.' };
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+        const { text: extractedText } = await pdfParse(dataBuffer);
+
+        if (!extractedText || extractedText.trim().length === 0) {
+            await prisma.document.update({ where: { id: docId }, data: { translation_status: 'needs_manual' } });
+            return { success: false, error: 'Nenhum texto extraído do PDF — provavelmente um documento escaneado/imagem. Use o upload manual de PDF.' };
+        }
+
+        // 3. Translate
+        const translator = new deepl.Translator(authKey);
+        const result = await translator.translateText(extractedText, null, 'en-US');
+        const translatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
+
+        // 4. Save draft
+        await prisma.document.update({
+            where: { id: docId },
+            data: { translatedText, translation_status: 'translated' },
+        });
+
+        console.log(`[ManualTranslate] ✅ Doc #${docId} translated and saved.`);
+        return { success: true, text: translatedText };
+
+    } catch (error: any) {
+        console.error(`[ManualTranslate] Error on Doc #${docId}:`, error);
+        await prisma.document.update({
+            where: { id: docId },
+            data: { translation_status: 'error' },
+        }).catch(() => {});
+        return { success: false, error: error?.message ?? 'Erro desconhecido na tradução.' };
+    }
+}
+
 export async function generateTranslationDraft(orderId: number) {
     console.log(`[AutoTranslation] Starting for Order #${orderId}`);
 

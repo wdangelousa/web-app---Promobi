@@ -79,6 +79,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [savedContent, setSavedContent]     = useState('') // P3: tracks what's in the DB
     const [saving, setSaving]                 = useState(false)
     const [uploading, setUploading]           = useState(false)
+    const [isTranslating, setIsTranslating]   = useState(false)
     const { toast } = useUIFeedback()
 
     const selectedDoc      = order.documents.find(d => d.id === selectedDocId)
@@ -190,6 +191,36 @@ export default function Workbench({ order }: { order: Order }) {
             toast.error('Erro ao finalizar: ' + error.message)
         } finally {
             setSaving(false)
+        }
+    }
+
+    // ── Translate selected doc with DeepL (on-demand, per document) ──────────
+    const handleTranslateWithAI = async () => {
+        if (!selectedDoc || isTranslating) return
+        setIsTranslating(true)
+        try {
+            const { translateSingleDocument } = await import('@/app/actions/generateTranslation')
+            const res = await translateSingleDocument(selectedDoc.id)
+            if (res.success && res.text) {
+                // Convert plain text → minimal HTML for ReactQuill:
+                // double newlines → paragraphs, single newlines → <br>
+                const html = '<p>' +
+                    res.text
+                        .split(/\n\n+/)
+                        .map(p => p.replace(/\n/g, '<br>').trim())
+                        .filter(Boolean)
+                        .join('</p><p>') +
+                    '</p>'
+                setEditorContent(html)
+                setSavedContent(html) // fresh from DB — not dirty
+                toast.success('Tradução concluída! Revise o texto abaixo.')
+            } else {
+                toast.error(res.error ?? 'Falha na tradução automática.')
+            }
+        } catch (err: any) {
+            toast.error('Erro inesperado: ' + err.message)
+        } finally {
+            setIsTranslating(false)
         }
     }
 
@@ -412,11 +443,26 @@ export default function Workbench({ order }: { order: Order }) {
                             {order.status === 'TRANSLATING' && order.documents.some(d => d.translation_status === 'error') && (
                                 <button
                                     onClick={handleRetryDeepL}
-                                    disabled={saving}
+                                    disabled={saving || isTranslating}
                                     className="h-8 bg-orange-500 text-white px-3 rounded-lg text-xs font-bold hover:bg-orange-600 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
                                 >
                                     <RotateCcw className={`w-3.5 h-3.5 ${saving ? 'animate-spin' : ''}`} />
                                     Tentar Novamente (DeepL)
+                                </button>
+                            )}
+                            {/* Per-doc on-demand AI translation */}
+                            {!isDocDone(selectedDoc) && (
+                                <button
+                                    onClick={handleTranslateWithAI}
+                                    disabled={isTranslating || saving}
+                                    title="Força a tradução deste documento via DeepL agora"
+                                    className="h-8 bg-indigo-600 text-white px-3 rounded-lg text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+                                >
+                                    {isTranslating ? (
+                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Traduzindo...</>
+                                    ) : (
+                                        <><Zap className="w-3.5 h-3.5" /> Traduzir com IA</>
+                                    )}
                                 </button>
                             )}
                             {/* P3 — Save button with dirty indicator */}
