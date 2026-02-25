@@ -209,6 +209,8 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                         const scaledWidth = image.width * scale
                         const scaledHeight = image.height * scale
                         const page = finalPdf.addPage([PAGE_WIDTH, 792])
+                        // @ts-ignore - displayRotation exists in DB; Prisma client cache may be stale
+                        if (doc.displayRotation !== 0) page.setRotation(degrees(doc.displayRotation))
                         page.drawImage(image, {
                             x: (PAGE_WIDTH - scaledWidth) / 2,
                             y: (792 - scaledHeight) / 2,
@@ -219,8 +221,9 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                         const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
                         const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
                         copied.forEach((p) => {
-                            // Read rotation from the copied page and re-apply it explicitly
-                            const rotation = p.getRotation().angle
+                            // User's saved rotation takes priority; fall back to the PDF's own metadata
+                            // @ts-ignore - displayRotation exists in DB; Prisma client cache may be stale
+                            const rotation = doc.displayRotation !== 0 ? doc.displayRotation : p.getRotation().angle
                             p.setRotation(degrees(rotation))
                             finalPdf.addPage(p)
                         })

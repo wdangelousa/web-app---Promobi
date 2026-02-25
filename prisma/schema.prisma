@@ -53,6 +53,7 @@ model Document {
   delivery_pdf_url        String?
   isReviewed              Boolean  @default(false)
   externalTranslationUrl  String?
+  displayRotation         Int      @default(0)
   order                   Order    @relation(fields: [orderId], references: [id])
 }
 

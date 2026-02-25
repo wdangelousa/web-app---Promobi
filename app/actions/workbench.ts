@@ -209,19 +209,18 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
-        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #f58220;">
+        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #f58220; overflow: hidden;">
           <tr>
-            <td style="text-align: center; padding: 30px;">
+            <td style="text-align: center; padding: 30px; background: #fff;">
               <img src="https://web-app-promobi.vercel.app/logo.png" width="220" alt="Promobi" />
             </td>
           </tr>
           <tr>
-            <td style="padding: 0 40px 32px;">
+            <td style="padding: 40px;">
               <h2 style="color: #111827; margin-top: 0;">Sua Tradução Certificada está pronta! 🎉</h2>
               <p style="margin: 0 0 12px;">Olá, <strong>${clientName}</strong>,</p>
               <p style="margin: 0 0 12px; line-height: 1.6;">
-                Entregamos em anexo o seu Kit de Tradução Oficial. Este documento foi certificado
-                segundo os rigorosos padrões da <strong>ATA (American Translators Association)</strong>.
+                Entregamos em anexo o seu Kit de Tradução Oficial, certificado pelos padrões da <strong>ATA (American Translators Association)</strong>.
               </p>
 
               <!-- Document download links -->
@@ -232,10 +231,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
                 ${docLinks}
               </div>
 
-              <p style="margin: 0 0 12px; line-height: 1.6;">Foi um prazer atender você!</p>
-              <p style="margin: 0 0 4px;">Atenciosamente,</p>
-              <p style="margin: 0; font-weight: bold;">Isabele Bandeira de Moraes D'Angelo</p>
-              <p style="margin: 4px 0 0; color: #f58220;">Promobi Translation Services</p>
+              <p style="margin: 0 0 4px;">Atenciosamente,<br><strong>Isabele Bandeira de Moraes D'Angelo</strong><br><span style="color: #f58220;">Promobi Translation Services</span></p>
             </td>
           </tr>
         </table>
