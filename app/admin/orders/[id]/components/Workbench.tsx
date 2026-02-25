@@ -45,15 +45,15 @@ function getDocBadge(doc: Document) {
     const s = doc.translation_status
 
     if (hasPdf || s === 'REVISED' || s === 'COMPLETED')
-        return { label: 'REVISADO',    classes: 'text-green-500 bg-green-500/10',   Icon: CheckCircle  }
+        return { label: 'REVISADO', classes: 'text-green-500 bg-green-500/10', Icon: CheckCircle }
     if (s === 'translated')
-        return { label: 'RASCUNHO IA', classes: 'text-indigo-400 bg-indigo-400/10', Icon: Zap          }
+        return { label: 'RASCUNHO IA', classes: 'text-indigo-400 bg-indigo-400/10', Icon: Zap }
     if (s === 'error')
-        return { label: 'ERRO DEEPL',  classes: 'text-red-500 bg-red-500/10',       Icon: AlertTriangle }
+        return { label: 'ERRO DEEPL', classes: 'text-red-500 bg-red-500/10', Icon: AlertTriangle }
     if (s === 'needs_manual')
-        return { label: 'MANUAL',      classes: 'text-amber-400 bg-amber-400/10',   Icon: PenLine      }
+        return { label: 'MANUAL', classes: 'text-amber-400 bg-amber-400/10', Icon: PenLine }
 
-    return   { label: 'AGUARDANDO',  classes: 'text-slate-500 bg-slate-500/10',   Icon: Clock        }
+    return { label: 'AGUARDANDO', classes: 'text-slate-500 bg-slate-500/10', Icon: Clock }
 }
 
 function isDocDone(doc: Document): boolean {
@@ -70,19 +70,19 @@ export default function Workbench({ order }: { order: Order }) {
     const router = useRouter()
 
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
-    const [editorContent, setEditorContent]   = useState('')
-    const [savedContent, setSavedContent]     = useState('')
-    const [saving, setSaving]                 = useState(false)
-    const [uploading, setUploading]           = useState(false)
-    const [isTranslating, setIsTranslating]   = useState(false)
+    const [editorContent, setEditorContent] = useState('')
+    const [savedContent, setSavedContent] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [uploading, setUploading] = useState(false)
+    const [isTranslating, setIsTranslating] = useState(false)
     const { toast } = useUIFeedback()
 
-    const selectedDoc      = order.documents.find(d => d.id === selectedDocId)
-    const currentDocIndex  = order.documents.findIndex(d => d.id === selectedDocId)
-    const totalCount       = order.documents.length
+    const selectedDoc = order.documents.find(d => d.id === selectedDocId)
+    const currentDocIndex = order.documents.findIndex(d => d.id === selectedDocId)
+    const totalCount = order.documents.length
 
-    const doneCount    = order.documents.filter(isDocDone).length
-    const progressPct  = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+    const doneCount = order.documents.filter(isDocDone).length
+    const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
 
     const allDocsHandled = order.documents.every(isDocDone)
 
@@ -139,10 +139,10 @@ export default function Workbench({ order }: { order: Order }) {
         setEditorContent(safeContent)
         setSavedContent(safeContent)
 
-    // FIX: Added selectedDoc?.translatedText so the effect also fires when
-    // router.refresh() brings updated DB data for the currently selected doc.
-    // The isDirty + justTranslated guards above prevent unwanted overwrites.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // FIX: Added selectedDoc?.translatedText so the effect also fires when
+        // router.refresh() brings updated DB data for the currently selected doc.
+        // The isDirty + justTranslated guards above prevent unwanted overwrites.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedDocId, selectedDoc?.translatedText])
 
     // ── P3: safe doc selector — warns on unsaved changes ──────────────────────
@@ -284,7 +284,7 @@ export default function Workbench({ order }: { order: Order }) {
             formData.append('file', file)
             formData.append('docId', String(selectedDoc.id))
             formData.append('orderId', String(order.id))
-            const res  = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: formData })
+            const res = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: formData })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Falha no upload')
             toast.success('PDF de tradução enviado com sucesso!')
@@ -326,9 +326,8 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                         <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                             <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                    progressPct === 100 ? 'bg-green-500' : 'bg-[#f58220]'
-                                }`}
+                                className={`h-full rounded-full transition-all duration-500 ${progressPct === 100 ? 'bg-green-500' : 'bg-[#f58220]'
+                                    }`}
                                 style={{ width: `${progressPct}%` }}
                             />
                         </div>
@@ -338,30 +337,27 @@ export default function Workbench({ order }: { order: Order }) {
                 <nav className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                     {order.documents.map((doc) => {
                         const isActive = doc.id === selectedDocId
-                        const badge    = getDocBadge(doc)
+                        const badge = getDocBadge(doc)
                         const BadgeIcon = badge.Icon
 
                         return (
                             <button
                                 key={doc.id}
                                 onClick={() => handleDocSelect(doc.id)}
-                                className={`w-full text-left p-3 rounded-xl transition-all group relative flex items-start gap-3 ${
-                                    isActive
+                                className={`w-full text-left p-3 rounded-xl transition-all group relative flex items-start gap-3 ${isActive
                                         ? 'bg-[#f58220]/10 border border-[#f58220]/20'
                                         : 'hover:bg-slate-800 border border-transparent'
-                                }`}
+                                    }`}
                             >
-                                <div className={`mt-1 p-1.5 rounded-lg shrink-0 ${
-                                    isActive
+                                <div className={`mt-1 p-1.5 rounded-lg shrink-0 ${isActive
                                         ? 'bg-[#f58220] text-white'
                                         : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'
-                                }`}>
+                                    }`}>
                                     <FileText className="w-3.5 h-3.5" />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <p className={`text-[11px] font-bold truncate leading-tight ${
-                                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
-                                    }`}>
+                                    <p className={`text-[11px] font-bold truncate leading-tight ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
+                                        }`}>
                                         {doc.exactNameOnDoc || doc.docType}
                                     </p>
                                     <span className={`mt-1 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badge.classes}`}>
@@ -388,13 +384,12 @@ export default function Workbench({ order }: { order: Order }) {
                                     ? `Faltam ${totalCount - doneCount} doc(s) para revisar`
                                     : 'Gerar Kit de Entrega e enviar ao cliente'
                         }
-                        className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-black text-xs transition-all disabled:opacity-60 ${
-                            order.status === 'COMPLETED'
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-black text-xs transition-all disabled:opacity-60 ${order.status === 'COMPLETED'
                                 ? 'bg-green-500/10 text-green-400 border border-green-500/20 cursor-default'
                                 : allDocsHandled
                                     ? 'bg-[#f58220] hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 active:scale-[0.98]'
                                     : 'bg-slate-700/50 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                        }`}
+                            }`}
                     >
                         {order.status === 'COMPLETED' ? (
                             <><CheckCircle className="w-3.5 h-3.5" /> Pedido Enviado</>
@@ -461,7 +456,7 @@ export default function Workbench({ order }: { order: Order }) {
                             }
                             return (
                                 <iframe
-                                    key={viewUrl}  {/* FIX: key forces iframe reload when URL changes */}
+                                    key={viewUrl}
                                     src={viewUrl}
                                     className="w-full h-full border-0"
                                     title="PDF Viewer"
@@ -515,9 +510,8 @@ export default function Workbench({ order }: { order: Order }) {
                                 onClick={handleSave}
                                 disabled={saving}
                                 title="Atalho: Cmd + S"
-                                className={`relative h-8 bg-white border text-slate-700 px-3 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 ${
-                                    isDirty ? 'border-yellow-400' : 'border-slate-200'
-                                }`}
+                                className={`relative h-8 bg-white border text-slate-700 px-3 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 ${isDirty ? 'border-yellow-400' : 'border-slate-200'
+                                    }`}
                             >
                                 <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
                                 {saving ? 'Salvando...' : 'Salvar Rascunho'}
@@ -532,21 +526,17 @@ export default function Workbench({ order }: { order: Order }) {
                     </header>
 
                     {(selectedDoc.translation_status === 'error' || selectedDoc.translation_status === 'needs_manual') && (
-                        <div className={`p-3 border-b flex items-start gap-3 shrink-0 ${
-                            selectedDoc.translation_status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
-                        }`}>
-                            <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${
-                                selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
-                            }`} />
+                        <div className={`p-3 border-b flex items-start gap-3 shrink-0 ${selectedDoc.translation_status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
+                            }`}>
+                            <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
+                                }`} />
                             <div>
-                                <p className={`text-xs font-bold ${
-                                    selectedDoc.translation_status === 'error' ? 'text-red-800' : 'text-amber-800'
-                                }`}>
+                                <p className={`text-xs font-bold ${selectedDoc.translation_status === 'error' ? 'text-red-800' : 'text-amber-800'
+                                    }`}>
                                     {selectedDoc.translation_status === 'error' ? 'Falha na tradução automática' : 'Tradução manual necessária'}
                                 </p>
-                                <p className={`text-[10px] ${
-                                    selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
-                                }`}>
+                                <p className={`text-[10px] ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
+                                    }`}>
                                     {selectedDoc.translation_status === 'error'
                                         ? 'Erro técnico. Tente novamente via botão no cabeçalho ou faça upload do PDF manual abaixo.'
                                         : 'PDF escaneado/imagem não compatível com DeepL. Traduza manualmente ou faça upload do PDF.'}
@@ -623,11 +613,10 @@ export default function Workbench({ order }: { order: Order }) {
                                 />
                                 <label
                                     htmlFor="pdf-upload"
-                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all border shadow-sm ${
-                                        selectedDoc.delivery_pdf_url
+                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all border shadow-sm ${selectedDoc.delivery_pdf_url
                                             ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
                                             : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                                    } ${uploading ? 'opacity-50 cursor-wait' : ''}`}
+                                        } ${uploading ? 'opacity-50 cursor-wait' : ''}`}
                                 >
                                     {uploading
                                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
