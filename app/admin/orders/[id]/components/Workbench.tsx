@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, AlignLeft, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, AlignLeft, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import DocPageRotations from './DocPageRotations'
@@ -98,6 +98,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [isApproving, setIsApproving] = useState(false)
     const [isPreviewingKit, setIsPreviewingKit] = useState(false)
     const [isUploadingExternal, setIsUploadingExternal] = useState(false)
+    const [isReplacing, setIsReplacing] = useState(false)
 
     // States do Modal de Envio
     const [showDeliveryModal, setShowDeliveryModal] = useState(false)
@@ -115,6 +116,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const replaceFileInputRef = useRef<HTMLInputElement>(null)
     const justTranslatedRef = useRef<string | null>(null)
     const prevDocIdRef = useRef<number | null>(null)
 
@@ -294,6 +296,34 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    // --- SUBSTITUIR DOCUMENTO ORIGINAL ---
+    const handleReplaceOriginal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file || !selectedDoc) return
+        if (!confirm('Tem certeza? Isso substituirá o arquivo enviado pelo cliente por esta nova versão.')) {
+            e.target.value = ''
+            return
+        }
+        setIsReplacing(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('documentId', selectedDoc.id.toString())
+            const { replaceOriginalDocument } = await import('../../../../actions/documents')
+            const res = await replaceOriginalDocument(formData)
+            if (res.success) {
+                router.refresh()
+            } else {
+                alert('Erro ao substituir original: ' + res.error)
+            }
+        } catch (err: any) {
+            alert('Erro inesperado: ' + err.message)
+        } finally {
+            setIsReplacing(false)
+            e.target.value = ''
+        }
+    }
+
     // --- FUNÇÃO DO MODAL DE DISPARO ---
     const confirmAndGenerateKits = async () => {
         setShowDeliveryModal(false)
@@ -408,6 +438,22 @@ export default function Workbench({ order }: { order: Order }) {
                         {selectedDoc.delivery_pdf_url && (
                             <a href={selectedDoc.delivery_pdf_url} target="_blank" rel="noreferrer" className="text-[#f58220] hover:text-orange-300 font-bold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Kit ↗</a>
                         )}
+                        <input
+                            type="file"
+                            ref={replaceFileInputRef}
+                            className="hidden"
+                            accept=".pdf,image/jpeg,image/png"
+                            onChange={handleReplaceOriginal}
+                        />
+                        <button
+                            onClick={() => replaceFileInputRef.current?.click()}
+                            disabled={isReplacing}
+                            title="Substituir o arquivo original enviado pelo cliente"
+                            className="text-gray-500 hover:text-rose-400 font-bold flex items-center gap-1 text-xs disabled:opacity-50 transition-colors"
+                        >
+                            {isReplacing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                            <span>{isReplacing ? 'Enviando...' : 'Substituir'}</span>
+                        </button>
                     </div>
                 </div>
 
