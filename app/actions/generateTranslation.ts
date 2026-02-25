@@ -56,7 +56,7 @@ async function convertImageToPdfLocal(imageBuffer: Buffer, filename: string): Pr
     return Buffer.from(pdfBytes);
 }
 
-// SDK Oficial da iLovePDF (Blindado contra erro 401)
+// SDK Oficial da iLovePDF (Blindado contra erro 401 e corrigido erro 400)
 async function performILovePdfOCROfficial(buffer: Buffer): Promise<Buffer> {
     const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
     const secretKey = 'secret_key_79f694c65dcfab8bd33ec4f7e4e14321_krtE5711f9df92fb18748a59f7ab14a1bc509';
@@ -72,7 +72,10 @@ async function performILovePdfOCROfficial(buffer: Buffer): Promise<Buffer> {
 
     try {
         await task.addFile(tempPath);
-        await task.process({ ocr_languages: 'por' });
+
+        // Correção do Erro 400: Processamento sem o parâmetro de linguagem que quebrava a API
+        await task.process();
+
         const downloadedData = await task.download();
         return Buffer.from(downloadedData);
     } finally {
