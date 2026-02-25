@@ -197,35 +197,31 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     const originalBuf = Buffer.from(await originalRes.arrayBuffer())
 
                     if (isImageUrl(doc.originalFileUrl)) {
-                        // Embed image natively — always portrait orientation
+                        // Embed image natively — always portrait Letter page
                         let image;
                         if (doc.originalFileUrl.toLowerCase().includes('.png')) {
                             image = await finalPdf.embedPng(originalBuf)
                         } else {
                             image = await finalPdf.embedJpg(originalBuf)
                         }
-                        // Use natural portrait orientation; scale to fill Letter page
-                        const isPortrait = image.height >= image.width
-                        const pageW = isPortrait ? PAGE_WIDTH : 792
-                        const pageH = isPortrait ? 792 : PAGE_WIDTH
-                        const scale = Math.min(pageW / image.width, pageH / image.height)
+                        // Always create portrait page; landscape images scale to fit within it
+                        const scale = Math.min(PAGE_WIDTH / image.width, 792 / image.height)
                         const scaledWidth = image.width * scale
                         const scaledHeight = image.height * scale
-                        const page = finalPdf.addPage([pageW, pageH])
+                        const page = finalPdf.addPage([PAGE_WIDTH, 792])
                         page.drawImage(image, {
-                            x: (pageW - scaledWidth) / 2,
-                            y: (pageH - scaledHeight) / 2,
+                            x: (PAGE_WIDTH - scaledWidth) / 2,
+                            y: (792 - scaledHeight) / 2,
                             width: scaledWidth,
                             height: scaledHeight,
                         })
                     } else {
                         const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
-                        const srcPages = originalPdf.getPages()
                         const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
-                        copied.forEach((p, i) => {
-                            // Explicitly preserve native rotation so pages never appear flipped
-                            const angle = srcPages[i].getRotation().angle
-                            if (angle !== 0) p.setRotation(degrees(angle))
+                        copied.forEach((p) => {
+                            // Read rotation from the copied page and re-apply it explicitly
+                            const rotation = p.getRotation().angle
+                            p.setRotation(degrees(rotation))
                             finalPdf.addPage(p)
                         })
                     }

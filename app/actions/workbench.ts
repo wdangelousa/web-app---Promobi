@@ -220,8 +220,8 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
               <h2 style="color: #111827; margin-top: 0;">Sua Tradução Certificada está pronta! 🎉</h2>
               <p style="margin: 0 0 12px;">Olá, <strong>${clientName}</strong>,</p>
               <p style="margin: 0 0 12px; line-height: 1.6;">
-                Entregamos o seu Kit de Tradução Oficial abaixo. Este documento foi certificado
-                segundo os padrões da <strong>ATA (American Translators Association)</strong>.
+                Entregamos em anexo o seu Kit de Tradução Oficial. Este documento foi certificado
+                segundo os rigorosos padrões da <strong>ATA (American Translators Association)</strong>.
               </p>
 
               <!-- Document download links -->
@@ -232,8 +232,10 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
                 ${docLinks}
               </div>
 
-              <p style="margin: 24px 0 4px; line-height: 1.6;">Atenciosamente,</p>
+              <p style="margin: 0 0 12px; line-height: 1.6;">Foi um prazer atender você!</p>
+              <p style="margin: 0 0 4px;">Atenciosamente,</p>
               <p style="margin: 0; font-weight: bold;">Isabele Bandeira de Moraes D'Angelo</p>
+              <p style="margin: 4px 0 0; color: #f58220;">Promobi Translation Services</p>
             </td>
           </tr>
         </table>
