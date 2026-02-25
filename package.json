@@ -25,6 +25,7 @@
     "tailwindcss": "^4.1.18"
   },
   "dependencies": {
+    "@ilovepdf/ilovepdf-nodejs": "^0.3.1",
     "@prisma/client": "^6.19.2",
     "@react-email/components": "^1.0.8",
     "@react-pdf/renderer": "^4.3.2",
