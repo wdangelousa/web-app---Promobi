@@ -363,8 +363,21 @@ async function buildCoverPage(params: {
 }
 
 // ── Main server action ────────────────────────────────────────────────────────
+//
+// options.preview = true → uploads to orders/previews/, skips all DB writes.
+//   Used by "Pré-visualizar Kit" so the operator can inspect formatting without
+//   committing the delivery or triggering any status changes.
 
-export async function generateDeliveryKit(orderId: number, documentId: number) {
+export async function generateDeliveryKit(
+  orderId: number,
+  documentId: number,
+  options?: { preview?: boolean }
+) {
+  const isPreview = options?.preview ?? false
+  return _generateDeliveryKit(orderId, documentId, isPreview)
+}
+
+async function _generateDeliveryKit(orderId: number, documentId: number, isPreview: boolean) {
   try {
     // 1. Fetch document + order
     const doc = await prisma.document.findUnique({
@@ -547,7 +560,10 @@ export async function generateDeliveryKit(orderId: number, documentId: number) {
 
     const supabase = createClient(supabaseUrl, supabaseKey)
     const safeName = `delivery_kit_order${orderId}_doc${documentId}_${Date.now()}.pdf`
-    const storagePath = `orders/completed/${safeName}`
+    // Preview files go to a separate folder and are never referenced in the DB
+    const storagePath = isPreview
+      ? `orders/previews/${safeName}`
+      : `orders/completed/${safeName}`
 
     const { error: uploadError } = await supabase.storage
       .from('documents')
@@ -563,23 +579,27 @@ export async function generateDeliveryKit(orderId: number, documentId: number) {
     const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath)
     const deliveryUrl = urlData.publicUrl
 
-    // ── 7. UPDATE DATABASE ────────────────────────────────────────────────────
-    await prisma.document.update({
-      where: { id: documentId },
-      data: {
-        delivery_pdf_url: deliveryUrl,
-        translation_status: 'approved',
-      },
-    })
+    // ── 7. UPDATE DATABASE (skipped in preview mode) ──────────────────────────
+    if (!isPreview) {
+      await prisma.document.update({
+        where: { id: documentId },
+        data: {
+          delivery_pdf_url: deliveryUrl,
+          translation_status: 'approved',
+        },
+      })
 
-    // Update order deliveryUrl so sendDelivery can detect it is ready
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { deliveryUrl },
-    })
+      // Signal to sendDelivery that the order has at least one ready kit
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { deliveryUrl },
+      })
+    }
 
-    console.log(`[generateDeliveryKit] ✅ Doc #${documentId} → ${deliveryUrl}`)
-    return { success: true, deliveryUrl }
+    console.log(
+      `[generateDeliveryKit] ✅ Doc #${documentId} (${isPreview ? 'PREVIEW' : 'OFFICIAL'}) → ${deliveryUrl}`
+    )
+    return { success: true, deliveryUrl, isPreview }
   } catch (error: any) {
     console.error('[generateDeliveryKit] Error:', error)
     return { success: false, error: error.message || 'Erro ao gerar o Delivery Kit.' }

@@ -15,6 +15,30 @@ import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// ─── setDocumentReviewed ──────────────────────────────────────────────────────
+// Marks a single document as reviewed by the operator.
+// This is the "Aprovar Tradução" step — it sets isReviewed = true so the
+// sidebar status badge turns green and the doc becomes eligible for kit generation.
+
+export async function setDocumentReviewed(
+  docId: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return { success: false, error: 'Não autorizado.' }
+
+    await prisma.document.update({
+      where: { id: docId },
+      data: { isReviewed: true },
+    })
+
+    return { success: true }
+  } catch (err: any) {
+    console.error('[setDocumentReviewed]', err)
+    return { success: false, error: err.message ?? 'Erro ao aprovar documento.' }
+  }
+}
+
 // ─── saveTranslationDraft ─────────────────────────────────────────────────────
 
 export async function saveTranslationDraft(

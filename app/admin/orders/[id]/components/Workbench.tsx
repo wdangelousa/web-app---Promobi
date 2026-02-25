@@ -13,6 +13,10 @@ import {
   Square,
   CheckSquare,
   AlignLeft,
+  ThumbsUp,
+  ScanSearch,
+  Send,
+  X,
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import 'react-quill-new/dist/quill.snow.css'
@@ -30,6 +34,7 @@ type Document = {
   exactNameOnDoc?: string | null
   translation_status?: string | null
   delivery_pdf_url?: string | null
+  isReviewed?: boolean
 }
 
 type Order = {
@@ -42,19 +47,21 @@ type Order = {
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Status helpers ────────────────────────────────────────────────────────────
 
-function getStatusInfo(doc: Document): { label: string; dotClass: string } {
-  if (doc.delivery_pdf_url) return { label: 'Kit Gerado', dotClass: 'bg-blue-400' }
-  switch (doc.translation_status) {
-    case 'approved':
-      return { label: 'Aprovado', dotClass: 'bg-green-400' }
-    case 'reviewed':
-      return { label: 'Revisado', dotClass: 'bg-yellow-400' }
-    default:
-      return { label: 'Pendente', dotClass: 'bg-gray-500' }
+type StatusInfo = { label: string; pill: string }
+
+function getStatusInfo(doc: Document): StatusInfo {
+  if (doc.delivery_pdf_url) {
+    return { label: 'Kit Gerado', pill: 'bg-blue-500/20 text-blue-300 ring-blue-500/30' }
   }
+  if (doc.isReviewed) {
+    return { label: 'Revisado ✓', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
+  }
+  return { label: 'Pendente', pill: 'bg-gray-600/40 text-gray-400 ring-gray-500/20' }
 }
+
+// ── Formatting helper ─────────────────────────────────────────────────────────
 
 function applyPromobiFormatting(html: string): string {
   const plain = html
@@ -73,9 +80,9 @@ function applyPromobiFormatting(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  const paragraphs = plain.split(/\n\n/).filter((p) => p.trim())
-
-  return paragraphs
+  return plain
+    .split(/\n\n/)
+    .filter((p) => p.trim())
     .map(
       (p) =>
         `<p style="font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 0 0 0.8em 0;">${p
@@ -89,40 +96,50 @@ function applyPromobiFormatting(html: string): string {
 
 export default function Workbench({ order }: { order: Order }) {
   const router = useRouter()
+
+  // Active document in viewer / editor
   const [selectedDocId, setSelectedDocId] = useState<number | null>(
     order.documents[0]?.id ?? null
   )
   const [editorContent, setEditorContent] = useState('')
-  const [saving, setSaving] = useState(false)
+
+  // Loading flags (one per async action so buttons disable independently)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [isTranslating, setIsTranslating] = useState(false)
-  const [selectedDocsForDelivery, setSelectedDocsForDelivery] = useState<number[]>([])
+  const [isApproving, setIsApproving] = useState(false)
+  const [isPreviewingKit, setIsPreviewingKit] = useState(false)
   const [generatingKits, setGeneratingKits] = useState(false)
+
+  // IDs selected via sidebar checkboxes for batch delivery
+  const [selectedDocsForDelivery, setSelectedDocsForDelivery] = useState<number[]>([])
+
+  // Optimistic isReviewed overrides — populated after successful "Aprovar" clicks
+  // without waiting for router.refresh() to propagate
+  const [localReviewed, setLocalReviewed] = useState<Set<number>>(
+    () => new Set(order.documents.filter((d) => d.isReviewed).map((d) => d.id))
+  )
 
   const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
   const justTranslatedRef = useRef<string | null>(null)
   const prevDocIdRef = useRef<number | null>(null)
 
-  // Sync editor with selected document
+  // Sync editor content when active document changes
   useEffect(() => {
     if (!selectedDoc) return
-
     const isNewDoc = prevDocIdRef.current !== selectedDoc.id
     prevDocIdRef.current = selectedDoc.id
 
     if (isNewDoc) {
       justTranslatedRef.current = null
       setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
+    } else if (justTranslatedRef.current) {
+      setEditorContent(justTranslatedRef.current)
     } else {
-      if (justTranslatedRef.current) {
-        setEditorContent(justTranslatedRef.current)
-      } else {
-        setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
-      }
+      setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
     }
   }, [selectedDocId, selectedDoc?.translatedText, selectedDoc?.id])
 
-  // ── Checkbox helpers ───────────────────────────────────────────────────────
+  // ── Sidebar checkbox helpers ───────────────────────────────────────────────
 
   const toggleDocForDelivery = (docId: number) => {
     setSelectedDocsForDelivery((prev) =>
@@ -131,33 +148,27 @@ export default function Workbench({ order }: { order: Order }) {
   }
 
   const toggleSelectAll = () => {
-    if (selectedDocsForDelivery.length === order.documents.length) {
-      setSelectedDocsForDelivery([])
-    } else {
-      setSelectedDocsForDelivery(order.documents.map((d) => d.id))
-    }
+    setSelectedDocsForDelivery(
+      selectedDocsForDelivery.length === order.documents.length
+        ? []
+        : order.documents.map((d) => d.id)
+    )
   }
 
   const allSelected = selectedDocsForDelivery.length === order.documents.length
   const someSelected = selectedDocsForDelivery.length > 0
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Editor action handlers ─────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!selectedDoc) return
     setIsSavingDraft(true)
-
     try {
       const { saveTranslationDraft } = await import('../../../../actions/workbench')
       const result = await saveTranslationDraft(selectedDoc.id, editorContent)
-
-      if (result.success) {
-        router.refresh()
-      } else {
-        alert('Erro ao salvar: ' + result.error)
-      }
+      if (!result.success) alert('Erro ao salvar: ' + result.error)
+      else router.refresh()
     } catch (err: any) {
-      console.error(err)
       alert('Erro ao salvar rascunho: ' + err.message)
     } finally {
       setIsSavingDraft(false)
@@ -166,45 +177,95 @@ export default function Workbench({ order }: { order: Order }) {
 
   const handleApplyPromobiStandard = () => {
     const formatted = applyPromobiFormatting(editorContent)
-    if (formatted) {
-      setEditorContent(formatted)
-    }
+    if (formatted) setEditorContent(formatted)
   }
 
   const handleTranslateAI = async () => {
     if (!selectedDoc) return
     setIsTranslating(true)
-
     try {
       const { generateTranslationDraft } = await import('../../../../actions/generateTranslation')
       const result = await generateTranslationDraft(order.id)
-
       const newText = (result as any).text || (result as any).translatedText
 
       if (result.success && newText) {
         justTranslatedRef.current = newText
         setEditorContent(newText)
-        alert('Tradução concluída com sucesso!')
         router.refresh()
       } else if (result.success) {
-        alert('Tradução concluída, mas o texto não foi retornado para a tela.')
+        alert('Tradução concluída, mas sem texto retornado. Recarregue a página.')
         router.refresh()
       } else {
-        alert('Erro na tradução: ' + ((result as any).error || 'Sem texto retornado.'))
+        alert('Erro na tradução: ' + ((result as any).error || 'desconhecido'))
       }
-    } catch (error: any) {
-      console.error(error)
-      alert('Erro ao acionar IA: ' + error.message)
+    } catch (err: any) {
+      alert('Erro ao acionar IA: ' + err.message)
     } finally {
       setIsTranslating(false)
     }
   }
 
-  const handleFinalize = async () => {
-    if (selectedDocsForDelivery.length === 0) {
-      alert('Selecione ao menos um documento para certificar.')
-      return
+  // "Aprovar Tradução" — saves the draft, marks isReviewed = true in DB,
+  // updates the sidebar immediately via optimistic state + server refresh.
+  const handleApproveDoc = async () => {
+    if (!selectedDoc) return
+    setIsApproving(true)
+    try {
+      // Persist current editor content first so the approved text is the reviewed one
+      const { saveTranslationDraft, setDocumentReviewed } = await import(
+        '../../../../actions/workbench'
+      )
+      const saveResult = await saveTranslationDraft(selectedDoc.id, editorContent)
+      if (!saveResult.success) {
+        alert('Erro ao salvar rascunho antes de aprovar: ' + saveResult.error)
+        return
+      }
+
+      const approveResult = await setDocumentReviewed(selectedDoc.id)
+      if (!approveResult.success) {
+        alert('Erro ao aprovar: ' + approveResult.error)
+        return
+      }
+
+      // Optimistic update — sidebar shows green immediately
+      setLocalReviewed((prev) => new Set([...prev, selectedDoc.id]))
+      router.refresh()
+    } catch (err: any) {
+      alert('Erro ao aprovar tradução: ' + err.message)
+    } finally {
+      setIsApproving(false)
     }
+  }
+
+  // "Pré-visualizar Kit" — saves draft, generates the PDF in preview mode,
+  // opens in a new tab. No DB changes, no email, no delivery_pdf_url written.
+  const handlePreviewKit = async () => {
+    if (!selectedDoc) return
+    setIsPreviewingKit(true)
+    try {
+      // Save so the PDF reflects the current editor state
+      const { saveTranslationDraft } = await import('../../../../actions/workbench')
+      await saveTranslationDraft(selectedDoc.id, editorContent)
+
+      const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
+      const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true })
+
+      if (result.success && result.deliveryUrl) {
+        window.open(result.deliveryUrl, '_blank', 'noopener,noreferrer')
+      } else {
+        alert('Erro ao gerar preview: ' + (result.error ?? 'desconhecido'))
+      }
+    } catch (err: any) {
+      alert('Erro ao gerar preview: ' + err.message)
+    } finally {
+      setIsPreviewingKit(false)
+    }
+  }
+
+  // ── Bottom-bar batch delivery ──────────────────────────────────────────────
+
+  const handleGenerateOfficialKits = async () => {
+    if (selectedDocsForDelivery.length === 0) return
 
     const docNames = order.documents
       .filter((d) => selectedDocsForDelivery.includes(d.id))
@@ -213,22 +274,19 @@ export default function Workbench({ order }: { order: Order }) {
 
     if (
       !confirm(
-        `Isso irá gerar ${selectedDocsForDelivery.length} Kit(s) de Entrega certificado(s) nos servidores:\n\n• ${docNames}\n\nConfirmar?`
+        `Gerar Kits OFICIAIS e enviar ao cliente para ${selectedDocsForDelivery.length} documento(s):\n\n• ${docNames}\n\nEsta ação é irreversível. Confirmar?`
       )
     )
       return
 
     setGeneratingKits(true)
-    setSaving(true)
-
     try {
-      // 1. Save the currently open document first (if it's selected for delivery)
+      // Save the active doc if it is among the selected
       if (selectedDoc && selectedDocsForDelivery.includes(selectedDoc.id)) {
         const { saveTranslationDraft } = await import('../../../../actions/workbench')
         await saveTranslationDraft(selectedDoc.id, editorContent)
       }
 
-      // 2. Generate delivery kit PDF for each selected document
       const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
       let generatedCount = 0
       const errors: string[] = []
@@ -238,70 +296,68 @@ export default function Workbench({ order }: { order: Order }) {
         if (result.success) {
           generatedCount++
         } else {
-          const docLabel =
-            order.documents.find((d) => d.id === docId)?.exactNameOnDoc || `#${docId}`
-          errors.push(`"${docLabel}": ${result.error}`)
+          const label = order.documents.find((d) => d.id === docId)?.exactNameOnDoc || `#${docId}`
+          errors.push(`"${label}": ${result.error}`)
         }
       }
 
       if (generatedCount === 0) {
-        throw new Error('Nenhum kit foi gerado. Erros:\n' + errors.join('\n'))
+        throw new Error('Nenhum kit foi gerado.\n' + errors.join('\n'))
       }
 
-      // 3. Attempt to release to client (sends the delivery email with per-document links)
+      // Attempt to release — sends email with per-document download links
       const { releaseToClient } = await import('../../../../actions/workbench')
       const releaseResult = await releaseToClient(order.id, 'Isabele')
 
       if (releaseResult.success) {
         alert(
-          `✅ ${generatedCount} Kit(s) gerado(s) e email enviado ao cliente!\n` +
-            (errors.length > 0
-              ? `\n⚠️ Falhas parciais:\n${errors.join('\n')}`
-              : '')
+          `✅ ${generatedCount} Kit(s) oficial(is) gerado(s) e email enviado ao cliente!` +
+            (errors.length > 0 ? `\n\n⚠️ Falhas parciais:\n${errors.join('\n')}` : '')
         )
       } else {
-        // Kits were generated but email couldn't be sent (e.g. not all docs approved)
         alert(
-          `✅ ${generatedCount}/${selectedDocsForDelivery.length} Kit(s) gerado(s) com sucesso!\n\n` +
-            `📧 Email não enviado: ${releaseResult.error}\n\n` +
-            `Para enviar ao cliente, todos os documentos do pedido devem estar aprovados.`
+          `✅ ${generatedCount}/${selectedDocsForDelivery.length} Kit(s) gerado(s).\n\n` +
+            `📧 Email não enviado ainda: ${releaseResult.error}\n\n` +
+            `Aprove todos os documentos para liberar o envio.`
         )
       }
 
       window.location.reload()
-    } catch (error: any) {
-      console.error(error)
-      alert('Erro ao finalizar: ' + error.message)
+    } catch (err: any) {
+      alert('Erro ao gerar kits: ' + err.message)
     } finally {
-      setSaving(false)
       setGeneratingKits(false)
     }
   }
 
-  if (!selectedDoc) return <div>Nenhum documento encontrado.</div>
+  // ── Guard ──────────────────────────────────────────────────────────────────
+
+  if (!selectedDoc) return <div className="p-4 text-sm text-gray-500">Nenhum documento encontrado.</div>
 
   const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
+  const activeDocIsReviewed = localReviewed.has(selectedDoc.id)
 
   return (
-    <div className="h-[calc(100vh-80px)] flex overflow-hidden">
+    // Outer wrapper — relative so the bottom bar can be absolute inside it
+    <div className="relative h-[calc(100vh-80px)] flex overflow-hidden">
 
-      {/* ── LEFT SIDEBAR: Document List ─────────────────────────────────── */}
+      {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
       <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
 
-        {/* Sidebar header */}
-        <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
-          <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
+        {/* Header */}
+        <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between shrink-0">
+          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
             Documentos
           </span>
-          <span className="text-xs bg-gray-700 text-gray-300 rounded-full px-1.5 py-0.5 font-mono">
+          <span className="text-[10px] bg-gray-700 text-gray-300 rounded-full px-1.5 py-0.5 font-mono">
             {order.documents.length}
           </span>
         </div>
 
-        {/* Select All toggle */}
+        {/* Select-all row */}
         <button
           onClick={toggleSelectAll}
-          className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border-b border-gray-800 hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border-b border-gray-800 hover:bg-gray-800 transition-colors shrink-0"
         >
           {allSelected ? (
             <CheckSquare className="h-3.5 w-3.5 text-[#f58220]" />
@@ -311,28 +367,30 @@ export default function Workbench({ order }: { order: Order }) {
           <span>{allSelected ? 'Desmarcar Todos' : 'Selecionar Todos'}</span>
         </button>
 
-        {/* Document list */}
+        {/* Document list — scrollable */}
         <div className="flex-1 overflow-y-auto py-1">
           {order.documents.map((doc) => {
             const isActive = doc.id === selectedDocId
             const isChecked = selectedDocsForDelivery.includes(doc.id)
-            const { label: statusLabel, dotClass } = getStatusInfo(doc)
+            // Merge DB value with optimistic local override
+            const docWithReview = { ...doc, isReviewed: localReviewed.has(doc.id) }
+            const { label: statusLabel, pill: pillClass } = getStatusInfo(docWithReview)
 
             return (
               <div
                 key={doc.id}
-                className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md cursor-pointer transition-colors group ${
+                className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md group transition-colors ${
                   isActive ? 'bg-gray-700' : 'hover:bg-gray-800'
                 }`}
               >
-                {/* Checkbox — stops propagation so click on name still works */}
+                {/* Checkbox (for batch delivery selection) */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     toggleDocForDelivery(doc.id)
                   }}
-                  className="mt-0.5 shrink-0 text-gray-400 hover:text-[#f58220] transition-colors"
-                  title="Selecionar para entrega"
+                  className="mt-0.5 shrink-0 text-gray-500 hover:text-[#f58220] transition-colors"
+                  title="Incluir na entrega"
                 >
                   {isChecked ? (
                     <CheckSquare className="h-4 w-4 text-[#f58220]" />
@@ -341,9 +399,9 @@ export default function Workbench({ order }: { order: Order }) {
                   )}
                 </button>
 
-                {/* Name + status — clicking activates viewer */}
-                <div
-                  className="flex-1 min-w-0"
+                {/* Name + status badge (clicking activates viewer+editor) */}
+                <button
+                  className="flex-1 min-w-0 text-left"
                   onClick={() => setSelectedDocId(doc.id)}
                 >
                   <div
@@ -354,19 +412,20 @@ export default function Workbench({ order }: { order: Order }) {
                   >
                     {doc.exactNameOnDoc || doc.docType}
                   </div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
-                    <span className="text-[10px] text-gray-500">{statusLabel}</span>
-                  </div>
-                </div>
+                  <span
+                    className={`mt-1 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded ring-1 ${pillClass}`}
+                  >
+                    {statusLabel}
+                  </span>
+                </button>
               </div>
             )
           })}
         </div>
 
-        {/* Delivery selection count */}
+        {/* Selection count hint */}
         {someSelected && (
-          <div className="px-3 py-2 border-t border-gray-700 bg-gray-800">
+          <div className="px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
             <p className="text-[10px] text-[#f58220] font-semibold">
               {selectedDocsForDelivery.length} selecionado(s) para entrega
             </p>
@@ -374,14 +433,16 @@ export default function Workbench({ order }: { order: Order }) {
         )}
       </div>
 
-      {/* ── CENTER: PDF Viewer ────────────────────────────────────────────── */}
+      {/* ── CENTER: PDF VIEWER ────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 bg-gray-800 border-r border-gray-700 flex flex-col">
         <div className="bg-gray-900 text-white px-3 py-2 flex justify-between items-center text-xs shrink-0">
-          <span className="font-bold flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            {selectedDoc.translatedFileUrl ? 'PDF Traduzido (DeepL)' : 'Documento Original'}
+          <span className="font-bold flex items-center gap-2 truncate">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              {selectedDoc.translatedFileUrl ? 'PDF Traduzido (DeepL)' : 'Documento Original'}
+            </span>
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0 ml-2">
             {selectedDoc.translatedFileUrl && (
               <a
                 href={selectedDoc.translatedFileUrl}
@@ -404,14 +465,10 @@ export default function Workbench({ order }: { order: Order }) {
             )}
           </div>
         </div>
-        <div className="flex-1 bg-gray-500 relative">
+
+        <div className="flex-1 relative bg-gray-500">
           {viewUrl && viewUrl !== 'PENDING_UPLOAD' ? (
-            <iframe
-              key={viewUrl}
-              src={viewUrl}
-              className="w-full h-full"
-              title="PDF Viewer"
-            />
+            <iframe key={viewUrl} src={viewUrl} className="w-full h-full" title="PDF Viewer" />
           ) : (
             <div className="flex items-center justify-center h-full text-white text-sm">
               Arquivo pendente de upload
@@ -420,57 +477,100 @@ export default function Workbench({ order }: { order: Order }) {
         </div>
       </div>
 
-      {/* ── RIGHT: Translation Editor ─────────────────────────────────────── */}
+      {/* ── RIGHT: EDITOR ─────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col bg-white">
 
-        {/* Editor toolbar */}
-        <div className="border-b border-gray-200 px-3 py-2 flex flex-wrap justify-between items-center gap-2 bg-gray-50 shrink-0">
-          <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
-            <FileText className="h-4 w-4 text-blue-600" />
-            <span className="truncate max-w-[140px]" title={selectedDoc.exactNameOnDoc || selectedDoc.docType}>
-              {selectedDoc.exactNameOnDoc || selectedDoc.docType}
-            </span>
-          </h3>
+        {/* ── Editor toolbar ── */}
+        <div className="border-b border-gray-200 px-3 py-2 flex flex-wrap items-center gap-1.5 bg-gray-50 shrink-0">
 
-          <div className="flex flex-wrap gap-1.5">
-            {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
-              <ManualApprovalButton orderId={order.id} />
+          {/* Doc name */}
+          <span
+            className="text-xs font-bold text-gray-600 truncate max-w-[130px] mr-1"
+            title={selectedDoc.exactNameOnDoc || selectedDoc.docType}
+          >
+            {selectedDoc.exactNameOnDoc || selectedDoc.docType}
+          </span>
+
+          {/* Divider */}
+          <span className="h-4 w-px bg-gray-300 mx-0.5" />
+
+          {/* Utility buttons */}
+          {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
+            <ManualApprovalButton orderId={order.id} />
+          )}
+
+          <button
+            onClick={handleApplyPromobiStandard}
+            title="Formata para Arial 11pt, espaçamento 1.5 (padrão USCIS/ATA)"
+            className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-indigo-100 flex items-center gap-1 transition-colors"
+          >
+            <AlignLeft className="h-3 w-3" />
+            Padrão Promobi
+          </button>
+
+          <button
+            onClick={handleTranslateAI}
+            disabled={isTranslating}
+            className="bg-purple-50 border border-purple-200 text-purple-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-purple-100 flex items-center gap-1 transition-colors disabled:opacity-50"
+          >
+            {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+            {isTranslating ? 'Traduzindo...' : 'IA'}
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={isSavingDraft}
+            className="bg-white border border-gray-300 text-gray-600 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 transition-colors disabled:opacity-50"
+          >
+            <Save className="h-3 w-3" />
+            {isSavingDraft ? 'Salvando...' : 'Salvar'}
+          </button>
+
+          {/* Divider */}
+          <span className="h-4 w-px bg-gray-300 mx-0.5" />
+
+          {/* ── Stage-gate buttons ── */}
+
+          {/* Preview Kit — non-destructive, opens PDF in new tab */}
+          <button
+            onClick={handlePreviewKit}
+            disabled={isPreviewingKit || isSavingDraft}
+            title="Gera um PDF de preview (não salva, não envia)"
+            className="bg-sky-50 border border-sky-200 text-sky-700 px-2.5 py-1.5 rounded text-[11px] font-bold hover:bg-sky-100 flex items-center gap-1 transition-colors disabled:opacity-50"
+          >
+            {isPreviewingKit ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ScanSearch className="h-3 w-3" />
             )}
+            {isPreviewingKit ? 'Gerando...' : 'Preview Kit'}
+          </button>
 
-            <button
-              onClick={handleApplyPromobiStandard}
-              title="Formata para Arial 11pt, espaçamento 1.5 (padrão USCIS/ATA)"
-              className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 flex items-center gap-1 transition-colors"
-            >
-              <AlignLeft className="h-3 w-3" />
-              Padrão Promobi
-            </button>
-
-            <button
-              onClick={handleTranslateAI}
-              disabled={isTranslating}
-              className="bg-purple-50 border border-purple-200 text-purple-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-100 flex items-center gap-1 transition-colors disabled:opacity-50"
-            >
-              {isTranslating ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Zap className="h-3 w-3" />
-              )}
-              {isTranslating ? 'Traduzindo...' : 'Traduzir com IA'}
-            </button>
-
-            <button
-              onClick={handleSave}
-              disabled={isSavingDraft}
-              className="bg-white border border-gray-300 text-gray-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-100 flex items-center gap-1 transition-colors disabled:opacity-50"
-            >
-              <Save className="h-3 w-3" />
-              {isSavingDraft ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
+          {/* Approve Translation — the green gate before delivery */}
+          <button
+            onClick={handleApproveDoc}
+            disabled={isApproving || activeDocIsReviewed}
+            title={
+              activeDocIsReviewed
+                ? 'Tradução já foi revisada'
+                : 'Salva o rascunho e marca este documento como Revisado'
+            }
+            className={`px-2.5 py-1.5 rounded text-[11px] font-bold flex items-center gap-1 transition-colors border ${
+              activeDocIsReviewed
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default'
+                : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60'
+            }`}
+          >
+            {isApproving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ThumbsUp className="h-3 w-3" />
+            )}
+            {isApproving ? 'Aprovando...' : activeDocIsReviewed ? 'Revisado ✓' : 'Aprovar Tradução'}
+          </button>
         </div>
 
-        {/* Quill editor */}
+        {/* ── Quill editor (takes remaining height) ── */}
         <div className="flex-1 overflow-auto">
           <ReactQuill
             theme="snow"
@@ -487,29 +587,65 @@ export default function Workbench({ order }: { order: Order }) {
             }}
           />
         </div>
+      </div>
 
-        {/* Footer with dynamic send button */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between shrink-0">
-          <p className="text-xs text-gray-500">
-            {selectedDocsForDelivery.length > 0
-              ? `${selectedDocsForDelivery.length} doc(s) selecionado(s)`
-              : 'Nenhum documento selecionado'}
-          </p>
+      {/* ── FLOATING BOTTOM BAR (batch delivery) ─────────────────────────── */}
+      {/*
+        Sits at the bottom of the relative wrapper.
+        Slides in from below when at least one doc is checked.
+        Uses translate-y trick for smooth animation without layout shift.
+      */}
+      <div
+        className={`absolute bottom-0 left-0 right-0 z-40 bg-gray-900 border-t-2 border-[#f58220] shadow-2xl
+          transition-transform duration-200 ease-out
+          ${someSelected ? 'translate-y-0' : 'translate-y-full'}`}
+      >
+        <div className="px-6 py-3 flex items-center justify-between gap-4">
+          {/* Left: selection summary */}
+          <div className="flex items-center gap-3 min-w-0">
+            <CheckSquare className="h-5 w-5 text-[#f58220] shrink-0" />
+            <div className="min-w-0">
+              <p className="text-white text-sm font-semibold leading-tight">
+                {selectedDocsForDelivery.length} documento(s) selecionado(s)
+              </p>
+              <p className="text-gray-400 text-[11px] truncate">
+                {order.documents
+                  .filter((d) => selectedDocsForDelivery.includes(d.id))
+                  .map((d) => d.exactNameOnDoc || d.docType)
+                  .join(' · ')}
+              </p>
+            </div>
+          </div>
 
-          <button
-            onClick={handleFinalize}
-            disabled={saving || selectedDocsForDelivery.length === 0}
-            className="bg-[#f58220] hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 text-sm transition-colors"
-          >
-            {generatingKits ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle className="h-4 w-4" />
-            )}
-            {generatingKits
-              ? 'Gerando Kits...'
-              : `Certificar e Enviar${selectedDocsForDelivery.length > 0 ? ` (${selectedDocsForDelivery.length})` : ''}`}
-          </button>
+          {/* Right: actions */}
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Deselect all */}
+            <button
+              onClick={() => setSelectedDocsForDelivery([])}
+              className="text-gray-400 hover:text-gray-200 p-1.5 rounded hover:bg-gray-700 transition-colors"
+              title="Limpar seleção"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* Main CTA */}
+            <button
+              onClick={handleGenerateOfficialKits}
+              disabled={generatingKits}
+              className="bg-[#f58220] hover:bg-orange-500 disabled:bg-orange-300 disabled:cursor-not-allowed
+                text-white font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 text-sm
+                shadow-lg shadow-orange-900/40 transition-colors"
+            >
+              {generatingKits ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              {generatingKits
+                ? 'Gerando Kits Oficiais...'
+                : `Gerar Kits Oficiais e Enviar (${selectedDocsForDelivery.length})`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
