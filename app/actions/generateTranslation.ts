@@ -24,6 +24,41 @@ async function extractTextWithPdf2Json(buffer: Buffer): Promise<string> {
     });
 }
 
+// Cleans extracted raw text, preserving paragraph structure (\n\n separators).
+// pdf2json page break markers become paragraph breaks; single soft-wraps are collapsed
+// into the surrounding line (they are layout artifacts, not real paragraph breaks).
+function cleanExtractedText(raw: string): string {
+    return raw
+        // Replace pdf2json page-break markers with a paragraph separator
+        .replace(/[-]{10,}Page \(\d+\) Break[-]{10,}/g, '\n\n')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        // Collapse 2+ consecutive spaces/tabs (word-wrap fill characters)
+        .replace(/[ \t]{2,}/g, ' ')
+        // Keep real paragraph breaks (≥2 newlines) but cap at exactly 2
+        .replace(/\n{3,}/g, '\n\n')
+        // Single isolated newlines between non-empty lines are soft-wraps; join them
+        .replace(/([^\n])\n([^\n])/g, '$1 $2')
+        // One more pass to collapse again in case the above created runs of spaces
+        .replace(/[ \t]{2,}/g, ' ')
+        // Final cleanup: trim the whole thing
+        .trim();
+}
+
+// Converts paragraph-separated plain text into HTML <p> blocks for ReactQuill.
+// Double newlines (\n\n) become paragraph boundaries.
+// Remaining single newlines inside a paragraph become <br> tags.
+function textToHtml(text: string): string {
+    return text
+        .split('\n\n')
+        .filter(para => para.trim().length > 0)
+        .map(para => {
+            const inner = para.trim().replace(/\n/g, '<br>');
+            return `<p>${inner}</p>`;
+        })
+        .join('');
+}
+
 // NOVA FUNÇÃO: Converte JPG/PNG para PDF antes do OCR
 async function convertImageToPdf(buffer: Buffer, filename: string): Promise<Buffer> {
     const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
@@ -196,9 +231,9 @@ export async function generateTranslationDraft(orderId: number) {
                         }
                     }
 
-                    // Extrai texto (Se era imagem convertida, não terá texto digital, forçando o OCR abaixo)
-                    extractedText = await extractTextWithPdf2Json(pdfBuffer);
-                    let cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
+                    // Extrai texto e limpa preservando parágrafos
+                    const rawText = await extractTextWithPdf2Json(pdfBuffer);
+                    let cleanText = cleanExtractedText(rawText);
 
                     // ACIONA O OCR se não houver texto suficiente
                     if (!cleanText || cleanText.length < 10) {
@@ -208,8 +243,8 @@ export async function generateTranslationDraft(orderId: number) {
                             const ocrBuffer = await performILovePdfOCR(pdfBuffer);
                             console.log(`[AutoTranslation] OCR concluído. Extraindo texto...`);
 
-                            extractedText = await extractTextWithPdf2Json(ocrBuffer);
-                            cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
+                            const ocrRaw = await extractTextWithPdf2Json(ocrBuffer);
+                            cleanText = cleanExtractedText(ocrRaw);
 
                         } catch (ocrError: any) {
                             console.error("[AutoTranslation] Falha no OCR:", ocrError);
@@ -225,17 +260,22 @@ export async function generateTranslationDraft(orderId: number) {
                         continue;
                     }
 
-                    // Traduz com o DeepL
+                    // Traduz com o DeepL — envia texto com paragrafos preservados
                     const result = await translator.translateText(extractedText, null, 'en-US');
-                    const translatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
+                    const translatedPlain = Array.isArray(result)
+                        ? result.map(r => r.text).join('\n\n')
+                        : result.text;
+
+                    // Converte para HTML estruturado com <p> para o ReactQuill
+                    const translatedHtml = textToHtml(translatedPlain);
 
                     // Guarda na Base de Dados
                     await prisma.document.update({
                         where: { id: doc.id },
-                        data: { translatedText }
+                        data: { translatedText: translatedHtml }
                     });
 
-                    lastTranslatedText = translatedText;
+                    lastTranslatedText = translatedHtml;
                     completedCount++;
                 }
 

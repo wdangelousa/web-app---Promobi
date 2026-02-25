@@ -70,17 +70,6 @@ function isImageUrl(url: string): boolean {
   )
 }
 
-// ── Auto-detect and embed image (PNG or JPEG) ─────────────────────────────────
-
-async function embedAutoImage(
-  pdfDoc: PDFDocument,
-  buffer: Buffer
-) {
-  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8
-  if (isJpeg) return pdfDoc.embedJpg(buffer)
-  return pdfDoc.embedPng(buffer)
-}
-
 // ── Convert image to PDF via iLovePDF ─────────────────────────────────────────
 
 async function convertImageToPdfBuffer(
@@ -143,223 +132,97 @@ async function convertImageToPdfBuffer(
   return Buffer.from(await res.arrayBuffer())
 }
 
-// ── Cover page builder ────────────────────────────────────────────────────────
+// ── Template-based cover page ─────────────────────────────────────────────────
+//
+// Loads `public/capa_certificacao_modelo.pdf` and draws only the dynamic
+// fields (Document Type, Number of Pages, Order #, Date) onto the pre-printed
+// template.  All coordinates were derived from pdf2json analysis of the template:
+//
+//   1 json unit = 16 pt   (page = 38.25 × 49.5 units = 612 × 792 pt)
+//   PDF_x = json_x * 16
+//   PDF_y = (49.5 - json_y) * 16
+//
+//  Field               json pos       PDF pos (approx)
+//  ─────────────────── ──────────     ────────────────
+//  Document Type val   x≈11, y=9.8    (176, 635)  – blank in template
+//  Number of pages     x=10.8, y=12.8 (173, 587)  – covers "02"
+//  Order #             x=7.4, y=13.8  (118, 571)  – covers "0001-USA"
+//  Dated               x=4.3, y=42.0  ( 69, 120)  – covers full "Dated: …"
 
-async function buildCoverPage(params: {
-  docType: string
-  orderId: number
-  totalPages: number
-  dateStr: string
-}): Promise<PDFDocument> {
+// Returns a PDFPage that is already part of `targetDoc`'s context (ready to insert).
+async function _buildCoverPageInDoc(
+  targetDoc: PDFDocument,
+  params: {
+    docType: string
+    orderId: number
+    totalPages: number
+    dateStr: string
+  }
+) {
   const { docType, orderId, totalPages, dateStr } = params
 
-  const coverPdf = await PDFDocument.create()
-  const page = coverPdf.addPage([612, 792])
-
-  const fontNormal = await coverPdf.embedFont(StandardFonts.Helvetica)
-  const fontBold = await coverPdf.embedFont(StandardFonts.HelveticaBold)
-
-  // Load image assets
   const publicDir = path.join(process.cwd(), 'public')
-  const logoPromobiBytes = await fs.readFile(path.join(publicDir, 'logo-promobi.png'))
-  const logoAtaBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'))
-  const seloAtaBytes = await fs.readFile(path.join(publicDir, 'selo-ata.png'))
-  const assinaturaBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'))
+  const capaBytes = await fs.readFile(path.join(publicDir, 'capa_certificacao_modelo.pdf'))
+  const capaSrc = await PDFDocument.load(capaBytes, { ignoreEncryption: true })
 
-  const logoPromobi = await embedAutoImage(coverPdf, logoPromobiBytes)
-  const logoAta = await embedAutoImage(coverPdf, logoAtaBytes)
-  const seloAta = await embedAutoImage(coverPdf, seloAtaBytes)
-  const assinatura = await coverPdf.embedJpg(assinaturaBytes) // confirmed JPEG
+  // Copy the cover template page into the target document's context
+  const [capaPage] = await targetDoc.copyPages(capaSrc, [0])
 
-  // Colours
+  // Embed Helvetica (standard, no subsetting issues) in the target document
+  const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
+
   const black = rgb(0, 0, 0)
-  const orange = rgb(0.91, 0.46, 0.1)
-  const darkBg = rgb(0.06, 0.07, 0.09)
-  const midGray = rgb(0.4, 0.4, 0.4)
-  const lightGray = rgb(0.82, 0.82, 0.82)
-  const veryLight = rgb(0.96, 0.96, 0.97)
-  const almostBlack = rgb(0.12, 0.13, 0.14)
+  // Info-box background colour (matches the light-grey box in the template)
+  const infoBoxBg = rgb(0.96, 0.96, 0.97)
+  // Plain white for the credentials / bottom area
+  const white = rgb(1, 1, 1)
 
-  // ── HEADER BAR ───────────────────────────────────────────────────────────
-  page.drawRectangle({ x: 0, y: 752, width: 612, height: 40, color: darkBg })
-
-  const promobiDims = logoPromobi.scaleToFit(120, 28)
-  page.drawImage(logoPromobi, {
-    x: 72,
-    y: 752 + (40 - promobiDims.height) / 2,
-    width: promobiDims.width,
-    height: promobiDims.height,
+  // ── 1. Document Type value (blank in template) ─────────────────────────────
+  // The "Document Type:" label ends at ~x=194pt; values in this table start at
+  // ~x=176pt (consistent with Portuguese/English columns).  y=635 for row 1.
+  capaPage.drawText(docType, {
+    x: 176,
+    y: 635,
+    size: 10.5,
+    font: fontHelv,
+    color: black,
   })
 
-  const ataDims = logoAta.scaleToFit(72, 26)
-  page.drawImage(logoAta, {
-    x: 612 - 72 - ataDims.width,
-    y: 752 + (40 - ataDims.height) / 2,
-    width: ataDims.width,
-    height: ataDims.height,
+  // ── 2. Number of Pages (template shows "02" placeholder) ──────────────────
+  // White out the placeholder and draw the real value.
+  capaPage.drawRectangle({ x: 168, y: 583, width: 88, height: 13, color: infoBoxBg })
+  capaPage.drawText(totalPages.toString(), {
+    x: 173,
+    y: 586,
+    size: 10.5,
+    font: fontHelv,
+    color: black,
   })
 
-  // Orange accent strip
-  page.drawRectangle({ x: 0, y: 748, width: 612, height: 4, color: orange })
-
-  // ── TITLE BLOCK ──────────────────────────────────────────────────────────
-  const title = 'CERTIFICATION OF TRANSLATION ACCURACY'
-  const titleSize = 14
-  const titleW = fontBold.widthOfTextAtSize(title, titleSize)
-  page.drawText(title, {
-    x: (612 - titleW) / 2,
-    y: 714,
-    size: titleSize,
-    font: fontBold,
-    color: almostBlack,
+  // ── 3. Order # (template shows "0001-USA" placeholder) ───────────────────
+  // The value column for Order # starts at x≈7.4 units = 118pt.
+  capaPage.drawRectangle({ x: 115, y: 567, width: 155, height: 13, color: infoBoxBg })
+  capaPage.drawText(`${orderId.toString().padStart(4, '0')}-USA`, {
+    x: 119,
+    y: 570,
+    size: 10.5,
+    font: fontHelv,
+    color: black,
   })
 
-  const subtitle = 'Promobi Translation Services  ·  ATA Associate Member M-194918'
-  const subtitleSize = 8.5
-  const subtitleW = fontNormal.widthOfTextAtSize(subtitle, subtitleSize)
-  page.drawText(subtitle, {
-    x: (612 - subtitleW) / 2,
-    y: 699,
-    size: subtitleSize,
-    font: fontNormal,
-    color: midGray,
+  // ── 4. Date (template shows a hardcoded sample date) ─────────────────────
+  // "Dated: February 21, 2026" is a single text run at y=42.0 (json) → PDF_y=120.
+  // Erase the whole run and redraw with today's date.
+  capaPage.drawRectangle({ x: 66, y: 116, width: 240, height: 13, color: white })
+  capaPage.drawText(`Dated: ${dateStr}`, {
+    x: 69,
+    y: 119,
+    size: 9,
+    font: fontHelv,
+    color: black,
   })
 
-  page.drawLine({
-    start: { x: 72, y: 691 },
-    end: { x: 540, y: 691 },
-    thickness: 0.5,
-    color: lightGray,
-  })
-
-  // ── INFO BOX ──────────────────────────────────────────────────────────────
-  page.drawRectangle({
-    x: 72,
-    y: 623,
-    width: 468,
-    height: 62,
-    color: veryLight,
-    borderColor: lightGray,
-    borderWidth: 0.5,
-  })
-
-  const labelSize = 8
-  const valueSize = 8.5
-  const infoFields: [string, string, number, number][] = [
-    ['Document Type:', docType, 84, 672],
-    ['Source Language:', 'Portuguese', 84, 656],
-    ['Target Language:', 'English', 84, 640],
-    ['Number of Pages:', totalPages.toString(), 310, 672],
-    ['Order #:', orderId.toString().padStart(4, '0') + '-USA', 310, 656],
-  ]
-
-  for (const [label, value, x, y] of infoFields) {
-    page.drawText(label, { x, y, size: labelSize, font: fontBold, color: midGray })
-    page.drawText(value, {
-      x: x + fontBold.widthOfTextAtSize(label, labelSize) + 4,
-      y,
-      size: valueSize,
-      font: fontNormal,
-      color: black,
-    })
-  }
-
-  // ── CERTIFICATION TEXT ────────────────────────────────────────────────────
-  const certBody = [
-    `I, Isabele Bandeira de Moraes D'Angelo, a certified translator at Promobi Translation, ` +
-      `Associate M-194918, hereby attest as follows:`,
-    '',
-    `I am not related in any way to the client for whom this translation was completed.`,
-    '',
-    `I hereby certify that I am fluent in and competent to translate from Portuguese into English, ` +
-      `and that the document described above has been translated by me.`,
-    '',
-    `To the best of my knowledge and professional judgment, the translated text accurately reflects ` +
-      `the content, meaning, and style of the original text and constitutes in every respect a correct, ` +
-      `true, and complete translation of the original document.`,
-    '',
-    `This certification relates solely to the accuracy of the translation. I do not guarantee that ` +
-      `the original document is genuine, nor do I guarantee that the statements contained in the original ` +
-      `document are true. Furthermore, I assume no liability for the manner in which the translation is ` +
-      `used by the client or by any third party, including end-users of the translation.`,
-    '',
-    `A copy of the translation is attached to this certification.`,
-  ].join('\n')
-
-  const certFontSize = 10.5
-  const certLineHeight = certFontSize * 1.5
-  const certMaxWidth = 468
-  const certLines = wrapLines(certBody, fontNormal, certFontSize, certMaxWidth)
-
-  let certY = 612
-  for (const line of certLines) {
-    if (certY < 205) break
-    if (line) {
-      page.drawText(line, {
-        x: 72,
-        y: certY,
-        size: certFontSize,
-        font: fontNormal,
-        color: black,
-      })
-    }
-    certY -= certLineHeight
-  }
-
-  // ── FOOTER SEPARATOR ─────────────────────────────────────────────────────
-  page.drawLine({
-    start: { x: 72, y: 195 },
-    end: { x: 540, y: 195 },
-    thickness: 0.5,
-    color: lightGray,
-  })
-
-  // ── SIGNATURE (left column) ───────────────────────────────────────────────
-  const sigDims = assinatura.scaleToFit(150, 52)
-  page.drawImage(assinatura, {
-    x: 72,
-    y: 135,
-    width: sigDims.width,
-    height: sigDims.height,
-  })
-
-  // Underline below signature
-  page.drawLine({
-    start: { x: 72, y: 132 },
-    end: { x: 235, y: 132 },
-    thickness: 0.5,
-    color: midGray,
-  })
-
-  // Credential text
-  const credLines: [string, number][] = [
-    ["Isabele Bandeira de Moraes D'Angelo", 120],
-    ['American Translators Association n\u00b0 M-194918', 107],
-    ['Telephone: +1 321 324-5851', 94],
-    ['Email: traducao@promobi.us', 81],
-    ['Address: 13550 Village Park Dr, Orlando / FL', 68],
-    [`Dated: ${dateStr}`, 55],
-  ]
-  for (const [text, y] of credLines) {
-    page.drawText(text, {
-      x: 72,
-      y,
-      size: 8,
-      font: fontNormal,
-      color: rgb(0.2, 0.2, 0.2),
-    })
-  }
-
-  // ── SEAL (right column) ───────────────────────────────────────────────────
-  const sealDims = seloAta.scaleToFit(95, 95)
-  page.drawImage(seloAta, {
-    x: 540 - sealDims.width,
-    y: 95,
-    width: sealDims.width,
-    height: sealDims.height,
-  })
-
-  return coverPdf
+  return capaPage
 }
 
 // ── Main server action ────────────────────────────────────────────────────────
@@ -395,34 +258,38 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
       return { success: false, error: 'Supabase Storage não configurado.' }
     }
 
-    // 2. Create the working PDF document
+    // ── 2. LOAD TEMPLATE PDFs ─────────────────────────────────────────────────
+    const publicDir = path.join(process.cwd(), 'public')
+    const timbradoBytes = await fs.readFile(path.join(publicDir, 'timbrado_promobi.pdf'))
+    const timbradoPdf = await PDFDocument.load(timbradoBytes, { ignoreEncryption: true })
+
+    // ── 3. CREATE FINAL PDF AND EMBED FONTS ───────────────────────────────────
     const finalPdf = await PDFDocument.create()
     const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
-    const fontBold = await finalPdf.embedFont(StandardFonts.HelveticaBold)
 
-    // Constants (US Letter, 1-inch margins)
+    // Content area on timbrado letterhead pages.
+    // Conservative margins leave room for Promobi's header (≈130pt from top)
+    // and footer (≈90pt from bottom).
     const PAGE_WIDTH = 612
-    const PAGE_HEIGHT = 792
-    const MARGIN = 72
-    const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2    // 468pt
-    const TEXT_TOP = PAGE_HEIGHT - MARGIN - 20        // 700pt  (leave room for subtle header)
-    const TEXT_BOTTOM = MARGIN + 28                   // 100pt  (room for footer)
+    const MARGIN_LEFT = 72
+    const MARGIN_RIGHT = 72
+    const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT  // 468 pt
+    const TEXT_TOP = 650      // y from bottom where body text begins
+    const TEXT_BOTTOM = 90    // y from bottom where body text must stop
     const FONT_SIZE = 11
-    const LINE_HEIGHT = FONT_SIZE * 1.5               // 16.5pt
-    const FOOTER_SIZE = 8.5
-    const HEADER_SIZE = 7
+    const LINE_HEIGHT = FONT_SIZE * 1.5   // 16.5 pt
+    const FOOTER_SIZE = 8
 
     const docName = doc.exactNameOnDoc || doc.docType
     const docType = doc.docType || 'Certified Translation'
 
-    // ── 3. TRANSLATION PAGES ─────────────────────────────────────────────────
+    // ── 4. TRANSLATION PAGES (on timbrado background) ────────────────────────
     let translationPageCount = 0
 
     if (doc.translatedText) {
       const plainText = stripHtml(doc.translatedText)
       const allLines = wrapLines(plainText, fontNormal, FONT_SIZE, CONTENT_WIDTH)
 
-      // Pre-calculate total translation pages
       const linesPerPage = Math.floor((TEXT_TOP - TEXT_BOTTOM) / LINE_HEIGHT)
       const totalTranslationPages = Math.max(1, Math.ceil(allLines.length / linesPerPage))
 
@@ -433,41 +300,16 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
           (pageIndex + 1) * linesPerPage
         )
 
-        const translationPage = finalPdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+        // Copy the timbrado letterhead as the page background
+        const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
+        finalPdf.addPage(bgPage)
 
-        // Subtle top header strip
-        translationPage.drawRectangle({
-          x: 0,
-          y: PAGE_HEIGHT - 20,
-          width: PAGE_WIDTH,
-          height: 20,
-          color: rgb(0.06, 0.07, 0.09),
-        })
-        const headerLabel = 'PROMOBI TRANSLATION SERVICES  ·  CERTIFIED TRANSLATION'
-        const headerLabelW = fontBold.widthOfTextAtSize(headerLabel, HEADER_SIZE)
-        translationPage.drawText(headerLabel, {
-          x: (PAGE_WIDTH - headerLabelW) / 2,
-          y: PAGE_HEIGHT - 14,
-          size: HEADER_SIZE,
-          font: fontBold,
-          color: rgb(0.8, 0.8, 0.8),
-        })
-
-        // Thin orange accent
-        translationPage.drawRectangle({
-          x: 0,
-          y: PAGE_HEIGHT - 22,
-          width: PAGE_WIDTH,
-          height: 2,
-          color: rgb(0.91, 0.46, 0.1),
-        })
-
-        // Draw text lines
+        // Draw translation text on top of the letterhead
         let currentY = TEXT_TOP
         for (const line of pageLines) {
           if (line) {
-            translationPage.drawText(line, {
-              x: MARGIN,
+            bgPage.drawText(line, {
+              x: MARGIN_LEFT,
               y: currentY,
               size: FONT_SIZE,
               font: fontNormal,
@@ -477,31 +319,32 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
           currentY -= LINE_HEIGHT
         }
 
-        // Footer: "Translation of [docName] - Page X of Y"
+        // Footer: "Translation of [docName] — Page X of Y"
         const footerText = `Translation of ${docName}  \u2014  Page ${pageIndex + 1} of ${totalTranslationPages}`
         const footerW = fontNormal.widthOfTextAtSize(footerText, FOOTER_SIZE)
-        translationPage.drawLine({
-          start: { x: MARGIN, y: TEXT_BOTTOM - 6 },
-          end: { x: PAGE_WIDTH - MARGIN, y: TEXT_BOTTOM - 6 },
+        bgPage.drawLine({
+          start: { x: MARGIN_LEFT, y: TEXT_BOTTOM - 6 },
+          end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: TEXT_BOTTOM - 6 },
           thickness: 0.4,
-          color: rgb(0.8, 0.8, 0.8),
+          color: rgb(0.75, 0.75, 0.75),
         })
-        translationPage.drawText(footerText, {
+        bgPage.drawText(footerText, {
           x: (PAGE_WIDTH - footerW) / 2,
           y: TEXT_BOTTOM - 20,
           size: FOOTER_SIZE,
           font: fontNormal,
-          color: rgb(0.55, 0.55, 0.55),
+          color: rgb(0.5, 0.5, 0.5),
         })
       }
     } else {
-      // Placeholder page if no translation text
-      const placeholder = finalPdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      // Placeholder page (timbrado background) if translation not yet available
+      const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
+      finalPdf.addPage(bgPage)
       const msg = 'Translation text not yet available.'
       const msgW = fontNormal.widthOfTextAtSize(msg, FONT_SIZE)
-      placeholder.drawText(msg, {
+      bgPage.drawText(msg, {
         x: (PAGE_WIDTH - msgW) / 2,
-        y: PAGE_HEIGHT / 2,
+        y: TEXT_TOP,
         size: FONT_SIZE,
         font: fontNormal,
         color: rgb(0.5, 0.5, 0.5),
@@ -509,7 +352,7 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
       translationPageCount = 1
     }
 
-    // ── 4. ORIGINAL DOCUMENT PAGES ────────────────────────────────────────────
+    // ── 5. ORIGINAL DOCUMENT PAGES ────────────────────────────────────────────
     if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
       try {
         const originalRes = await fetch(doc.originalFileUrl)
@@ -517,12 +360,15 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
           const originalBuf = Buffer.from(await originalRes.arrayBuffer())
 
           if (isImageUrl(doc.originalFileUrl)) {
-            const filename = doc.originalFileUrl.split('/').pop()?.split('?')[0] || 'document.jpg'
+            // Convert image to PDF first, then merge
+            const filename =
+              doc.originalFileUrl.split('/').pop()?.split('?')[0] || 'document.jpg'
             const pdfBuf = await convertImageToPdfBuffer(originalBuf, filename)
             const originalPdf = await PDFDocument.load(pdfBuf, { ignoreEncryption: true })
             const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
             copied.forEach((p) => finalPdf.addPage(p))
           } else {
+            // Direct PDF merge
             const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
             const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
             copied.forEach((p) => finalPdf.addPage(p))
@@ -535,9 +381,10 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
       }
     }
 
-    // ── 5. BUILD COVER PAGE AND INSERT AT INDEX 0 ─────────────────────────────
+    // ── 6. BUILD AND INSERT COVER PAGE (from template) ────────────────────────
+    // Build cover AFTER all content pages so we know the true total page count.
     const contentPageCount = finalPdf.getPageCount()
-    const totalPdfPages = contentPageCount + 1 // +1 for cover
+    const totalPdfPages = contentPageCount + 1   // +1 for the cover itself
 
     const dateStr = new Date().toLocaleDateString('en-US', {
       year: 'numeric',
@@ -545,22 +392,20 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
       day: 'numeric',
     })
 
-    const coverPdf = await buildCoverPage({
+    const capaPage = await _buildCoverPageInDoc(finalPdf, {
       docType,
       orderId,
       totalPages: totalPdfPages,
       dateStr,
     })
 
-    const [importedCover] = await finalPdf.copyPages(coverPdf, [0])
-    finalPdf.insertPage(0, importedCover)
+    finalPdf.insertPage(0, capaPage)
 
-    // ── 6. SAVE AND UPLOAD ────────────────────────────────────────────────────
+    // ── 7. SAVE AND UPLOAD ────────────────────────────────────────────────────
     const pdfBytes = await finalPdf.save()
 
     const supabase = createClient(supabaseUrl, supabaseKey)
     const safeName = `delivery_kit_order${orderId}_doc${documentId}_${Date.now()}.pdf`
-    // Preview files go to a separate folder and are never referenced in the DB
     const storagePath = isPreview
       ? `orders/previews/${safeName}`
       : `orders/completed/${safeName}`
@@ -579,7 +424,7 @@ async function _generateDeliveryKit(orderId: number, documentId: number, isPrevi
     const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath)
     const deliveryUrl = urlData.publicUrl
 
-    // ── 7. UPDATE DATABASE (skipped in preview mode) ──────────────────────────
+    // ── 8. UPDATE DATABASE (skipped in preview mode) ──────────────────────────
     if (!isPreview) {
       await prisma.document.update({
         where: { id: documentId },
