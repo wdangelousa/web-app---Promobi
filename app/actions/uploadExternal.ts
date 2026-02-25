@@ -40,20 +40,22 @@ export async function uploadExternalTranslation(formData: FormData) {
         }
 
         // Pega a URL pública do arquivo que acabou de subir
-        const { data: urlData } = supabase.storage
+        const { data } = supabase.storage
             .from('documents')
             .getPublicUrl(`orders/external/${safeName}`)
+
+        const publicUrl = data.publicUrl
 
         // Atualiza o banco de dados do Prisma com a nova URL
         await prisma.document.update({
             where: { id: docId },
             data: {
-                externalTranslationUrl: urlData.publicUrl,
+                externalTranslationUrl: publicUrl,
                 translation_status: 'translated'
             }
         })
 
-        return { success: true, url: urlData.publicUrl }
+        return { success: true, url: publicUrl }
 
     } catch (err: any) {
         console.error('[uploadExternal] Erro:', err)
