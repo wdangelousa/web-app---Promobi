@@ -5,55 +5,33 @@ import prisma from '../../lib/prisma'
 
 // ─── PDF text extraction ───────────────────────────────────────────────────────
 /**
- * Extracts all plain text from a PDF buffer using pdfjs-dist's Node.js-safe
- * "legacy" build.
+ * Extracts all plain text from a PDF buffer using pdf2json — a pure Node.js
+ * library with zero dependency on browser APIs (no DOMMatrix, no canvas).
  *
- * WHY DYNAMIC IMPORT:
- * The default pdfjs-dist bundle (pdf.mjs) executes
- *   `const SCALE_MATRIX = new DOMMatrix()`
- * at the top level the moment the module is evaluated in Node.js, throwing
- * "DOMMatrix is not defined" before any polyfill can be applied.
- * The legacy build omits that canvas initialisation. Using a dynamic import
- * here (instead of a top-level static import) also ensures Turbopack/webpack
- * cannot hoist the module evaluation above our runtime context.
+ * pdf-parse / pdfjs-dist were removed because pdfjs-dist v5 executes
+ * `const SCALE_MATRIX = new DOMMatrix()` at module load time, which throws
+ * "DOMMatrix is not defined" in Node.js before any polyfill can be applied.
  */
 async function extractPDFText(buffer: Buffer): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const PDFJS = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any
-    PDFJS.GlobalWorkerOptions.workerSrc = '' // no web worker in Node.js
+    // pdf2json exports the constructor as the module default (not a named export)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const PDFParser = require('pdf2json') as any
+    const pdfParser = new PDFParser(null, true) // null context; true = extract raw text
 
-    const loadingTask = PDFJS.getDocument({
-        data: new Uint8Array(buffer),
-        useSystemFonts: true,  // skip network font requests
-        disableFontFace: true, // text extraction only — no rendering
-        verbosity: 0,          // silence pdfjs warnings
+    return new Promise<string>((resolve, reject) => {
+        pdfParser.on('pdfParser_dataError', (errData: any) => {
+            reject(new Error(errData.parserError ?? 'PDF parsing failed'))
+        })
+        pdfParser.on('pdfParser_dataReady', () => {
+            resolve((pdfParser.getRawTextContent() as string) ?? '')
+        })
+        pdfParser.parseBuffer(buffer)
     })
-
-    const pdf = await loadingTask.promise
-    const pageTexts: string[] = []
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i)
-        const content = await page.getTextContent()
-
-        // TextItem has `str`; TextMarkedContent does not — filter it out
-        const text = (content.items as any[])
-            .filter(item => typeof item.str === 'string')
-            .map((item: any) => item.str as string)
-            .join(' ')
-            .trim()
-
-        if (text) pageTexts.push(text)
-        page.cleanup()
-    }
-
-    pdf.cleanup()
-    return pageTexts.join('\n\n')
 }
 
-/** Returns true when a document is a PDF, based on docType, filename, or URL.
+/** Returns true when the document is a PDF, based on docType, filename, or URL.
  *  docType is often a human-readable label ("Certidão de Nascimento"), so the
- *  URL extension is the most reliable signal for Supabase-hosted files.
+ *  Supabase storage URL extension is the most reliable signal.
  */
 function isPDF(doc: {
     docType?: string | null
@@ -106,7 +84,7 @@ export async function translateSingleDocument(
             }
         }
 
-        // 3. Extract text
+        // 3. Extract text via pdf2json
         const extractedText = await extractPDFText(dataBuffer)
 
         if (!extractedText || extractedText.trim().length === 0) {
@@ -202,7 +180,7 @@ export async function generateTranslationDraft(orderId: number) {
                     continue
                 }
 
-                // 3. Extract text
+                // 3. Extract text via pdf2json
                 const extractedText = await extractPDFText(dataBuffer)
                 console.log(`[AutoTranslation] Extracted ${extractedText.length} chars from Doc #${doc.id}`)
 
@@ -215,7 +193,7 @@ export async function generateTranslationDraft(orderId: number) {
                     continue
                 }
 
-                // 4. Translate
+                // 4. Translate via DeepL
                 const result = await translator.translateText(extractedText, null, 'en-US')
                 const translatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text
 
