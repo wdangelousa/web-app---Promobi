@@ -202,18 +202,15 @@ export default function Workbench({ order }: { order: Order }) {
             const { translateSingleDocument } = await import('@/app/actions/generateTranslation')
             const res = await translateSingleDocument(selectedDoc.id)
             if (res.success && res.text) {
-                // Convert plain text → minimal HTML for ReactQuill:
-                // double newlines → paragraphs, single newlines → <br>
-                const html = '<p>' +
-                    res.text
-                        .split(/\n\n+/)
-                        .map(p => p.replace(/\n/g, '<br>').trim())
-                        .filter(Boolean)
-                        .join('</p><p>') +
-                    '</p>'
-                setEditorContent(html)
-                setSavedContent(html) // fresh from DB — not dirty
+                // Inject the translated text directly — ReactQuill accepts plain text.
+                // Avoid any intermediate HTML conversion: pdf2json returns text with
+                // \r\n line endings and page-separator lines that confuse splitters.
+                setEditorContent(res.text)
+                setSavedContent(res.text) // mark clean — text is already in the DB
                 toast.success('Tradução concluída! Revise o texto abaixo.')
+                // Refresh server data in the background so the sidebar badge and
+                // translation_status reflect the saved state without a manual reload.
+                router.refresh()
             } else {
                 toast.error(res.error ?? 'Falha na tradução automática.')
             }
