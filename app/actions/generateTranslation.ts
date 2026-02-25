@@ -24,41 +24,6 @@ async function extractTextWithPdf2Json(buffer: Buffer): Promise<string> {
     });
 }
 
-// Cleans extracted raw text, preserving paragraph structure (\n\n separators).
-// pdf2json page break markers become paragraph breaks; single soft-wraps are collapsed
-// into the surrounding line (they are layout artifacts, not real paragraph breaks).
-function cleanExtractedText(raw: string): string {
-    return raw
-        // Replace pdf2json page-break markers with a paragraph separator
-        .replace(/[-]{10,}Page \(\d+\) Break[-]{10,}/g, '\n\n')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        // Collapse 2+ consecutive spaces/tabs (word-wrap fill characters)
-        .replace(/[ \t]{2,}/g, ' ')
-        // Keep real paragraph breaks (≥2 newlines) but cap at exactly 2
-        .replace(/\n{3,}/g, '\n\n')
-        // Single isolated newlines between non-empty lines are soft-wraps; join them
-        .replace(/([^\n])\n([^\n])/g, '$1 $2')
-        // One more pass to collapse again in case the above created runs of spaces
-        .replace(/[ \t]{2,}/g, ' ')
-        // Final cleanup: trim the whole thing
-        .trim();
-}
-
-// Converts paragraph-separated plain text into HTML <p> blocks for ReactQuill.
-// Double newlines (\n\n) become paragraph boundaries.
-// Remaining single newlines inside a paragraph become <br> tags.
-function textToHtml(text: string): string {
-    return text
-        .split('\n\n')
-        .filter(para => para.trim().length > 0)
-        .map(para => {
-            const inner = para.trim().replace(/\n/g, '<br>');
-            return `<p>${inner}</p>`;
-        })
-        .join('');
-}
-
 // NOVA FUNÇÃO: Converte JPG/PNG para PDF antes do OCR
 async function convertImageToPdf(buffer: Buffer, filename: string): Promise<Buffer> {
     const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
@@ -125,7 +90,6 @@ async function convertImageToPdf(buffer: Buffer, filename: string): Promise<Buff
 async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
 
-    // 1. Autenticação na iLovePDF
     let res = await fetch('https://api.ilovepdf.com/v1/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,7 +99,6 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     if (!res.ok) throw new Error(`Auth Rejeitada: ${JSON.stringify(data)}`);
     const token = data.token;
 
-    // 2. Iniciar Tarefa (Ferramenta OCR)
     res = await fetch('https://api.ilovepdf.com/v1/start/pdfocr', {
         headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -144,7 +107,6 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     const server = data.server;
     const task = data.task;
 
-    // 3. Upload do Arquivo
     const formData = new FormData();
     formData.append('task', task);
     formData.append('file', new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }), 'document.pdf');
@@ -158,7 +120,6 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     if (!res.ok) throw new Error(`Upload Rejeitado: ${JSON.stringify(data)}`);
     const serverFilename = data.server_filename;
 
-    // 4. Processar o OCR
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
@@ -174,7 +135,6 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     data = await res.json();
     if (!res.ok) throw new Error(`Process Rejeitado: ${JSON.stringify(data)}`);
 
-    // 5. Baixar o novo PDF com letras digitais
     res = await fetch(`https://${server}/v1/download/${task}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -212,70 +172,53 @@ export async function generateTranslationDraft(orderId: number) {
                 const isPdf = doc.docType?.toLowerCase().includes('pdf') || docName.endsWith('.pdf');
                 const isImage = docName.endsWith('.jpg') || docName.endsWith('.jpeg') || docName.endsWith('.png');
 
-                // Só processa se for PDF ou Imagem suportada
                 if (isPdf || isImage) {
-                    console.log(`[AutoTranslation] Processing Document #${doc.id}`);
                     const dataBuffer = await downloadFile(doc.originalFileUrl);
-
                     let pdfBuffer = dataBuffer;
                     let extractedText = '';
 
-                    // SE FOR IMAGEM: Converte para PDF primeiro
                     if (isImage) {
-                        console.log(`[AutoTranslation] Imagem detetada (${docName}). Convertendo para PDF...`);
                         try {
                             pdfBuffer = await convertImageToPdf(dataBuffer, doc.exactNameOnDoc || 'image.jpg');
                         } catch (imgErr: any) {
-                            console.error("[AutoTranslation] Falha na conversão de imagem:", imgErr);
                             return { success: false, error: `Image2PDF Error: ${imgErr.message}` };
                         }
                     }
 
-                    // Extrai texto e limpa preservando parágrafos
-                    const rawText = await extractTextWithPdf2Json(pdfBuffer);
-                    let cleanText = cleanExtractedText(rawText);
+                    extractedText = await extractTextWithPdf2Json(pdfBuffer);
+                    let cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
 
-                    // ACIONA O OCR se não houver texto suficiente
                     if (!cleanText || cleanText.length < 10) {
-                        console.log(`[AutoTranslation] Ficheiro sem texto digital detetado (Doc #${doc.id}). Acionando OCR...`);
-
                         try {
                             const ocrBuffer = await performILovePdfOCR(pdfBuffer);
-                            console.log(`[AutoTranslation] OCR concluído. Extraindo texto...`);
-
-                            const ocrRaw = await extractTextWithPdf2Json(ocrBuffer);
-                            cleanText = cleanExtractedText(ocrRaw);
-
+                            extractedText = await extractTextWithPdf2Json(ocrBuffer);
+                            cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
                         } catch (ocrError: any) {
-                            console.error("[AutoTranslation] Falha no OCR:", ocrError);
                             return { success: false, error: `OCR Error: ${ocrError.message}` };
                         }
                     }
 
                     extractedText = cleanText;
 
-                    // Ignora se, mesmo após o OCR, não houver texto legível
-                    if (!extractedText || extractedText.length < 10) {
-                        console.warn(`[AutoTranslation] Texto insuficiente no Doc #${doc.id}`);
-                        continue;
-                    }
+                    if (!extractedText || extractedText.length < 10) continue;
 
-                    // Traduz com o DeepL — envia texto com paragrafos preservados
                     const result = await translator.translateText(extractedText, null, 'en-US');
-                    const translatedPlain = Array.isArray(result)
-                        ? result.map(r => r.text).join('\n\n')
-                        : result.text;
+                    const rawTranslatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
 
-                    // Converte para HTML estruturado com <p> para o ReactQuill
-                    const translatedHtml = textToHtml(translatedPlain);
+                    // 🔥 O SEGREDO DO LAYOUT: Transforma o texto puro em parágrafos HTML para o editor web
+                    const formattedHtmlText = rawTranslatedText
+                        .split(/\n/)
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0)
+                        .map(line => `<p>${line}</p>`) // Adiciona as tags de parágrafo
+                        .join('<br/>'); // Adiciona espaço extra entre parágrafos
 
-                    // Guarda na Base de Dados
                     await prisma.document.update({
                         where: { id: doc.id },
-                        data: { translatedText: translatedHtml }
+                        data: { translatedText: formattedHtmlText }
                     });
 
-                    lastTranslatedText = translatedHtml;
+                    lastTranslatedText = formattedHtmlText;
                     completedCount++;
                 }
 
@@ -299,7 +242,6 @@ export async function generateTranslationDraft(orderId: number) {
         }
 
     } catch (error) {
-        console.error("[AutoTranslation] Critical Error:", error);
         return { success: false, error: String(error) };
     }
 }
