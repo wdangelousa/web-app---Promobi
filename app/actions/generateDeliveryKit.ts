@@ -129,18 +129,39 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         let translationPageCount = 0
 
         // VERIFICA SE HÁ TRADUÇÃO EXTERNA (UPLOAD MANUAL)
-        // @ts-ignore - (Ignorando erro de tipagem caso o schema ainda não tenha atualizado no cache)
+        // @ts-ignore - externalTranslationUrl exists in DB; Prisma client cache may be stale
         if (doc.externalTranslationUrl) {
             // @ts-ignore
             const extRes = await fetch(doc.externalTranslationUrl)
             if (extRes.ok) {
                 const extBuf = Buffer.from(await extRes.arrayBuffer())
                 const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true })
-                const copied = await finalPdf.copyPages(extPdf, extPdf.getPageIndices())
-                copied.forEach((p) => {
-                    finalPdf.addPage(p)
+
+                // Embed pages so we can draw them ON TOP of the timbrado background
+                const embeddedPages = await finalPdf.embedPages(extPdf.getPages())
+                const safeAreaHeight = TEXT_TOP - TEXT_BOTTOM
+
+                for (const embeddedPage of embeddedPages) {
                     translationPageCount++
-                })
+
+                    // Lay down the branded letterhead as the base layer
+                    const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
+                    finalPdf.addPage(bgPage)
+
+                    // Scale the external page to fit inside the safe area (header/footer untouched)
+                    const scale = Math.min(
+                        CONTENT_WIDTH / embeddedPage.width,
+                        safeAreaHeight / embeddedPage.height
+                    )
+                    const scaledWidth = embeddedPage.width * scale
+                    const scaledHeight = embeddedPage.height * scale
+
+                    // Center horizontally within content margins, vertically within safe area
+                    const x = MARGIN_LEFT + (CONTENT_WIDTH - scaledWidth) / 2
+                    const y = TEXT_BOTTOM + (safeAreaHeight - scaledHeight) / 2
+
+                    bgPage.drawPage(embeddedPage, { x, y, width: scaledWidth, height: scaledHeight })
+                }
             }
         }
         // FLUXO NORMAL DA IA (CAIXINHA DE TEXTO)

@@ -449,20 +449,24 @@ export default function Workbench({ order }: { order: Order }) {
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-auto">
-                    {selectedDoc.externalTranslationUrl ? (
-                        <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8 text-center">
-                            <CheckCircle className="w-16 h-16 text-emerald-500 mb-4" />
-                            <h3 className="text-xl font-bold text-gray-800">Tradução Externa Anexada</h3>
-                            <p className="text-gray-500 mt-2 max-w-sm">Este documento usará o PDF diagramado externamente na geração do Kit Oficial.</p>
-                            <button onClick={handleRemoveExternal} className="mt-6 text-red-600 font-semibold hover:underline flex items-center gap-2">
-                                <Trash2 className="w-4 h-4" /> Remover PDF Externo
+                {selectedDoc.externalTranslationUrl ? (
+                    <div className="flex-1 flex flex-col min-h-0">
+                        <div className="shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-emerald-700">
+                                <CheckCircle className="w-4 h-4" />
+                                <span className="text-sm font-semibold">Tradução Externa Ativa</span>
+                            </div>
+                            <button onClick={handleRemoveExternal} className="text-red-600 text-xs font-semibold hover:underline flex items-center gap-1.5">
+                                <Trash2 className="w-3.5 h-3.5" /> Remover PDF Externo
                             </button>
                         </div>
-                    ) : (
+                        <iframe src={selectedDoc.externalTranslationUrl} className="w-full flex-1" title="PDF Externo" />
+                    </div>
+                ) : (
+                    <div className="flex-1 overflow-auto">
                         <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} className="h-full" modules={{ toolbar: [[{ header: [1, 2, false] }], ['bold', 'italic', 'underline', 'strike', 'blockquote'], [{ 'list': 'ordered' }, { 'list': 'bullet' }], ['clean']] }} />
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* ── FLOATING BOTTOM BAR ─────────────────────────────────────────── */}
