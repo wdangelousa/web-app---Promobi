@@ -147,11 +147,13 @@ export async function releaseToClient(
       },
     })
 
-    // Send delivery email to selected recipients (non-blocking)
+    // Send delivery email to selected recipients (AWAIT for better reliability during verification)
     if (options.sendToClient || options.sendToTranslator) {
-      sendDeliveryEmail(order, options).catch(err =>
-        console.error('[releaseToClient] Delivery email failed:', err)
-      )
+      try {
+        await sendDeliveryEmail(order, options)
+      } catch (err) {
+        console.error('[releaseToClient] Critical failure calling sendDeliveryEmail:', err)
+      }
     }
 
     console.log(`[releaseToClient] ✅ Order #${orderId} COMPLETED by ${releasedBy}`)
@@ -214,7 +216,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     })
     .join('')
 
-  await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: 'Promobi <entrega@promobi.us>',
     to: recipients,
     subject: `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
@@ -253,5 +255,10 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     `,
   })
 
-  console.log(`[sendDeliveryEmail] ✅ Sent to [${recipients.join(', ')}] for order #${order.id}`)
+  if (error) {
+    console.error(`[sendDeliveryEmail] ❌ Falha no Resend para [${recipients.join(', ')}]:`, error)
+    throw new Error(`Resend: ${error.message}`)
+  } else {
+    console.log(`[sendDeliveryEmail] ✅ Enviado com sucesso! ID: ${data?.id} | Recipientes: ${recipients.join(', ')}`)
+  }
 }
