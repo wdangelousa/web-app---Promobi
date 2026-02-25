@@ -49,10 +49,11 @@ model Document {
   translatedText     String?
   exactNameOnDoc     String?
   createdAt          DateTime @default(now())
-  translation_status String   @default("pending")
-  delivery_pdf_url   String?
-  isReviewed         Boolean  @default(false)
-  order              Order    @relation(fields: [orderId], references: [id])
+  translation_status      String   @default("pending")
+  delivery_pdf_url        String?
+  isReviewed              Boolean  @default(false)
+  externalTranslationUrl  String?
+  order                   Order    @relation(fields: [orderId], references: [id])
 }
 
 model Setting {

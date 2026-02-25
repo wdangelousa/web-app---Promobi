@@ -3,12 +3,17 @@
 import React from 'react'
 import { MessageCircle } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { usePathname } from 'next/navigation'
 
 import { useWhatsApp } from './WhatsAppContext'
 
 export function WhatsAppButton() {
+    const pathname = usePathname()
     const phoneNumber = '14073985839' // Insira seu número aqui (com código do país, sem +)
     const { message } = useWhatsApp()
+
+    // Ocultar no Workbench (rota de revisão de pedidos do admin)
+    if (pathname?.includes('/admin/orders/')) return null
 
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`
