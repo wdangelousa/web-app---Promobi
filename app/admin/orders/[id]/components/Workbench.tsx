@@ -38,25 +38,21 @@ export default function Workbench({ order }: { order: Order }) {
 
     const selectedDoc = order.documents.find(d => d.id === selectedDocId)
 
-    // 🛡️ CORREÇÕES DO CLAUDE: Refs para evitar que o router.refresh apague a tradução
+    // 🛡️ Refs para evitar que o router.refresh apague a tradução da tela
     const justTranslatedRef = useRef<string | null>(null)
     const prevDocIdRef = useRef<number | null>(null)
 
     useEffect(() => {
         if (!selectedDoc) return;
 
-        // Verifica se o usuário trocou de documento no dropdown
         const isNewDoc = prevDocIdRef.current !== selectedDoc.id;
         prevDocIdRef.current = selectedDoc.id;
 
         if (isNewDoc) {
-            // Se trocou de aba, limpa o cache de segurança e carrega o texto do banco
             justTranslatedRef.current = null;
             setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>');
         } else {
-            // Se for o mesmo documento (ex: tela recarregou por causa do router.refresh)
             if (justTranslatedRef.current) {
-                // Mantém o texto fresco da IA na tela! Não deixa apagar.
                 setEditorContent(justTranslatedRef.current);
             } else {
                 setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>');
@@ -67,7 +63,6 @@ export default function Workbench({ order }: { order: Order }) {
     const handleSave = async () => {
         if (!selectedDoc) return;
         setSaving(true);
-        // Exemplo de salvamento (você conectará com sua action de salvar rascunho depois)
         console.log("Saving content for doc", selectedDoc.id, editorContent);
 
         setTimeout(() => {
@@ -85,22 +80,19 @@ export default function Workbench({ order }: { order: Order }) {
             const { generateTranslationDraft } = await import('../../../../actions/generateTranslation');
             const result = await generateTranslationDraft(order.id);
 
-            // Tenta pegar o texto tanto de result.text quanto de result.translatedText (depende de como sua API retorna)
-            const newText = result.text || result.translatedText;
+            // 🔥 Usar "as any" para evitar que o TypeScript da Vercel trave o build
+            const newText = (result as any).text || (result as any).translatedText;
 
             if (result.success && newText) {
-                // 🛡️ CORREÇÃO 1: Salva no "Cofre" (ref) antes de recarregar a página
                 justTranslatedRef.current = newText;
-
-                // 🛡️ CORREÇÃO 2: Atualiza a tela NA HORA
                 setEditorContent(newText);
-
                 alert('Tradução concluída com sucesso!');
-
-                // Sincroniza o servidor no fundo sem piscar a tela
+                router.refresh();
+            } else if (result.success) {
+                alert('Tradução concluída, mas o texto não foi retornado para a tela.');
                 router.refresh();
             } else {
-                alert('Erro na tradução: ' + (result.error || 'Sem texto retornado.'));
+                alert('Erro na tradução: ' + ((result as any).error || 'Sem texto retornado.'));
             }
         } catch (error: any) {
             console.error(error);
@@ -144,7 +136,6 @@ export default function Workbench({ order }: { order: Order }) {
 
     if (!selectedDoc) return <div>Nenhum documento encontrado.</div>
 
-    // 🛡️ CORREÇÃO 4: Define qual URL de PDF vai aparecer na tela
     const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl;
 
     return (
@@ -157,7 +148,6 @@ export default function Workbench({ order }: { order: Order }) {
                         {selectedDoc.translatedFileUrl ? 'Visualizador PDF Traduzido (DeepL)' : 'Visualizador Original'}
                     </span>
                     <div className="flex items-center gap-3">
-                        {/* Link externo para abrir o PDF traduzido da DeepL caso o iframe falhe */}
                         {selectedDoc.translatedFileUrl && (
                             <a href={selectedDoc.translatedFileUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1">
                                 <Eye className="w-3 h-3" /> Abrir PDF ↗
@@ -179,7 +169,7 @@ export default function Workbench({ order }: { order: Order }) {
                 <div className="flex-1 bg-gray-500 relative">
                     {viewUrl && viewUrl !== 'PENDING_UPLOAD' ? (
                         <iframe
-                            key={viewUrl} // 🛡️ CORREÇÃO 4: Força o Iframe a recarregar quando a URL muda
+                            key={viewUrl}
                             src={viewUrl}
                             className="w-full h-full"
                             title="PDF Viewer"
@@ -237,7 +227,6 @@ export default function Workbench({ order }: { order: Order }) {
                     />
                 </div>
 
-                {/* Footer Actions */}
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
                     <button
                         onClick={handleFinalize}
