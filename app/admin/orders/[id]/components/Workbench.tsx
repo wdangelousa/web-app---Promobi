@@ -313,8 +313,10 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { releaseToClient } = await import('../../../../actions/workbench')
-            // NOTA: A integração dos checks (sendToClient/sendToTranslator) deve ser feita depois no seu backend
-            const releaseResult = await releaseToClient(order.id, 'Isabele')
+            const releaseResult = await releaseToClient(order.id, 'Isabele', {
+                sendToClient,
+                sendToTranslator
+            })
 
             if (releaseResult.success) {
                 alert(`✅ ${generatedCount} Kit(s) oficial(is) gerado(s) com sucesso!\nCliente: ${sendToClient ? 'Sim' : 'Não'} | Tradutora: ${sendToTranslator ? 'Sim' : 'Não'}`)

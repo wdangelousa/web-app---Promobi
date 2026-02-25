@@ -90,7 +90,8 @@ export async function approveDocument(
 
 export async function releaseToClient(
   orderId: number,
-  releasedBy: string
+  releasedBy: string,
+  options: { sendToClient: boolean; sendToTranslator: boolean } = { sendToClient: true, sendToTranslator: false }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const user = await getCurrentUser()
@@ -146,9 +147,9 @@ export async function releaseToClient(
       },
     })
 
-    // Send delivery email to client (non-blocking)
-    if (order.user?.email) {
-      sendDeliveryEmail(order).catch(err =>
+    // Send delivery email to selected recipients (non-blocking)
+    if (options.sendToClient || options.sendToTranslator) {
+      sendDeliveryEmail(order, options).catch(err =>
         console.error('[releaseToClient] Delivery email failed:', err)
       )
     }
@@ -164,9 +165,17 @@ export async function releaseToClient(
 
 // ─── Delivery email to client ─────────────────────────────────────────────────
 
-async function sendDeliveryEmail(order: any) {
+async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean }) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
+  const translatorEmail = 'isabele@promobi.us'
+
+  const recipients: string[] = []
+  if (options.sendToClient && clientEmail) recipients.push(clientEmail)
+  if (options.sendToTranslator) recipients.push(translatorEmail)
+
+  if (recipients.length === 0) return
+
   const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
 
   // Build download links list
@@ -196,7 +205,7 @@ async function sendDeliveryEmail(order: any) {
 
   await resend.emails.send({
     from: 'Promobi <entrega@promobi.us>',
-    to: [clientEmail],
+    to: recipients,
     subject: `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
     html: `
       <!DOCTYPE html>
@@ -289,5 +298,5 @@ async function sendDeliveryEmail(order: any) {
     `,
   })
 
-  console.log(`[sendDeliveryEmail] ✅ Sent to ${clientEmail} for order #${order.id}`)
+  console.log(`[sendDeliveryEmail] ✅ Sent to [${recipients.join(', ')}] for order #${order.id}`)
 }
