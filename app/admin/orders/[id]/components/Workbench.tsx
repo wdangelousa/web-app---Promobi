@@ -563,12 +563,12 @@ export default function Workbench({ order }: { order: Order }) {
                         <div className="space-y-3">
                             <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer border border-gray-200 hover:border-gray-300 transition-colors">
                                 <input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-[#f58220] rounded border-gray-300" />
-                                <span className="text-gray-800 font-medium text-sm">Enviar para o Cliente <span className="text-gray-500 font-normal">({order.user.email})</span></span>
+                                <span className="text-gray-800 font-medium text-sm">Enviar para o Cliente: {order.user.fullName} <span className="text-gray-500 font-normal">({order.user.email})</span></span>
                             </label>
 
                             <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer border border-gray-200 hover:border-gray-300 transition-colors">
                                 <input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-[#f58220] rounded border-gray-300" />
-                                <span className="text-gray-800 font-medium text-sm">Enviar cópia p/ Tradutora <span className="text-gray-500 font-normal">(isabele@promobi.us)</span></span>
+                                <span className="text-gray-800 font-medium text-sm">Enviar cópia p/ Tradutora <span className="text-gray-500 font-normal">(belebmd@gmail.com)</span></span>
                             </label>
                         </div>
 

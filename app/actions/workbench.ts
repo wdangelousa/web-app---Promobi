@@ -168,7 +168,7 @@ export async function releaseToClient(
 async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean }) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
-  const translatorEmail = 'isabele@promobi.us'
+  const translatorEmail = 'belebmd@gmail.com'
 
   const recipients: string[] = []
   if (options.sendToClient && clientEmail) recipients.push(clientEmail)
@@ -184,6 +184,17 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     .map((d, i) => {
       const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
       return `
+          <!-- Header -->
+          <div style="background: #0F1117; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <p style="color: #E8751A; font-size: 11px; font-weight: bold;
+                        letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
+              <h1 style="color: white; font-size: 24px; margin: 0; font-weight: bold;">
+                Sua tradução está pronta! 🎉
+              </h1>
+            </div>
+            <img src="https://web-app-promobi.vercel.app/logo.png" alt="Promobi" style="height: 40px; width: auto;" />
+          </div>
         <div style="display:flex; align-items:center; justify-content:space-between;
                     border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;
                     margin-bottom:8px; background:#F9FAFB;">
