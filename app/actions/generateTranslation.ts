@@ -25,7 +25,6 @@ async function extractTextWithPdf2Json(buffer: Buffer): Promise<string> {
 }
 
 async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
-    // A sua chave de API Pública do iLovePDF
     const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
 
     // 1. Autenticação na iLovePDF
@@ -34,34 +33,34 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ public_key: publicKey })
     });
-    if (!res.ok) throw new Error('iLovePDF Auth failed');
     let data = await res.json();
+    if (!res.ok) throw new Error(`Auth Rejeitada: ${JSON.stringify(data)}`);
     const token = data.token;
 
     // 2. Iniciar Tarefa (Ferramenta OCR)
     res = await fetch('https://api.ilovepdf.com/v1/start/pdfocr', {
         headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error('iLovePDF Start Task failed');
     data = await res.json();
+    if (!res.ok) throw new Error(`Start Rejeitado: ${JSON.stringify(data)}`);
     const server = data.server;
     const task = data.task;
 
-    // 3. Upload da Foto/Ficheiro Escaneado (CORRIGIDO PARA TYPESCRIPT: Uint8Array)
+    // 3. Upload do Arquivo
     const formData = new FormData();
     formData.append('task', task);
     formData.append('file', new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }), 'document.pdf');
 
     res = await fetch(`https://${server}/v1/upload`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }, // Sem Content-Type, o browser define o boundary
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData
     });
-    if (!res.ok) throw new Error('iLovePDF Upload failed');
     data = await res.json();
+    if (!res.ok) throw new Error(`Upload Rejeitado: ${JSON.stringify(data)}`);
     const serverFilename = data.server_filename;
 
-    // 4. Processar o OCR (Transformar Imagem em Texto)
+    // 4. Processar o OCR
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
@@ -72,17 +71,17 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
             task: task,
             tool: 'pdfocr',
             files: [{ server_filename: serverFilename, filename: 'document.pdf' }],
-            ocr_languages: 'por' // Português como padrão para as certidões brasileiras
+            ocr_languages: 'por'
         })
     });
-    if (!res.ok) throw new Error('iLovePDF Process failed');
-    await res.json(); // Aguarda a conclusão
+    data = await res.json();
+    if (!res.ok) throw new Error(`Process Rejeitado: ${JSON.stringify(data)}`);
 
-    // 5. Baixar o novo PDF processado (agora com letras digitais que o sistema consegue ler)
+    // 5. Baixar o novo PDF
     res = await fetch(`https://${server}/v1/download/${task}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error('iLovePDF Download failed');
+    if (!res.ok) throw new Error(`Download Rejeitado: ${res.statusText}`);
 
     return Buffer.from(await res.arrayBuffer());
 }
@@ -118,25 +117,23 @@ export async function generateTranslationDraft(orderId: number) {
 
                 if (doc.docType?.toLowerCase().includes('pdf') || doc.exactNameOnDoc?.toLowerCase().endsWith('.pdf')) {
 
-                    // TENTATIVA 1: Rápida e Gratuita (Texto Digital)
                     extractedText = await extractTextWithPdf2Json(dataBuffer);
                     let cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
 
-                    // TENTATIVA 2: OCR da iLovePDF (Apenas se a Tentativa 1 detetar imagem/documento escaneado)
                     if (!cleanText || cleanText.length < 10) {
-                        console.log(`[AutoTranslation] Documento escaneado detetado (Doc #${doc.id}). Acionando IA de OCR (iLovePDF)...`);
+                        console.log(`[AutoTranslation] Documento escaneado detetado (Doc #${doc.id}). Acionando OCR...`);
 
                         try {
                             const ocrBuffer = await performILovePdfOCR(dataBuffer);
-                            console.log(`[AutoTranslation] OCR concluído. Extraindo texto do novo PDF...`);
+                            console.log(`[AutoTranslation] OCR concluído. Extraindo texto...`);
 
-                            // Extrai o texto do NOVO ficheiro que o iLovePDF nos devolveu
                             extractedText = await extractTextWithPdf2Json(ocrBuffer);
                             cleanText = (extractedText || '').replace(/----------------Page \(\d+\) Break----------------/g, '').trim();
 
-                        } catch (ocrError) {
+                        } catch (ocrError: any) {
                             console.error("[AutoTranslation] Falha no OCR:", ocrError);
-                            return { success: false, error: 'Documento escaneado detetado, mas a leitura da imagem (OCR) falhou. Traduza com template.' };
+                            // 🔥 AGORA O ALERTA MOSTRA O ERRO EXATO DO SERVIDOR
+                            return { success: false, error: `OCR Error: ${ocrError.message}` };
                         }
                     }
 
@@ -148,11 +145,9 @@ export async function generateTranslationDraft(orderId: number) {
                     continue;
                 }
 
-                // Traduz com o DeepL
                 const result = await translator.translateText(extractedText, null, 'en-US');
                 const translatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
 
-                // Guarda no Banco de Dados
                 await prisma.document.update({
                     where: { id: doc.id },
                     data: { translatedText }
