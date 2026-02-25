@@ -40,6 +40,39 @@ async function getILovePdfToken(): Promise<string> {
     return data.token as string;
 }
 
+// ── Limpeza de texto OCR ──────────────────────────────────────────────────────
+
+/**
+ * Reconstrói o texto bruto do OCR antes de enviá-lo ao DeepL:
+ * - Preserva quebras de parágrafo genuínas (linhas duplas → \n\n).
+ * - Une linhas cortadas arbitrariamente pelo OCR (sem pontuação final).
+ * - Desfaz hifenizações de fim de linha (ex: "docu-\nment" → "document").
+ */
+function sanitizeOcrText(raw: string): string {
+    const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+    // Divide em blocos por linha dupla (quebra de parágrafo genuína do documento)
+    const blocks = normalized.split(/\n{2,}/)
+
+    return blocks
+        .map(block => {
+            const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+            if (lines.length === 0) return ''
+
+            return lines.reduce((acc, line) => {
+                if (!acc) return line
+                // Palavra hifenizada entre linhas → remove hífen e une sem espaço
+                if (acc.endsWith('-')) return acc.slice(0, -1) + line
+                // Linha anterior sem pontuação final → corte arbitrário do OCR → une com espaço
+                if (!/[.!?:;]$/.test(acc)) return acc + ' ' + line
+                // Linha anterior com pontuação → nova sentença no mesmo parágrafo
+                return acc + ' ' + line
+            }, '')
+        })
+        .filter(p => p.trim().length > 0)
+        .join('\n\n')
+}
+
 // ── Funções auxiliares ────────────────────────────────────────────────────────
 
 async function downloadFile(url: string): Promise<Buffer> {

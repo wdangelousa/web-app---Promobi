@@ -181,86 +181,41 @@ async function _buildCoverPageInDoc(
     const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
 
     // ── Layout Constants ──────────────────────────────────────────────────────
-    // Todas as coordenadas em pontos (pt), origem no canto inferior esquerdo (pdf-lib).
-    // Ajuste estas constantes se o template mudar.
+    // Coordenadas em pontos (pt), origem no canto inferior esquerdo (pdf-lib).
+    // Template limpo (sem placeholders) — apenas drawText necessário.
+    // Ajuste aqui se o template for substituído.
 
-    // X: onde os VALORES dinâmicos começam (à direita de todos os rótulos)
-    const X_VALUE      = 178   // "Number of pages: 02", "Order #: 0001-USA"
+    // X: onde os valores dinâmicos são inseridos (alinhados à direita dos rótulos)
+    const X_VALUE      = 178   // Document Type, Number of Pages, Order #
     const X_DATE_START = 66    // "Dated: …" inclui o rótulo, começa na margem esquerda
 
-    // Y: linha de base de cada campo (bottom of text baseline)
-    const Y_DOC_TYPE = 618     // Tipo do documento (seção superior)
-    const Y_PAGES    = 570     // "Number of pages:" row
-    const Y_ORDER    = 554     // "Order #:" row
+    // Y: baseline de cada campo (medido do rodapé da página — convenção pdf-lib)
+    const Y_DOC_TYPE = 618     // Tipo do documento
+    const Y_PAGES    = 570     // "Number of pages:"
+    const Y_ORDER    = 554     // "Order #:"
     const Y_DATE     = 119     // Data no rodapé esquerdo
 
-    const FONT_SIZE  = 11
-    // Dimensões dos retângulos de apagamento (cobrem o texto placeholder do template)
-    const WIPE_H        = 15   // Altura do rect de cobertura
-    const WIPE_Y_PAD    = -3   // Descida em relação ao Y do texto (cobre descenders)
-
+    const FONT_SIZE = 11
     const black = rgb(0, 0, 0)
-    const white = rgb(1, 1, 1)
 
     // ── 1. Document Type ──────────────────────────────────────────────────────
-    // Sem placeholder estático para apagar; escreve diretamente no campo vazio.
     capaPage.drawText(docType.toUpperCase(), {
-        x: X_VALUE,
-        y: Y_DOC_TYPE,
-        size: FONT_SIZE,
-        font: fontHelv,
-        color: black,
+        x: X_VALUE, y: Y_DOC_TYPE, size: FONT_SIZE, font: fontHelv, color: black,
     })
 
     // ── 2. Number of Pages ────────────────────────────────────────────────────
-    // Apaga o placeholder "02" (ou "03") do template antes de escrever o valor real.
-    capaPage.drawRectangle({
-        x: X_VALUE - 4,
-        y: Y_PAGES + WIPE_Y_PAD,
-        width: 70,
-        height: WIPE_H,
-        color: white,
-    })
     capaPage.drawText(totalPages.toString().padStart(2, '0'), {
-        x: X_VALUE,
-        y: Y_PAGES,
-        size: FONT_SIZE,
-        font: fontHelv,
-        color: black,
+        x: X_VALUE, y: Y_PAGES, size: FONT_SIZE, font: fontHelv, color: black,
     })
 
     // ── 3. Order # ────────────────────────────────────────────────────────────
-    // Apaga o placeholder "0001-USA" (ou "0049-USA") antes de escrever o número real.
-    capaPage.drawRectangle({
-        x: X_VALUE - 4,
-        y: Y_ORDER + WIPE_Y_PAD,
-        width: 110,
-        height: WIPE_H,
-        color: white,
-    })
     capaPage.drawText(`${orderId.toString().padStart(4, '0')}-USA`, {
-        x: X_VALUE,
-        y: Y_ORDER,
-        size: FONT_SIZE,
-        font: fontHelv,
-        color: black,
+        x: X_VALUE, y: Y_ORDER, size: FONT_SIZE, font: fontHelv, color: black,
     })
 
-    // ── 4. Date (rodapé) ──────────────────────────────────────────────────────
-    // Apaga "Dated: February 21, 2026" inteiro; rect largo o suficiente para qualquer data.
-    capaPage.drawRectangle({
-        x: X_DATE_START,
-        y: Y_DATE + WIPE_Y_PAD,
-        width: 270,
-        height: WIPE_H,
-        color: white,
-    })
+    // ── 4. Date (rodapé esquerdo) ─────────────────────────────────────────────
     capaPage.drawText(`Dated: ${dateStr}`, {
-        x: X_DATE_START,
-        y: Y_DATE,
-        size: FONT_SIZE,
-        font: fontHelv,
-        color: black,
+        x: X_DATE_START, y: Y_DATE, size: FONT_SIZE, font: fontHelv, color: black,
     })
 
     return capaPage
