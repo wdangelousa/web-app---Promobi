@@ -176,6 +176,8 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   if (recipients.length === 0) return
 
+  console.log(`[sendDeliveryEmail] Disparando e-mail para: ${recipients.join(', ')}`)
+
   const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
 
   // Build download links list
