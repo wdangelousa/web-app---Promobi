@@ -2,8 +2,45 @@
 
 import * as deepl from 'deepl-node';
 import prisma from '../../lib/prisma';
+import { sign as jwtSign } from 'jsonwebtoken';
 
-// --- FUNÇÕES AUXILIARES ---
+// ── iLovePDF credentials ──────────────────────────────────────────────────────
+
+const ILOVEPDF_PUBLIC = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
+const ILOVEPDF_SECRET = 'secret_key_79f694c65dcfab8bd33ec4f7e4e14321_krtE5711f9df92fb18748a59f7ab14a1bc509';
+
+/**
+ * Gera um JWT assinado com a secret_key e o troca por um token de tarefa válido
+ * no endpoint /v1/auth. Isso corrige o erro 401 "Signature verification failed"
+ * que ocorre quando o servidor de upload verifica requisições assinadas apenas
+ * com a public_key.
+ */
+async function getILovePdfToken(): Promise<string> {
+    // Gera JWT local: { iss: PUBLIC_KEY } assinado com SECRET_KEY (HS256)
+    const selfJwt = jwtSign(
+        { iss: ILOVEPDF_PUBLIC },
+        ILOVEPDF_SECRET,
+        { algorithm: 'HS256' }
+    );
+
+    const res = await fetch('https://api.ilovepdf.com/v1/auth', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${selfJwt}`,
+        },
+        body: JSON.stringify({ public_key: ILOVEPDF_PUBLIC }),
+    });
+
+    if (!res.ok) {
+        throw new Error(`iLovePDF auth failed (${res.status}): ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    return data.token as string;
+}
+
+// ── Funções auxiliares ────────────────────────────────────────────────────────
 
 async function downloadFile(url: string): Promise<Buffer> {
     const response = await fetch(url);
@@ -24,30 +61,20 @@ async function extractTextWithPdf2Json(buffer: Buffer): Promise<string> {
     });
 }
 
-// NOVA FUNÇÃO: Converte JPG/PNG para PDF antes do OCR
+/** Converte JPG/PNG para PDF via iLovePDF (imagepdf). Retorna Buffer para a cadeia pdf2json. */
 async function convertImageToPdf(buffer: Buffer, filename: string): Promise<Buffer> {
-    const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
+    const token = await getILovePdfToken();
 
-    // 1. Autenticação na iLovePDF
-    let res = await fetch('https://api.ilovepdf.com/v1/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ public_key: publicKey })
+    // 1. Iniciar tarefa
+    let res = await fetch('https://api.ilovepdf.com/v1/start/imagepdf', {
+        headers: { 'Authorization': `Bearer ${token}` },
     });
     let data = await res.json();
-    if (!res.ok) throw new Error(`Auth Rejeitada (Image->PDF): ${JSON.stringify(data)}`);
-    const token = data.token;
-
-    // 2. Iniciar Tarefa (Ferramenta Image to PDF)
-    res = await fetch('https://api.ilovepdf.com/v1/start/imagepdf', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    data = await res.json();
     if (!res.ok) throw new Error(`Start Rejeitado (Image->PDF): ${JSON.stringify(data)}`);
-    const server = data.server;
-    const task = data.task;
+    const server: string = data.server;
+    const task: string = data.task;
 
-    // 3. Upload da Imagem
+    // 2. Upload da imagem
     const formData = new FormData();
     formData.append('task', task);
     const mimeType = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
@@ -56,57 +83,51 @@ async function convertImageToPdf(buffer: Buffer, filename: string): Promise<Buff
     res = await fetch(`https://${server}/v1/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        body: formData,
     });
     data = await res.json();
     if (!res.ok) throw new Error(`Upload Rejeitado (Image->PDF): ${JSON.stringify(data)}`);
-    const serverFilename = data.server_filename;
+    const serverFilename: string = data.server_filename;
 
-    // 4. Processar a Conversão
+    // 3. Processar conversão
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            task: task,
+            task,
             tool: 'imagepdf',
-            files: [{ server_filename: serverFilename, filename: filename }]
-        })
+            files: [{ server_filename: serverFilename, filename }],
+        }),
     });
     data = await res.json();
     if (!res.ok) throw new Error(`Process Rejeitado (Image->PDF): ${JSON.stringify(data)}`);
 
-    // 5. Baixar o novo PDF (que contém a imagem)
+    // 4. Download do PDF gerado
     res = await fetch(`https://${server}/v1/download/${task}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Download Rejeitado (Image->PDF): ${res.statusText}`);
 
     return Buffer.from(await res.arrayBuffer());
 }
 
+/** Executa OCR em um PDF via iLovePDF (pdfocr). Retorna Buffer para a cadeia pdf2json. */
 async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
-    const publicKey = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
+    const token = await getILovePdfToken();
 
-    let res = await fetch('https://api.ilovepdf.com/v1/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ public_key: publicKey })
+    // 1. Iniciar tarefa
+    let res = await fetch('https://api.ilovepdf.com/v1/start/pdfocr', {
+        headers: { 'Authorization': `Bearer ${token}` },
     });
     let data = await res.json();
-    if (!res.ok) throw new Error(`Auth Rejeitada: ${JSON.stringify(data)}`);
-    const token = data.token;
+    if (!res.ok) throw new Error(`Start Rejeitado (OCR): ${JSON.stringify(data)}`);
+    const server: string = data.server;
+    const task: string = data.task;
 
-    res = await fetch('https://api.ilovepdf.com/v1/start/pdfocr', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    data = await res.json();
-    if (!res.ok) throw new Error(`Start Rejeitado: ${JSON.stringify(data)}`);
-    const server = data.server;
-    const task = data.task;
-
+    // 2. Upload do PDF
     const formData = new FormData();
     formData.append('task', task);
     formData.append('file', new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }), 'document.pdf');
@@ -114,36 +135,39 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     res = await fetch(`https://${server}/v1/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        body: formData,
     });
     data = await res.json();
-    if (!res.ok) throw new Error(`Upload Rejeitado: ${JSON.stringify(data)}`);
-    const serverFilename = data.server_filename;
+    if (!res.ok) throw new Error(`Upload Rejeitado (OCR): ${JSON.stringify(data)}`);
+    const serverFilename: string = data.server_filename;
 
+    // 3. Processar OCR
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            task: task,
+            task,
             tool: 'pdfocr',
-            files: [{ server_filename: serverFilename, filename: 'document.pdf' }]
-        })
+            files: [{ server_filename: serverFilename, filename: 'document.pdf' }],
+        }),
     });
     data = await res.json();
-    if (!res.ok) throw new Error(`Process Rejeitado: ${JSON.stringify(data)}`);
+    if (!res.ok) throw new Error(`Process Rejeitado (OCR): ${JSON.stringify(data)}`);
 
+    // 4. Download do PDF com texto
     res = await fetch(`https://${server}/v1/download/${task}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error(`Download Rejeitado: ${res.statusText}`);
+    if (!res.ok) throw new Error(`Download Rejeitado (OCR): ${res.statusText}`);
 
     return Buffer.from(await res.arrayBuffer());
 }
 
-// --- FUNÇÃO PRINCIPAL ---
+// ── Função principal ──────────────────────────────────────────────────────────
+
 export async function generateTranslationDraft(orderId: number) {
     console.log(`[AutoTranslation] Starting for Order #${orderId}`);
 
@@ -205,13 +229,13 @@ export async function generateTranslationDraft(orderId: number) {
                     const result = await translator.translateText(extractedText, null, 'en-US');
                     const rawTranslatedText = Array.isArray(result) ? result.map(r => r.text).join('\n') : result.text;
 
-                    // 🔥 O SEGREDO DO LAYOUT: Transforma o texto puro em parágrafos HTML para o editor web
+                    // Transforma o texto puro em parágrafos HTML para o editor web
                     const formattedHtmlText = rawTranslatedText
                         .split(/\n/)
                         .map(line => line.trim())
                         .filter(line => line.length > 0)
-                        .map(line => `<p>${line}</p>`) // Adiciona as tags de parágrafo
-                        .join('<br/>'); // Adiciona espaço extra entre parágrafos
+                        .map(line => `<p>${line}</p>`)
+                        .join('<br/>');
 
                     await prisma.document.update({
                         where: { id: doc.id },

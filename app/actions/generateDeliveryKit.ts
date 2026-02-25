@@ -5,6 +5,40 @@ import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
+import { sign as jwtSign } from 'jsonwebtoken'
+
+// ── iLovePDF credentials ──────────────────────────────────────────────────────
+
+const ILOVEPDF_PUBLIC = 'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599';
+const ILOVEPDF_SECRET = 'secret_key_79f694c65dcfab8bd33ec4f7e4e14321_krtE5711f9df92fb18748a59f7ab14a1bc509';
+
+/**
+ * Gera um JWT assinado com a secret_key e o troca por um token de tarefa válido.
+ * Corrige o erro 401 "Signature verification failed" no servidor de upload.
+ */
+async function getILovePdfToken(): Promise<string> {
+    const selfJwt = jwtSign(
+        { iss: ILOVEPDF_PUBLIC },
+        ILOVEPDF_SECRET,
+        { algorithm: 'HS256' }
+    );
+
+    const res = await fetch('https://api.ilovepdf.com/v1/auth', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${selfJwt}`,
+        },
+        body: JSON.stringify({ public_key: ILOVEPDF_PUBLIC }),
+    });
+
+    if (!res.ok) {
+        throw new Error(`iLovePDF auth failed (${res.status}): ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    return data.token as string;
+}
 
 // ── Text utilities ────────────────────────────────────────────────────────────
 
@@ -76,26 +110,18 @@ async function convertImageToPdfBuffer(
     imageBuffer: Buffer,
     filename: string
 ): Promise<Buffer> {
-    const publicKey =
-        'project_public_b4990cf84ccd39069f02695ac36ed91a_0-GX3ce148715ca29b5801d8638aa65ec6599'
+    const token = await getILovePdfToken();
 
-    let res = await fetch('https://api.ilovepdf.com/v1/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ public_key: publicKey }),
-    })
-    let data = await res.json()
-    if (!res.ok) throw new Error(`iLovePDF auth: ${JSON.stringify(data)}`)
-    const token = data.token as string
-
-    res = await fetch('https://api.ilovepdf.com/v1/start/imagepdf', {
+    // 1. Iniciar tarefa
+    let res = await fetch('https://api.ilovepdf.com/v1/start/imagepdf', {
         headers: { Authorization: `Bearer ${token}` },
     })
-    data = await res.json()
+    let data = await res.json()
     if (!res.ok) throw new Error(`iLovePDF start: ${JSON.stringify(data)}`)
     const server = data.server as string
     const task = data.task as string
 
+    // 2. Upload da imagem
     const form = new FormData()
     form.append('task', task)
     const mime = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'
@@ -110,6 +136,7 @@ async function convertImageToPdfBuffer(
     if (!res.ok) throw new Error(`iLovePDF upload: ${JSON.stringify(data)}`)
     const serverFilename = data.server_filename as string
 
+    // 3. Processar conversão
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
@@ -124,6 +151,7 @@ async function convertImageToPdfBuffer(
     })
     if (!res.ok) throw new Error('iLovePDF process failed')
 
+    // 4. Download
     res = await fetch(`https://${server}/v1/download/${task}`, {
         headers: { Authorization: `Bearer ${token}` },
     })
@@ -149,48 +177,88 @@ async function _buildCoverPageInDoc(
     const capaBytes = await fs.readFile(path.join(publicDir, 'capa_certificacao_modelo.pdf'))
     const capaSrc = await PDFDocument.load(capaBytes, { ignoreEncryption: true })
 
-    // Copia a página do template
     const [capaPage] = await targetDoc.copyPages(capaSrc, [0])
     const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
 
+    // ── Layout Constants ──────────────────────────────────────────────────────
+    // Todas as coordenadas em pontos (pt), origem no canto inferior esquerdo (pdf-lib).
+    // Ajuste estas constantes se o template mudar.
+
+    // X: onde os VALORES dinâmicos começam (à direita de todos os rótulos)
+    const X_VALUE      = 178   // "Number of pages: 02", "Order #: 0001-USA"
+    const X_DATE_START = 66    // "Dated: …" inclui o rótulo, começa na margem esquerda
+
+    // Y: linha de base de cada campo (bottom of text baseline)
+    const Y_DOC_TYPE = 618     // Tipo do documento (seção superior)
+    const Y_PAGES    = 570     // "Number of pages:" row
+    const Y_ORDER    = 554     // "Order #:" row
+    const Y_DATE     = 119     // Data no rodapé esquerdo
+
+    const FONT_SIZE  = 11
+    // Dimensões dos retângulos de apagamento (cobrem o texto placeholder do template)
+    const WIPE_H        = 15   // Altura do rect de cobertura
+    const WIPE_Y_PAD    = -3   // Descida em relação ao Y do texto (cobre descenders)
+
     const black = rgb(0, 0, 0)
-    const white = rgb(1, 1, 1) // Branco puro para apagar o texto antigo sem deixar marcas
+    const white = rgb(1, 1, 1)
 
-    // ── 1. Document Type (Linha superior)
+    // ── 1. Document Type ──────────────────────────────────────────────────────
+    // Sem placeholder estático para apagar; escreve diretamente no campo vazio.
     capaPage.drawText(docType.toUpperCase(), {
-        x: 165,
-        y: 618,
-        size: 11,
+        x: X_VALUE,
+        y: Y_DOC_TYPE,
+        size: FONT_SIZE,
         font: fontHelv,
         color: black,
     })
 
-    // ── 2. Number of Pages (Cobre o "02")
-    capaPage.drawRectangle({ x: 155, y: 568, width: 50, height: 14, color: white })
+    // ── 2. Number of Pages ────────────────────────────────────────────────────
+    // Apaga o placeholder "02" (ou "03") do template antes de escrever o valor real.
+    capaPage.drawRectangle({
+        x: X_VALUE - 4,
+        y: Y_PAGES + WIPE_Y_PAD,
+        width: 70,
+        height: WIPE_H,
+        color: white,
+    })
     capaPage.drawText(totalPages.toString().padStart(2, '0'), {
-        x: 160,
-        y: 570,
-        size: 11,
+        x: X_VALUE,
+        y: Y_PAGES,
+        size: FONT_SIZE,
         font: fontHelv,
         color: black,
     })
 
-    // ── 3. Order # (Cobre o "0001-USA")
-    capaPage.drawRectangle({ x: 110, y: 552, width: 100, height: 14, color: white })
+    // ── 3. Order # ────────────────────────────────────────────────────────────
+    // Apaga o placeholder "0001-USA" (ou "0049-USA") antes de escrever o número real.
+    capaPage.drawRectangle({
+        x: X_VALUE - 4,
+        y: Y_ORDER + WIPE_Y_PAD,
+        width: 110,
+        height: WIPE_H,
+        color: white,
+    })
     capaPage.drawText(`${orderId.toString().padStart(4, '0')}-USA`, {
-        x: 115,
-        y: 554,
-        size: 11,
+        x: X_VALUE,
+        y: Y_ORDER,
+        size: FONT_SIZE,
         font: fontHelv,
         color: black,
     })
 
-    // ── 4. Date (Cobre a data de amostra no rodapé)
-    capaPage.drawRectangle({ x: 66, y: 116, width: 240, height: 15, color: white })
+    // ── 4. Date (rodapé) ──────────────────────────────────────────────────────
+    // Apaga "Dated: February 21, 2026" inteiro; rect largo o suficiente para qualquer data.
+    capaPage.drawRectangle({
+        x: X_DATE_START,
+        y: Y_DATE + WIPE_Y_PAD,
+        width: 270,
+        height: WIPE_H,
+        color: white,
+    })
     capaPage.drawText(`Dated: ${dateStr}`, {
-        x: 69,
-        y: 119,
-        size: 11,
+        x: X_DATE_START,
+        y: Y_DATE,
+        size: FONT_SIZE,
         font: fontHelv,
         color: black,
     })
