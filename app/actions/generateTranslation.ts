@@ -60,7 +60,7 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
     if (!res.ok) throw new Error(`Upload Rejeitado: ${JSON.stringify(data)}`);
     const serverFilename = data.server_filename;
 
-    // 4. Processar o OCR
+    // 4. Processar o OCR (Agota blindado sem parâmetros que quebram a iLovePDF)
     res = await fetch(`https://${server}/v1/process`, {
         method: 'POST',
         headers: {
@@ -70,14 +70,13 @@ async function performILovePdfOCR(buffer: Buffer): Promise<Buffer> {
         body: JSON.stringify({
             task: task,
             tool: 'pdfocr',
-            files: [{ server_filename: serverFilename, filename: 'document.pdf' }],
-            ocr_languages: 'por'
+            files: [{ server_filename: serverFilename, filename: 'document.pdf' }]
         })
     });
     data = await res.json();
     if (!res.ok) throw new Error(`Process Rejeitado: ${JSON.stringify(data)}`);
 
-    // 5. Baixar o novo PDF
+    // 5. Baixar o novo PDF com letras digitais
     res = await fetch(`https://${server}/v1/download/${task}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -132,7 +131,6 @@ export async function generateTranslationDraft(orderId: number) {
 
                         } catch (ocrError: any) {
                             console.error("[AutoTranslation] Falha no OCR:", ocrError);
-                            // 🔥 AGORA O ALERTA MOSTRA O ERRO EXATO DO SERVIDOR
                             return { success: false, error: `OCR Error: ${ocrError.message}` };
                         }
                     }
