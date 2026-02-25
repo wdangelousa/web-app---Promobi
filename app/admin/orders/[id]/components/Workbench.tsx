@@ -109,6 +109,8 @@ export default function Workbench({ order }: { order: Order }) {
         () => new Set(order.documents.filter((d) => d.isReviewed).map((d) => d.id))
     )
 
+    const [optimisticExternalUrl, setOptimisticExternalUrl] = useState<string | null>(null)
+
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const justTranslatedRef = useRef<string | null>(null)
@@ -128,6 +130,10 @@ export default function Workbench({ order }: { order: Order }) {
             setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
         }
     }, [selectedDocId, selectedDoc?.translatedText, selectedDoc?.id])
+
+    useEffect(() => {
+        setOptimisticExternalUrl(selectedDoc?.externalTranslationUrl ?? null)
+    }, [selectedDoc?.id, selectedDoc?.externalTranslationUrl])
 
     const toggleDocForDelivery = (docId: number) => {
         setSelectedDocsForDelivery((prev) =>
@@ -259,6 +265,7 @@ export default function Workbench({ order }: { order: Order }) {
             const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
             const res = await uploadExternalTranslation(formData)
             if (res.success) {
+                setOptimisticExternalUrl(res.url ?? null)
                 alert('Tradução Externa carregada com sucesso!')
                 router.refresh()
             } else {
@@ -277,6 +284,7 @@ export default function Workbench({ order }: { order: Order }) {
             try {
                 const { removeExternalTranslation } = await import('../../../../actions/uploadExternal')
                 await removeExternalTranslation(selectedDoc.id)
+                setOptimisticExternalUrl(null)
                 router.refresh()
             } catch (err: any) {
                 alert('Erro ao remover: ' + err.message)
@@ -449,24 +457,26 @@ export default function Workbench({ order }: { order: Order }) {
                     </button>
                 </div>
 
-                {selectedDoc.externalTranslationUrl ? (
-                    <div className="flex-1 flex flex-col min-h-0">
-                        <div className="shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-emerald-700">
-                                <CheckCircle className="w-4 h-4" />
-                                <span className="text-sm font-semibold">Tradução Externa Ativa</span>
+                <div className="flex-1 flex flex-col min-h-0">
+                    {(optimisticExternalUrl || selectedDoc.externalTranslationUrl) && (
+                        <div className="shrink-0 bg-emerald-100 border border-emerald-300 mx-3 mt-2 mb-1 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3">
+                            <p className="text-emerald-800 text-xs font-semibold leading-snug">
+                                ✅ Tradução Externa Anexada: O PDF carregado será usado na geração do Kit Oficial.
+                            </p>
+                            <div className="flex items-center gap-3 shrink-0">
+                                <a href={optimisticExternalUrl || selectedDoc.externalTranslationUrl!} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
+                                    <Eye className="w-3 h-3" /> Visualizar PDF
+                                </a>
+                                <button onClick={handleRemoveExternal} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1.5">
+                                    <Trash2 className="w-3 h-3" /> Remover Anexo
+                                </button>
                             </div>
-                            <button onClick={handleRemoveExternal} className="text-red-600 text-xs font-semibold hover:underline flex items-center gap-1.5">
-                                <Trash2 className="w-3.5 h-3.5" /> Remover PDF Externo
-                            </button>
                         </div>
-                        <iframe src={selectedDoc.externalTranslationUrl} className="w-full flex-1" title="PDF Externo" />
-                    </div>
-                ) : (
+                    )}
                     <div className="flex-1 overflow-auto">
                         <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} className="h-full" modules={{ toolbar: [[{ header: [1, 2, false] }], ['bold', 'italic', 'underline', 'strike', 'blockquote'], [{ 'list': 'ordered' }, { 'list': 'bullet' }], ['clean']] }} />
                     </div>
-                )}
+                </div>
             </div>
 
             {/* ── FLOATING BOTTOM BAR ─────────────────────────────────────────── */}

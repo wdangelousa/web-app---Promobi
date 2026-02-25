@@ -1,6 +1,6 @@
 'use server'
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
@@ -118,7 +118,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
         const TEXT_TOP = 650
         const TEXT_BOTTOM = 90
-        const FONT_SIZE = 11
+        const FONT_SIZE = 12
         const LINE_HEIGHT = FONT_SIZE * 1.5
         const FOOTER_SIZE = 8
 
@@ -139,7 +139,6 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
                 // Embed pages so we can draw them ON TOP of the timbrado background
                 const embeddedPages = await finalPdf.embedPages(extPdf.getPages())
-                const safeAreaHeight = TEXT_TOP - TEXT_BOTTOM
 
                 for (const embeddedPage of embeddedPages) {
                     translationPageCount++
@@ -148,19 +147,16 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
                     finalPdf.addPage(bgPage)
 
-                    // Scale the external page to fit inside the safe area (header/footer untouched)
-                    const scale = Math.min(
-                        CONTENT_WIDTH / embeddedPage.width,
-                        safeAreaHeight / embeddedPage.height
-                    )
-                    const scaledWidth = embeddedPage.width * scale
-                    const scaledHeight = embeddedPage.height * scale
+                    // Scale 1.0 — external PDFs have their own margins, no reduction needed
+                    const scaledWidth = embeddedPage.width
+                    const scaledHeight = embeddedPage.height
 
-                    // Center horizontally within content margins, vertically within safe area
-                    const x = MARGIN_LEFT + (CONTENT_WIDTH - scaledWidth) / 2
-                    const y = TEXT_BOTTOM + (safeAreaHeight - scaledHeight) / 2
-
-                    bgPage.drawPage(embeddedPage, { x, y, width: scaledWidth, height: scaledHeight })
+                    bgPage.drawPage(embeddedPage, {
+                        x: (PAGE_WIDTH - scaledWidth) / 2,
+                        y: (792 - scaledHeight) / 2,
+                        width: scaledWidth,
+                        height: scaledHeight,
+                    })
                 }
             }
         }
@@ -201,28 +197,37 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     const originalBuf = Buffer.from(await originalRes.arrayBuffer())
 
                     if (isImageUrl(doc.originalFileUrl)) {
-                        // Embutir imagem nativamente com pdf-lib (Adeus iLovePDF 401 error!)
+                        // Embed image natively — always portrait orientation
                         let image;
                         if (doc.originalFileUrl.toLowerCase().includes('.png')) {
                             image = await finalPdf.embedPng(originalBuf)
                         } else {
                             image = await finalPdf.embedJpg(originalBuf)
                         }
-                        // Escalar imagem para caber na página (US Letter)
-                        const scale = Math.min(PAGE_WIDTH / image.width, 792 / image.height)
+                        // Use natural portrait orientation; scale to fill Letter page
+                        const isPortrait = image.height >= image.width
+                        const pageW = isPortrait ? PAGE_WIDTH : 792
+                        const pageH = isPortrait ? 792 : PAGE_WIDTH
+                        const scale = Math.min(pageW / image.width, pageH / image.height)
                         const scaledWidth = image.width * scale
                         const scaledHeight = image.height * scale
-                        const page = finalPdf.addPage([PAGE_WIDTH, 792])
+                        const page = finalPdf.addPage([pageW, pageH])
                         page.drawImage(image, {
-                            x: (PAGE_WIDTH - scaledWidth) / 2,
-                            y: (792 - scaledHeight) / 2,
+                            x: (pageW - scaledWidth) / 2,
+                            y: (pageH - scaledHeight) / 2,
                             width: scaledWidth,
                             height: scaledHeight,
                         })
                     } else {
                         const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
+                        const srcPages = originalPdf.getPages()
                         const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
-                        copied.forEach((p) => finalPdf.addPage(p))
+                        copied.forEach((p, i) => {
+                            // Explicitly preserve native rotation so pages never appear flipped
+                            const angle = srcPages[i].getRotation().angle
+                            if (angle !== 0) p.setRotation(degrees(angle))
+                            finalPdf.addPage(p)
+                        })
                     }
                 }
             } catch (err) {

@@ -201,8 +201,6 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     })
     .join('')
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobi.us'
-
   await resend.emails.send({
     from: 'Promobi <entrega@promobi.us>',
     to: recipients,
@@ -210,89 +208,35 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     html: `
       <!DOCTYPE html>
       <html>
-      <body style="font-family: Arial, sans-serif; background: #f9fafb; padding: 24px; margin: 0;">
-        <div style="max-width: 560px; margin: 0 auto; background: white;
-                    border-radius: 12px; overflow: hidden;
-                    box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
-
-          <!-- Header -->
-          <div style="background: #0F1117; padding: 28px 32px;">
-            <p style="color: #E8751A; font-size: 11px; font-weight: bold;
-                      letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
-            <h1 style="color: white; font-size: 24px; margin: 0; font-weight: bold;">
-              Sua tradução está pronta! 🎉
-            </h1>
-          </div>
-          <div style="height: 3px; background: #E8751A;"></div>
-
-          <!-- Body -->
-          <div style="padding: 28px 32px;">
-            <p style="color: #374151; font-size: 15px; margin: 0 0 6px;">
-              Olá, <strong>${clientName}</strong>!
-            </p>
-            <p style="color: #6B7280; font-size: 14px; margin: 0 0 24px; line-height: 1.6;">
-              Sua tradução certificada (USCIS accepted) foi revisada pela nossa equipe e
-              está pronta para download. Abaixo você encontra todos os documentos traduzidos.
-            </p>
-
-            <!-- Document links -->
-            <div style="margin-bottom: 24px;">
-              <p style="font-size: 12px; font-weight: bold; color: #6B7280;
-                        letter-spacing: 1px; margin-bottom: 12px;">
-                ${docs.filter(d => d.delivery_pdf_url).length} DOCUMENTOS TRADUZIDOS
+      <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
+        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #f58220;">
+          <tr>
+            <td style="text-align: center; padding: 30px;">
+              <img src="https://web-app-promobi.vercel.app/logo.png" width="220" alt="Promobi" />
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 40px 32px;">
+              <h2 style="color: #111827; margin-top: 0;">Sua Tradução Certificada está pronta! 🎉</h2>
+              <p style="margin: 0 0 12px;">Olá, <strong>${clientName}</strong>,</p>
+              <p style="margin: 0 0 12px; line-height: 1.6;">
+                Entregamos o seu Kit de Tradução Oficial abaixo. Este documento foi certificado
+                segundo os padrões da <strong>ATA (American Translators Association)</strong>.
               </p>
-              ${docLinks}
-            </div>
 
-            <!-- Steps complete -->
-            <div style="border-left: 3px solid #059669; padding-left: 16px; margin-bottom: 24px;">
-              <div style="margin-bottom: 8px; color: #374151; font-size: 13px;">
-                <span style="color: #059669; font-weight: bold; margin-right: 8px;">✅</span>
-                Pagamento confirmado
+              <!-- Document download links -->
+              <div style="margin: 24px 0;">
+                <p style="font-size: 12px; font-weight: bold; color: #6b7280; letter-spacing: 1px; margin-bottom: 12px;">
+                  ${docs.filter(d => d.delivery_pdf_url).length} DOCUMENTO(S) TRADUZIDO(S)
+                </p>
+                ${docLinks}
               </div>
-              <div style="margin-bottom: 8px; color: #374151; font-size: 13px;">
-                <span style="color: #059669; font-weight: bold; margin-right: 8px;">✅</span>
-                Tradução realizada pela nossa equipe certificada
-              </div>
-              <div style="color: #374151; font-size: 13px;">
-                <span style="color: #059669; font-weight: bold; margin-right: 8px;">✅</span>
-                <strong>Revisão de qualidade concluída — entrega realizada</strong>
-              </div>
-            </div>
 
-            <!-- Portal link -->
-            <a href="${appUrl}/meu-pedido"
-               style="display: block; background: #0F1117; color: white;
-                      text-align: center; padding: 14px; border-radius: 8px;
-                      text-decoration: none; font-weight: bold; font-size: 14px;
-                      margin-bottom: 16px;">
-              Acessar meu painel de pedidos →
-            </a>
-
-            <!-- Important note -->
-            <div style="background: #F0FDF4; border: 1px solid #6EE7B7; border-radius: 8px;
-                        padding: 14px 18px;">
-              <p style="color: #065F46; font-size: 13px; margin: 0; line-height: 1.6;">
-                <strong>Importante:</strong> Seus documentos são traduções certificadas aceitas
-                pelo USCIS. Guarde os PDFs em local seguro. Em caso de dúvidas, entre em
-                contato conosco antes de submeter seu processo.
-              </p>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div style="background: #F3F4F6; border-top: 1px solid #E5E7EB;
-                      padding: 18px 32px; text-align: center;">
-            <p style="color: #9CA3AF; font-size: 11px; margin: 0 0 4px;">
-              4700 Millenia Blvd, Orlando, FL 32839, USA
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; margin: 0;">
-              (321) 324-5851 · info@promobi.us ·
-              <a href="${appUrl}" style="color: #E8751A; text-decoration: none;">www.promobi.us</a>
-            </p>
-          </div>
-
-        </div>
+              <p style="margin: 24px 0 4px; line-height: 1.6;">Atenciosamente,</p>
+              <p style="margin: 0; font-weight: bold;">Isabele Bandeira de Moraes D'Angelo</p>
+            </td>
+          </tr>
+        </table>
       </body>
       </html>
     `,
