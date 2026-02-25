@@ -52,7 +52,7 @@ export async function uploadExternalTranslation(formData: FormData) {
             data: {
                 externalTranslationUrl: publicUrl,
                 translation_status: 'translated'
-            }
+            } as any
         })
 
         return { success: true, url: publicUrl }
