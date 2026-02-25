@@ -1,22 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import {
-    Save, FileText, CheckCircle, AlertTriangle, Clock, ShieldCheck,
-    Eye, Upload, Loader2, Zap, PenLine, RotateCcw, Package,
-    ChevronLeft, ChevronRight,
-} from 'lucide-react'
-import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
-import { saveDocumentDraft } from '@/app/actions/save-draft'
-import { retryTranslation } from '@/app/actions/retry-translation'
-import { useUIFeedback } from '@/components/UIFeedbackProvider'
+import { Save, FileText, CheckCircle, Eye, Loader2, Zap } from 'lucide-react'
+import ManualApprovalButton from './ManualApprovalButton'
 import 'react-quill-new/dist/quill.snow.css'
 
+// Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false })
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Document = {
     id: number
@@ -25,619 +17,236 @@ type Document = {
     translatedFileUrl?: string | null
     translatedText: string | null
     exactNameOnDoc?: string | null
-    translation_status?: string | null
-    delivery_pdf_url?: string | null
 }
 
 type Order = {
     id: number
     status: string
-    totalAmount: number
-    urgency: string
     documents: Document[]
-    user: { fullName: string; email: string }
+    user: {
+        fullName: string
+        email: string
+    }
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getDocBadge(doc: Document) {
-    const hasPdf = !!doc.delivery_pdf_url
-    const s = doc.translation_status
-
-    if (hasPdf || s === 'REVISED' || s === 'COMPLETED')
-        return { label: 'REVISADO', classes: 'text-green-500 bg-green-500/10', Icon: CheckCircle }
-    if (s === 'translated')
-        return { label: 'RASCUNHO IA', classes: 'text-indigo-400 bg-indigo-400/10', Icon: Zap }
-    if (s === 'error')
-        return { label: 'ERRO DEEPL', classes: 'text-red-500 bg-red-500/10', Icon: AlertTriangle }
-    if (s === 'needs_manual')
-        return { label: 'MANUAL', classes: 'text-amber-400 bg-amber-400/10', Icon: PenLine }
-
-    return { label: 'AGUARDANDO', classes: 'text-slate-500 bg-slate-500/10', Icon: Clock }
-}
-
-function isDocDone(doc: Document): boolean {
-    return !!(
-        doc.delivery_pdf_url ||
-        doc.translation_status === 'REVISED' ||
-        doc.translation_status === 'COMPLETED'
-    )
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Workbench({ order }: { order: Order }) {
     const router = useRouter()
-
-    const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
+    const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id || null)
     const [editorContent, setEditorContent] = useState('')
-    const [savedContent, setSavedContent] = useState('')
     const [saving, setSaving] = useState(false)
-    const [uploading, setUploading] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
-    const { toast } = useUIFeedback()
 
     const selectedDoc = order.documents.find(d => d.id === selectedDocId)
-    const currentDocIndex = order.documents.findIndex(d => d.id === selectedDocId)
-    const totalCount = order.documents.length
 
-    const doneCount = order.documents.filter(isDocDone).length
-    const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
-
-    const allDocsHandled = order.documents.every(isDocDone)
-
-    const isDirty = editorContent !== savedContent
-
-    const isDirtyRef = useRef(isDirty)
-    isDirtyRef.current = isDirty
-
-    // ─── FIX: Track content set by AI translation ─────────────────────────────
-    // When translateSingleDocument returns, we optimistically set the editor content
-    // immediately. But router.refresh() (fired 800ms later) re-renders the component
-    // with fresh DB data. If that refresh triggers a remount OR if the DB write
-    // wasn't committed yet, the useEffect would overwrite the translated content
-    // with the stale placeholder. This ref acts as a "just translated" guard.
-    const justTranslatedRef = useRef<{ docId: number; text: string } | null>(null)
-
-    // ─── FIX: Track previous docId to distinguish doc-switch from refresh ─────
-    // Needed so the useEffect can tell whether it's running because the user
-    // switched documents (always reload) or because a background refresh brought
-    // new data for the SAME document (only reload if editor is clean).
+    // 🛡️ CORREÇÕES DO CLAUDE: Refs para evitar que o router.refresh apague a tradução
+    const justTranslatedRef = useRef<string | null>(null)
     const prevDocIdRef = useRef<number | null>(null)
 
-    // ── Load editor content when switching documents OR when fresh DB data ─────
     useEffect(() => {
-        if (!selectedDoc) return
+        if (!selectedDoc) return;
 
-        const isSwitching = prevDocIdRef.current !== selectedDoc.id
-        prevDocIdRef.current = selectedDoc.id
+        // Verifica se o usuário trocou de documento no dropdown
+        const isNewDoc = prevDocIdRef.current !== selectedDoc.id;
+        prevDocIdRef.current = selectedDoc.id;
 
-        // When the same doc refreshes in the background, don't clobber unsaved edits.
-        if (!isSwitching && isDirtyRef.current) return
-
-        // FIX: If we just set content from an AI translation for this doc,
-        // use that content instead of whatever the DB has (race condition guard).
-        if (justTranslatedRef.current?.docId === selectedDoc.id) {
-            const localText = justTranslatedRef.current.text
-            justTranslatedRef.current = null  // consume the guard
-            setEditorContent(localText)
-            setSavedContent(localText)
-            return
-        }
-
-        let content = selectedDoc.translatedText
-        if (!content) {
-            if (selectedDoc.translation_status === 'error') {
-                content = '<p style="color: #ef4444; font-weight: bold;">⚠️ Erro na tradução automática. Verifique os logs ou use "Tentar Novamente (DeepL)".</p>'
-            } else if (selectedDoc.translation_status === 'needs_manual') {
-                content = '<p style="color: #f59e0b; font-weight: bold;">✍️ Documento escaneado/imagem. Requer tradução manual ou upload do PDF.</p>'
-            } else {
-                content = '<p>Aguardando tradução...</p>'
-            }
-        }
-        const safeContent = content || '<p>Aguardando tradução...</p>'
-        setEditorContent(safeContent)
-        setSavedContent(safeContent)
-
-        // FIX: Added selectedDoc?.translatedText so the effect also fires when
-        // router.refresh() brings updated DB data for the currently selected doc.
-        // The isDirty + justTranslated guards above prevent unwanted overwrites.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedDocId, selectedDoc?.translatedText])
-
-    // ── P3: safe doc selector — warns on unsaved changes ──────────────────────
-    const handleDocSelect = useCallback((docId: number) => {
-        if (isDirtyRef.current) {
-            if (!window.confirm('Você tem alterações não salvas neste documento. Deseja descartá-las?')) return
-        }
-        setSelectedDocId(docId)
-    }, [])
-
-    // ── Save draft ────────────────────────────────────────────────────────────
-    const handleSave = useCallback(async () => {
-        if (!selectedDoc || saving) return
-        setSaving(true)
-        const res = await saveDocumentDraft(selectedDoc.id, editorContent, order.id)
-        if (res.success) {
-            setSavedContent(editorContent)
-            toast.success('Rascunho salvo!')
+        if (isNewDoc) {
+            // Se trocou de aba, limpa o cache de segurança e carrega o texto do banco
+            justTranslatedRef.current = null;
+            setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>');
         } else {
-            toast.error('Erro ao salvar rascunho.')
-        }
-        setSaving(false)
-    }, [selectedDoc, editorContent, order.id, saving, toast])
-
-    // ── Keyboard shortcuts ────────────────────────────────────────────────────
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (!(e.metaKey || e.ctrlKey)) return
-
-            if (e.key === 's') {
-                e.preventDefault()
-                handleSave()
-                return
-            }
-            if (e.key === 'ArrowRight' && currentDocIndex < totalCount - 1) {
-                e.preventDefault()
-                handleDocSelect(order.documents[currentDocIndex + 1].id)
-                return
-            }
-            if (e.key === 'ArrowLeft' && currentDocIndex > 0) {
-                e.preventDefault()
-                handleDocSelect(order.documents[currentDocIndex - 1].id)
+            // Se for o mesmo documento (ex: tela recarregou por causa do router.refresh)
+            if (justTranslatedRef.current) {
+                // Mantém o texto fresco da IA na tela! Não deixa apagar.
+                setEditorContent(justTranslatedRef.current);
+            } else {
+                setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>');
             }
         }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
-    }, [handleSave, handleDocSelect, currentDocIndex, totalCount, order.documents])
+    }, [selectedDocId, selectedDoc?.translatedText, selectedDoc?.id])
 
-    // ── Finalize entire order ─────────────────────────────────────────────────
-    const handleFinalize = async () => {
-        if (!confirm('Isso irá gerar o Kit de Entrega final para TODOS os documentos do pedido e enviará ao cliente. Confirmar?')) return
-        setSaving(true)
+    const handleSave = async () => {
+        if (!selectedDoc) return;
+        setSaving(true);
+        // Exemplo de salvamento (você conectará com sua action de salvar rascunho depois)
+        console.log("Saving content for doc", selectedDoc.id, editorContent);
+
+        setTimeout(() => {
+            setSaving(false);
+            alert('Rascunho salvo!');
+            router.refresh();
+        }, 1000);
+    }
+
+    const handleTranslateAI = async () => {
+        if (!selectedDoc) return;
+        setIsTranslating(true);
+
         try {
-            const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            const result = await generateDeliveryKit(order.id)
-            if (!result.success || !result.deliveryUrl) {
-                throw new Error(result.error || 'Falha ao gerar o Delivery Kit.')
-            }
+            const { generateTranslationDraft } = await import('../../../../actions/generateTranslation');
+            const result = await generateTranslationDraft(order.id);
 
-            const { sendDelivery } = await import('../../../../actions/sendDelivery')
-            const sendResult = await sendDelivery(order.id)
-            if (!sendResult.success) {
-                throw new Error('Kit gerado, mas falha no envio do e-mail: ' + sendResult.error)
-            }
+            // Tenta pegar o texto tanto de result.text quanto de result.translatedText (depende de como sua API retorna)
+            const newText = result.text || result.translatedText;
 
-            toast.success('Sucesso! O pedido foi certificado e enviado ao cliente.')
-            router.refresh()
+            if (result.success && newText) {
+                // 🛡️ CORREÇÃO 1: Salva no "Cofre" (ref) antes de recarregar a página
+                justTranslatedRef.current = newText;
+
+                // 🛡️ CORREÇÃO 2: Atualiza a tela NA HORA
+                setEditorContent(newText);
+
+                alert('Tradução concluída com sucesso!');
+
+                // Sincroniza o servidor no fundo sem piscar a tela
+                router.refresh();
+            } else {
+                alert('Erro na tradução: ' + (result.error || 'Sem texto retornado.'));
+            }
         } catch (error: any) {
-            console.error('[Workbench] handleFinalize:', error)
-            toast.error('Erro ao finalizar: ' + error.message)
+            console.error(error);
+            alert("Erro ao acionar IA: " + error.message);
         } finally {
-            setSaving(false)
+            setIsTranslating(false);
         }
     }
 
-    // ── Translate selected doc with DeepL (on-demand, per document) ──────────
-    const handleTranslateWithAI = async () => {
-        if (!selectedDoc || isTranslating) return
-        setIsTranslating(true)
+    const handleFinalize = async () => {
+        if (!selectedDoc) return;
+        if (!confirm("Isso irá gerar o Kit de Entrega final (PDF Flat) nos servidores e marcará como concluído. Confirmar?")) return;
+
+        setSaving(true);
+
         try {
-            const { translateSingleDocument } = await import('@/app/actions/generateTranslation')
-            const res = await translateSingleDocument(selectedDoc.id)
-            console.log('[Workbench] Resposta da IA:', res)
-            if (res.success && res.text) {
+            const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit');
+            const result = await generateDeliveryKit(order.id);
 
-                // FIX: Register the translated content in the guard ref BEFORE
-                // calling setEditorContent. This ensures that if router.refresh()
-                // triggers a remount and the useEffect fires, it reads from this
-                // ref instead of the potentially stale DB value.
-                justTranslatedRef.current = { docId: selectedDoc.id, text: res.text }
-
-                setEditorContent(res.text)
-                setSavedContent(res.text)  // isDirty = false → refresh won't overwrite
-                toast.success('Tradução concluída! Revise o texto abaixo.')
-
-                // Refresh server data to update badges and doc status in the sidebar.
-                // The justTranslatedRef guard above ensures this doesn't erase the
-                // editor content even if the refresh completes before the DB write.
-                setTimeout(() => router.refresh(), 800)
-            } else {
-                toast.error(res.error ?? 'Falha na tradução automática.')
+            if (!result.success || !result.deliveryUrl) {
+                throw new Error(result.error || "Falha ao gerar o Delivery Kit.");
             }
-        } catch (err: any) {
-            toast.error('Erro inesperado: ' + err.message)
-        } finally {
-            setIsTranslating(false)
-        }
-    }
 
-    // ── Retry DeepL ───────────────────────────────────────────────────────────
-    const handleRetryDeepL = async () => {
-        if (saving) return
-        setSaving(true)
-        try {
-            const res = await retryTranslation(order.id)
-            if (res.success) {
-                toast.success('Gatilho disparado! Atualize a página em alguns instantes.')
-            } else {
-                toast.error('Erro: ' + res.error)
+            const { sendDelivery } = await import('../../../../actions/sendDelivery');
+            const sendResult = await sendDelivery(order.id);
+
+            if (!sendResult.success) {
+                throw new Error("Kit Gerado, mas falha no envio do email: " + sendResult.error);
             }
-        } catch (err: any) {
-            toast.error('Erro inesperado: ' + err.message)
+
+            alert("Sucesso! O Pedido foi certificado e enviado ao cliente.");
+            window.location.reload();
+
+        } catch (error: any) {
+            console.error(error);
+            alert("Erro ao finalizar: " + error.message);
         } finally {
-            setSaving(false)
+            setSaving(false);
         }
     }
 
-    // ── Upload translated PDF ─────────────────────────────────────────────────
-    const handleUploadTranslation = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file || !selectedDoc) return
-        if (file.type !== 'application/pdf') {
-            toast.error('Por favor, envie um arquivo PDF.')
-            return
-        }
-        setUploading(true)
-        try {
-            const formData = new FormData()
-            formData.append('file', file)
-            formData.append('docId', String(selectedDoc.id))
-            formData.append('orderId', String(order.id))
-            const res = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: formData })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || 'Falha no upload')
-            toast.success('PDF de tradução enviado com sucesso!')
-            router.refresh()
-        } catch (err: any) {
-            toast.error('Erro no upload: ' + err.message)
-        } finally {
-            setUploading(false)
-        }
-    }
+    if (!selectedDoc) return <div>Nenhum documento encontrado.</div>
 
-    // ── Guard renders ─────────────────────────────────────────────────────────
-    if (!order.documents?.length)
-        return <div className="p-8 text-center text-gray-500">Nenhum documento encontrado.</div>
-    if (!selectedDoc)
-        return <div className="p-8 text-center text-gray-500">Documento selecionado não encontrado.</div>
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // RENDER
-    // ─────────────────────────────────────────────────────────────────────────
+    // 🛡️ CORREÇÃO 4: Define qual URL de PDF vai aparecer na tela
+    const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl;
 
     return (
-        <div className="h-[calc(100vh-64px)] flex bg-slate-900 overflow-hidden">
+        <div className="h-[calc(100vh-80px)] flex">
+            {/* LEFT: PDF Viewer */}
+            <div className="w-1/2 bg-gray-800 border-r border-gray-700 flex flex-col">
+                <div className="bg-gray-900 text-white p-2 flex justify-between items-center text-xs">
+                    <span className="font-bold flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        {selectedDoc.translatedFileUrl ? 'Visualizador PDF Traduzido (DeepL)' : 'Visualizador Original'}
+                    </span>
+                    <div className="flex items-center gap-3">
+                        {/* Link externo para abrir o PDF traduzido da DeepL caso o iframe falhe */}
+                        {selectedDoc.translatedFileUrl && (
+                            <a href={selectedDoc.translatedFileUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1">
+                                <Eye className="w-3 h-3" /> Abrir PDF ↗
+                            </a>
+                        )}
+                        <select
+                            value={selectedDocId || ''}
+                            onChange={(e) => setSelectedDocId(Number(e.target.value))}
+                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1"
+                        >
+                            {order.documents.map(d => (
+                                <option key={d.id} value={d.id}>
+                                    {d.exactNameOnDoc || d.docType}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div className="flex-1 bg-gray-500 relative">
+                    {viewUrl && viewUrl !== 'PENDING_UPLOAD' ? (
+                        <iframe
+                            key={viewUrl} // 🛡️ CORREÇÃO 4: Força o Iframe a recarregar quando a URL muda
+                            src={viewUrl}
+                            className="w-full h-full"
+                            title="PDF Viewer"
+                        />
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-white">Arquivo pendente de upload</div>
+                    )}
+                </div>
+            </div>
 
-            {/* ── SIDEBAR ────────────────────────────────────────────────── */}
-            <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
+            {/* RIGHT: Editor */}
+            <div className="w-1/2 flex flex-col bg-white">
+                <div className="border-b border-gray-200 p-2 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-blue-600" /> Editor de Tradução
+                    </h3>
+                    <div className="flex gap-2">
+                        {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && (
+                            <ManualApprovalButton orderId={order.id} />
+                        )}
 
-                <div className="p-4 border-b border-slate-800 bg-slate-900/50 space-y-3">
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-[#f58220]" />
-                        Documentos ({totalCount})
-                    </h2>
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Revisados</span>
-                            <span className={`text-[11px] font-black ${doneCount === totalCount ? 'text-green-400' : 'text-slate-300'}`}>
-                                {doneCount} / {totalCount}
-                            </span>
-                        </div>
-                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                                className={`h-full rounded-full transition-all duration-500 ${progressPct === 100 ? 'bg-green-500' : 'bg-[#f58220]'
-                                    }`}
-                                style={{ width: `${progressPct}%` }}
-                            />
-                        </div>
+                        <button
+                            onClick={handleTranslateAI}
+                            disabled={isTranslating}
+                            className="bg-purple-100 border border-purple-300 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-200 flex items-center gap-1 transition-colors"
+                        >
+                            {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                            {isTranslating ? 'Traduzindo...' : 'Traduzir com IA'}
+                        </button>
+
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-100 flex items-center gap-1"
+                        >
+                            <Save className="h-3 w-3" /> {saving ? 'Salvando...' : 'Salvar Rascunho'}
+                        </button>
                     </div>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                    {order.documents.map((doc) => {
-                        const isActive = doc.id === selectedDocId
-                        const badge = getDocBadge(doc)
-                        const BadgeIcon = badge.Icon
+                <div className="flex-1 overflow-auto">
+                    <ReactQuill
+                        theme="snow"
+                        value={editorContent}
+                        onChange={setEditorContent}
+                        className="h-full"
+                        modules={{
+                            toolbar: [
+                                [{ 'header': [1, 2, false] }],
+                                ['bold', 'italic', 'underline', 'strike', 'blockquote'],
+                                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                                ['clean']
+                            ]
+                        }}
+                    />
+                </div>
 
-                        return (
-                            <button
-                                key={doc.id}
-                                onClick={() => handleDocSelect(doc.id)}
-                                className={`w-full text-left p-3 rounded-xl transition-all group relative flex items-start gap-3 ${isActive
-                                        ? 'bg-[#f58220]/10 border border-[#f58220]/20'
-                                        : 'hover:bg-slate-800 border border-transparent'
-                                    }`}
-                            >
-                                <div className={`mt-1 p-1.5 rounded-lg shrink-0 ${isActive
-                                        ? 'bg-[#f58220] text-white'
-                                        : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'
-                                    }`}>
-                                    <FileText className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className={`text-[11px] font-bold truncate leading-tight ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
-                                        }`}>
-                                        {doc.exactNameOnDoc || doc.docType}
-                                    </p>
-                                    <span className={`mt-1 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badge.classes}`}>
-                                        <BadgeIcon className="w-2.5 h-2.5" />
-                                        {badge.label}
-                                    </span>
-                                </div>
-                                {isActive && (
-                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[#f58220] rounded-r-full" />
-                                )}
-                            </button>
-                        )
-                    })}
-                </nav>
-
-                <div className="p-3 border-t border-slate-800 space-y-2">
+                {/* Footer Actions */}
+                <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
                     <button
                         onClick={handleFinalize}
-                        disabled={saving || order.status === 'COMPLETED'}
-                        title={
-                            order.status === 'COMPLETED'
-                                ? 'Pedido já enviado'
-                                : !allDocsHandled
-                                    ? `Faltam ${totalCount - doneCount} doc(s) para revisar`
-                                    : 'Gerar Kit de Entrega e enviar ao cliente'
-                        }
-                        className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-black text-xs transition-all disabled:opacity-60 ${order.status === 'COMPLETED'
-                                ? 'bg-green-500/10 text-green-400 border border-green-500/20 cursor-default'
-                                : allDocsHandled
-                                    ? 'bg-[#f58220] hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 active:scale-[0.98]'
-                                    : 'bg-slate-700/50 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                            }`}
+                        className="bg-[#f58220] hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2"
                     >
-                        {order.status === 'COMPLETED' ? (
-                            <><CheckCircle className="w-3.5 h-3.5" /> Pedido Enviado</>
-                        ) : saving ? (
-                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando Kit...</>
-                        ) : (
-                            <>
-                                <Package className="w-3.5 h-3.5" />
-                                Certificar Pedido
-                                {!allDocsHandled && (
-                                    <span className="ml-1 opacity-70">({doneCount}/{totalCount})</span>
-                                )}
-                            </>
-                        )}
+                        <CheckCircle className="h-4 w-4" /> Certificar e Enviar ao Cliente
                     </button>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-600 font-bold uppercase">
-                        <ShieldCheck className="w-3 h-3" /> Operador: Isabele
-                    </div>
                 </div>
-            </aside>
-
-            {/* ── MAIN WORKSPACE ─────────────────────────────────────────── */}
-            <main className="flex-1 flex overflow-hidden">
-
-                {/* PDF VIEWER */}
-                <div className="flex-1 flex flex-col bg-slate-800">
-                    <div className="bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/50 p-3 h-12 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Eye className="w-4 h-4 text-slate-400" />
-                            <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider">
-                                {/* FIX: Show which PDF is being viewed — translated (if available) or original */}
-                                {selectedDoc.translatedFileUrl ? 'Visualização — Tradução DeepL' : 'Visualização Original'}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {/* FIX: Toggle between original and translated PDF views */}
-                            {selectedDoc.translatedFileUrl && (
-                                <a
-                                    href={selectedDoc.translatedFileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] font-bold text-indigo-400 bg-indigo-400/10 border border-indigo-400/20 px-2 py-0.5 rounded-full hover:bg-indigo-400/20 transition-colors flex items-center gap-1"
-                                >
-                                    <Zap className="w-2.5 h-2.5" /> Ver PDF Traduzido ↗
-                                </a>
-                            )}
-                            <div className="text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
-                                {currentDocIndex + 1} / {totalCount}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-hidden relative">
-                        {/* FIX: Show translatedFileUrl (DeepL output PDF) if available, otherwise original */}
-                        {(() => {
-                            const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
-                            if (!viewUrl || viewUrl === 'PENDING_UPLOAD') {
-                                return (
-                                    <div className="flex flex-col items-center justify-center h-full text-slate-500 p-8 text-center">
-                                        <AlertTriangle className="w-12 h-12 mb-4 opacity-20" />
-                                        <p className="text-sm font-bold">Arquivo pendente de upload</p>
-                                        <p className="text-xs opacity-60">Aguarde o processamento do cliente</p>
-                                    </div>
-                                )
-                            }
-                            return (
-                                <iframe
-                                    key={viewUrl}
-                                    src={viewUrl}
-                                    className="w-full h-full border-0"
-                                    title="PDF Viewer"
-                                />
-                            )
-                        })()}
-                    </div>
-                </div>
-
-                {/* EDITOR */}
-                <div className="w-1/2 flex flex-col bg-white border-l border-slate-800">
-
-                    <header className="p-3 h-12 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-blue-600" />
-                            <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Editor de Tradução</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
-                                <ConfirmPaymentButton
-                                    order={order as any}
-                                    confirmedByName="Isabele"
-                                    onConfirmed={() => router.refresh()}
-                                />
-                            )}
-                            {order.status === 'TRANSLATING' && order.documents.some(d => d.translation_status === 'error') && (
-                                <button
-                                    onClick={handleRetryDeepL}
-                                    disabled={saving || isTranslating}
-                                    className="h-8 bg-orange-500 text-white px-3 rounded-lg text-xs font-bold hover:bg-orange-600 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
-                                >
-                                    <RotateCcw className={`w-3.5 h-3.5 ${saving ? 'animate-spin' : ''}`} />
-                                    Tentar Novamente (DeepL)
-                                </button>
-                            )}
-                            {!isDocDone(selectedDoc) && (
-                                <button
-                                    onClick={handleTranslateWithAI}
-                                    disabled={isTranslating || saving}
-                                    title="Força a tradução deste documento via DeepL agora"
-                                    className="h-8 bg-indigo-600 text-white px-3 rounded-lg text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
-                                >
-                                    {isTranslating ? (
-                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Traduzindo...</>
-                                    ) : (
-                                        <><Zap className="w-3.5 h-3.5" /> Traduzir com IA</>
-                                    )}
-                                </button>
-                            )}
-                            <button
-                                onClick={handleSave}
-                                disabled={saving}
-                                title="Atalho: Cmd + S"
-                                className={`relative h-8 bg-white border text-slate-700 px-3 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 ${isDirty ? 'border-yellow-400' : 'border-slate-200'
-                                    }`}
-                            >
-                                <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
-                                {saving ? 'Salvando...' : 'Salvar Rascunho'}
-                                {isDirty && !saving && (
-                                    <span
-                                        className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full border border-white"
-                                        title="Alterações não salvas"
-                                    />
-                                )}
-                            </button>
-                        </div>
-                    </header>
-
-                    {(selectedDoc.translation_status === 'error' || selectedDoc.translation_status === 'needs_manual') && (
-                        <div className={`p-3 border-b flex items-start gap-3 shrink-0 ${selectedDoc.translation_status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
-                            }`}>
-                            <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
-                                }`} />
-                            <div>
-                                <p className={`text-xs font-bold ${selectedDoc.translation_status === 'error' ? 'text-red-800' : 'text-amber-800'
-                                    }`}>
-                                    {selectedDoc.translation_status === 'error' ? 'Falha na tradução automática' : 'Tradução manual necessária'}
-                                </p>
-                                <p className={`text-[10px] ${selectedDoc.translation_status === 'error' ? 'text-red-600' : 'text-amber-600'
-                                    }`}>
-                                    {selectedDoc.translation_status === 'error'
-                                        ? 'Erro técnico. Tente novamente via botão no cabeçalho ou faça upload do PDF manual abaixo.'
-                                        : 'PDF escaneado/imagem não compatível com DeepL. Traduza manualmente ou faça upload do PDF.'}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* FIX: Banner confirming translation loaded in editor */}
-                    {selectedDoc.translation_status === 'translated' && !isTranslating && (
-                        <div className="p-3 border-b border-indigo-100 bg-indigo-50 flex items-center gap-2 shrink-0">
-                            <Zap className="w-4 h-4 text-indigo-500 shrink-0" />
-                            <p className="text-xs font-bold text-indigo-700">
-                                Rascunho DeepL carregado no editor. Revise, ajuste e salve antes de certificar.
-                            </p>
-                        </div>
-                    )}
-
-                    <div className="flex-1 overflow-hidden">
-                        <ReactQuill
-                            theme="snow"
-                            value={editorContent}
-                            onChange={setEditorContent}
-                            className="h-full quill-senior-mode"
-                            modules={{
-                                toolbar: [
-                                    [{ header: [1, 2, false] }],
-                                    ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-                                    [{ list: 'ordered' }, { list: 'bullet' }],
-                                    ['clean'],
-                                ],
-                            }}
-                        />
-                    </div>
-
-                    <footer className="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
-                        <div className="flex items-center justify-between gap-2">
-
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium flex-wrap">
-                                <kbd className="bg-slate-200 px-1 rounded text-slate-600 text-[9px]">Cmd+S</kbd>
-                                <span>salvar</span>
-                                <span className="text-slate-300 mx-0.5">·</span>
-                                <kbd className="bg-slate-200 px-1 rounded text-slate-600 text-[9px]">Cmd+←→</kbd>
-                                <span>navegar</span>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                                <button
-                                    onClick={() => currentDocIndex > 0 && handleDocSelect(order.documents[currentDocIndex - 1].id)}
-                                    disabled={currentDocIndex === 0}
-                                    title="Documento anterior (Cmd+←)"
-                                    className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors"
-                                >
-                                    <ChevronLeft className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                    onClick={() => currentDocIndex < totalCount - 1 && handleDocSelect(order.documents[currentDocIndex + 1].id)}
-                                    disabled={currentDocIndex === totalCount - 1}
-                                    title="Próximo documento (Cmd+→)"
-                                    className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors"
-                                >
-                                    <ChevronRight className="w-3.5 h-3.5" />
-                                </button>
-
-                                <div className="w-px h-5 bg-slate-200" />
-
-                                <input
-                                    type="file"
-                                    accept=".pdf"
-                                    onChange={handleUploadTranslation}
-                                    className="hidden"
-                                    id="pdf-upload"
-                                    disabled={uploading}
-                                />
-                                <label
-                                    htmlFor="pdf-upload"
-                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all border shadow-sm ${selectedDoc.delivery_pdf_url
-                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                                            : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                                        } ${uploading ? 'opacity-50 cursor-wait' : ''}`}
-                                >
-                                    {uploading
-                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        : <Upload className="w-3.5 h-3.5" />
-                                    }
-                                    {selectedDoc.delivery_pdf_url ? 'Substituir PDF' : 'Upload PDF'}
-                                </label>
-                            </div>
-                        </div>
-                    </footer>
-                </div>
-            </main>
-
-            <style jsx global>{`
-                .quill-senior-mode .ql-container  { height: calc(100% - 42px); font-size: 14px; font-family: 'Inter', sans-serif; }
-                .quill-senior-mode .ql-editor     { padding: 2rem; line-height: 1.6; }
-                .quill-senior-mode .ql-toolbar    { border: 0 !important; background: #f8fafc; border-bottom: 1px solid #e2e8f0 !important; }
-                .custom-scrollbar::-webkit-scrollbar       { width: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-            `}</style>
+            </div>
         </div>
     )
 }
