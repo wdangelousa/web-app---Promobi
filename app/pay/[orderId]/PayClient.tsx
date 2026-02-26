@@ -8,13 +8,13 @@ import {
     ShieldCheck,
     FileText,
     ChevronDown,
-    Smartphone,
     Info,
     ArrowRight,
-    Zap,
     Clock,
     Copy,
-    Check
+    Check,
+    MessageCircle,
+    CalendarClock,
 } from 'lucide-react'
 import { createCheckoutSession } from '@/app/actions/checkout'
 import { updateOrderStatus } from '@/app/actions/adminOrders'
@@ -26,7 +26,7 @@ type PayClientProps = {
 }
 
 export default function PayClient({ order, metadata }: PayClientProps) {
-    const [selectedMethod, setSelectedMethod] = useState<'stripe' | 'zelle' | 'pix' | null>(null)
+    const [selectedMethod, setSelectedMethod] = useState<'stripe' | 'zelle' | 'pix' | 'whatsapp' | null>(null)
     const [isProcessing, setIsProcessing] = useState(false)
     const [isConfirmed, setIsConfirmed] = useState(order.status === 'AWAITING_VERIFICATION')
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
@@ -263,6 +263,25 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                     {selectedMethod === 'pix' && <Check className="w-3 h-3 text-white" />}
                                 </div>
                             </button>
+
+                            {/* Parcelado USA */}
+                            <button
+                                onClick={() => setSelectedMethod('whatsapp')}
+                                className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${selectedMethod === 'whatsapp' ? 'border-[#25D366] bg-green-50' : 'border-gray-50 bg-white hover:border-gray-100'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+                                        <CalendarClock className="w-5 h-5 text-green-600" />
+                                    </div>
+                                    <div className="text-left">
+                                        <p className="text-sm font-bold text-gray-900">Parcelado USA</p>
+                                        <p className="text-[10px] text-gray-500">Plano de pagamento via WhatsApp</p>
+                                    </div>
+                                </div>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'whatsapp' ? 'border-[#25D366] bg-[#25D366]' : 'border-gray-200'}`}>
+                                    {selectedMethod === 'whatsapp' && <Check className="w-3 h-3 text-white" />}
+                                </div>
+                            </button>
                         </div>
                     </div>
 
@@ -341,6 +360,44 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                 >
                                     {isProcessing ? 'Enviando...' : 'Já fiz o Pix'}
                                 </button>
+                            </motion.div>
+                        )}
+
+                        {selectedMethod === 'whatsapp' && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-4 bg-green-50 p-6 rounded-2xl border border-green-200"
+                            >
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-green-800 uppercase tracking-wider">Parcelado USA — Plano de Pagamento</p>
+                                    <p className="text-[11px] text-green-700 leading-relaxed">
+                                        Nosso time enviará um link de pagamento parcelado exclusivo para você. Clique abaixo para iniciar o atendimento pelo WhatsApp.
+                                    </p>
+                                </div>
+
+                                <div className="bg-white rounded-xl p-4 border border-green-200 space-y-2">
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500">Total do pedido:</span>
+                                        <span className="font-bold text-gray-800">${order.totalAmount.toFixed(2)} USD</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500">Número de referência:</span>
+                                        <span className="font-bold text-gray-800">#{order.id}</span>
+                                    </div>
+                                </div>
+
+                                <a
+                                    href={`https://wa.me/13213245851?text=Ol%C3%A1%2C%20gostaria%20de%20solicitar%20o%20link%20de%20pagamento%20parcelado%20para%20o%20Pedido%20%23${order.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-[#25D366] hover:bg-[#20BD5A] py-4 rounded-2xl text-white font-bold flex items-center justify-center gap-3 shadow-lg shadow-green-300 active:scale-95 transition-all"
+                                >
+                                    <MessageCircle className="w-5 h-5" />
+                                    Solicitar Link via WhatsApp
+                                </a>
+                                <p className="text-[10px] text-green-600 text-center">Atendimento em português · Segunda a Sexta</p>
                             </motion.div>
                         )}
                     </AnimatePresence>
