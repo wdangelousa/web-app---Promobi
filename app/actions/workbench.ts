@@ -210,17 +210,6 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     .map((d, i) => {
       const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
       return `
-          <!-- Header -->
-          <div style="background: #0F1117; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-              <p style="color: #f5b000; font-size: 11px; font-weight: bold;
-                        letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
-              <h1 style="color: white; font-size: 24px; margin: 0; font-weight: bold;">
-                Sua tradução está pronta! 🎉
-              </h1>
-            </div>
-            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" alt="Promobi" style="height: 45px; width: auto;" />
-          </div>
         <div style="display:flex; align-items:center; justify-content:space-between;
                     border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;
                     margin-bottom:8px; background:#F9FAFB;">
@@ -243,36 +232,49 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
   const testRecipient = 'wdangelo81@gmail.com'
 
   const { data, error } = await resend.emails.send({
-    from: 'Promobi <onboarding@resend.dev>',
+    from: 'Promobi Delivery <entrega@promobi.us>',
     to: isTestMode ? [testRecipient] : recipients,
     subject: (isTestMode ? `[TESTE] ` : '') + `📩 Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
-        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #111827; overflow: hidden;">
+        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+          <!-- Header -->
           <tr>
-            <td style="text-align: center; padding: 30px; background: #fff;">
-              <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" />
+            <td style="background: #0F1117; padding: 30px; text-align: center;">
+              <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style="margin-bottom: 10px;" />
+              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
+              <h1 style="color: white; font-size: 22px; margin: 0; font-weight: bold;">Sua tradução está pronta! 🎉</h1>
             </td>
           </tr>
           <tr>
-            <td style="padding: 40px;">
-              <h2 style="color: #111827; margin-top: 0;">Sua Tradução Certificada está pronta! 🎉</h2>
+            <td style="padding: 40px; background: #ffffff;">
+              <h2 style="color: #111827; margin-top: 0;">Kit de Tradução Disponível</h2>
               <p style="margin: 0 0 12px; color: #374151;">Olá, <strong>${clientName}</strong>,</p>
               <p style="margin: 0 0 12px; line-height: 1.6; color: #374151;">
-                Entregamos em anexo o seu Kit de Tradução Oficial, certificado pelos padrões da <strong>ATA (American Translators Association)</strong>.
+                Temos o prazer de entregar o seu Kit de Tradução Oficial, processado e revisado por nossa equipe especializada.
               </p>
 
               <!-- Document download links -->
               <div style="margin: 24px 0;">
-                <p style="font-size: 12px; font-weight: bold; color: #6b7280; letter-spacing: 1px; margin-bottom: 12px;">
-                  ${docs.filter(d => d.delivery_pdf_url).length} DOCUMENTO(S) TRADUZIDO(S)
+                <p style="font-size: 11px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">
+                  ${docs.filter(d => d.delivery_pdf_url).length} Documento(s) Liberado(s)
                 </p>
                 ${docLinks}
               </div>
 
-              <p style="margin: 0 0 4px; color: #374151;">Atenciosamente,<br><strong>Isabele Bandeira de Moraes D'Angelo</strong><br><span style="color: #f5b000; font-weight: bold;">Promobi Translation Services</span></p>
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
+                <p style="margin: 0 0 4px; color: #374151; font-size: 14px;">Atenciosamente,</p>
+                <p style="margin: 0; color: #111827; font-weight: bold; font-size: 15px;">Equipe Promobi</p>
+                <p style="margin: 0; color: #f5b000; font-size: 13px; font-weight: bold;">www.promobi.us</p>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #f3f4f6;">
+              © 2026 Promobi Services · Orlando, FL · Tradução e Notarização
             </td>
           </tr>
         </table>

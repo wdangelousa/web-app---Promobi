@@ -16,6 +16,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
 
             {/* Header */}
             <div style={{ backgroundColor: '#0f172a', padding: '30px', textAlign: 'center' }}>
+                <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style={{ marginBottom: '15px' }} />
                 <h1 style={{ color: '#ffffff', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>Sua Documentação Chegou</h1>
             </div>
 
@@ -37,15 +38,15 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
                     <a
                         href={downloadLink}
                         style={{
-                            backgroundColor: '#f58220',
-                            color: '#ffffff',
+                            backgroundColor: '#f5b000',
+                            color: '#000000',
                             padding: '16px 32px',
                             borderRadius: '8px',
                             textDecoration: 'none',
                             fontWeight: 'bold',
                             fontSize: '16px',
                             display: 'inline-block',
-                            boxShadow: '0 4px 6px rgba(245, 130, 32, 0.2)'
+                            boxShadow: '0 4px 6px rgba(245, 176, 0, 0.2)'
                         }}
                     >
                         Baixar Documentação Oficial
@@ -53,7 +54,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
                 </div>
 
                 {/* Security Warning */}
-                <div style={{ backgroundColor: '#fff7ed', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f58220', fontSize: '14px', color: '#9a3412' }}>
+                <div style={{ backgroundColor: '#fffcf0', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f5b000', fontSize: '14px', color: '#855a00' }}>
                     <strong>Aviso de Segurança:</strong> Este link expirará em breve para proteger seus dados. Recomendamos que você baixe e salve o arquivo em um local seguro imediatamente.
                 </div>
 

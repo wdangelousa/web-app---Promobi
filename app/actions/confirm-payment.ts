@@ -159,9 +159,17 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
   if (toList.length === 0) return
 
+  let recipientEmails = toList.map(u => u.email).filter(Boolean) as string[];
+  if (process.env.NODE_ENV === 'development') {
+    recipientEmails = ['wdangelo81@gmail.com'];
+    console.log(`[notifyIsabele] Development mode: Redirecting ops notification to ${recipientEmails[0]}`);
+  }
+
+  if (recipientEmails.length === 0) return
+
   await resend.emails.send({
     from: 'Promobi Ops <ops@promobi.us>',
-    to: toList.map(u => u.email),
+    to: recipientEmails,
     subject: `🟡 Novo pedido para traduzir — #${order.id} (${order.user?.fullName ?? 'Cliente'})`,
     html: `
       <!DOCTYPE html>
@@ -170,11 +178,12 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
         <div style="max-width: 560px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
 
           <!-- Header -->
-          <div style="background: #0F1117; padding: 24px 32px;">
-            <p style="color: #E8751A; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI OPS</p>
+          <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
+            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style="margin-bottom: 10px;">
+            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI OPS</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Novo pedido pronto para tradução</h1>
           </div>
-          <div style="height: 3px; background: #E8751A;"></div>
+          <div style="height: 3px; background: #f5b000;"></div>
 
           <!-- Body -->
           <div style="padding: 28px 32px;">
@@ -200,7 +209,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
                 </tr>
                 <tr>
                   <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Valor total</td>
-                  <td style="color: #E8751A; font-weight: bold; font-size: 16px; text-align: right;">$${(order.totalAmount ?? 0).toFixed(2)}</td>
+                  <td style="color: #f5b000; font-weight: bold; font-size: 16px; text-align: right;">$${(order.totalAmount ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Urgência</td>
@@ -211,7 +220,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
             <!-- CTA -->
             <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobi.us'}/admin/orders/${order.id}"
-               style="display: block; background: #E8751A; color: white; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
+               style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Abrir no Workbench →
             </a>
           </div>
@@ -234,9 +243,15 @@ async function sendClientConfirmation(order: any) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
 
+  let recipient = clientEmail;
+  if (process.env.NODE_ENV === 'development') {
+    recipient = 'wdangelo81@gmail.com';
+    console.log(`[sendClientConfirmation] Development mode: Redirecting client confirmation from ${clientEmail} to ${recipient}`);
+  }
+
   await resend.emails.send({
     from: 'Promobi <noreply@promobi.us>',
-    to: [clientEmail],
+    to: [recipient],
     subject: `✅ Pagamento confirmado — Pedido #${order.id} em tradução`,
     html: `
       <!DOCTYPE html>
@@ -244,11 +259,12 @@ async function sendClientConfirmation(order: any) {
       <body style="font-family: Arial, sans-serif; background: #f9fafb; padding: 24px;">
         <div style="max-width: 560px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
 
-          <div style="background: #0F1117; padding: 24px 32px;">
-            <p style="color: #E8751A; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI</p>
+          <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
+            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" style="margin-bottom: 10px;">
+            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Seu pagamento foi confirmado!</h1>
           </div>
-          <div style="height: 3px; background: #E8751A;"></div>
+          <div style="height: 3px; background: #f5b000;"></div>
 
           <div style="padding: 28px 32px;">
             <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
@@ -256,13 +272,13 @@ async function sendClientConfirmation(order: any) {
             </p>
 
             <!-- Status steps -->
-            <div style="border-left: 3px solid #E8751A; padding-left: 16px; margin-bottom: 24px;">
+            <div style="border-left: 3px solid #f5b000; padding-left: 16px; margin-bottom: 24px;">
               <div style="margin-bottom: 12px; display: flex; align-items: center;">
                 <span style="color: #059669; font-weight: bold; margin-right: 8px;">✅</span>
                 <span style="color: #111827;">Pagamento confirmado</span>
               </div>
               <div style="margin-bottom: 12px;">
-                <span style="color: #E8751A; font-weight: bold; margin-right: 8px;">🔄</span>
+                <span style="color: #f5b000; font-weight: bold; margin-right: 8px;">🔄</span>
                 <span style="color: #111827; font-weight: bold;">Em tradução — nossa equipe está trabalhando agora</span>
               </div>
               <div style="color: #9CA3AF; margin-bottom: 12px;">
@@ -281,7 +297,7 @@ async function sendClientConfirmation(order: any) {
             </div>
 
             <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobi.us'}/meu-pedido"
-               style="display: block; background: #E8751A; color: white; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
+               style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Acompanhar meu pedido →
             </a>
           </div>

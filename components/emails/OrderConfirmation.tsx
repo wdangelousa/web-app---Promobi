@@ -17,7 +17,8 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
         <div style={{ maxWidth: '600px', margin: '0 auto', border: '1px solid #eee', borderRadius: '8px', overflow: 'hidden' }}>
             {/* Header */}
             <div style={{ backgroundColor: '#0f172a', padding: '20px', textAlign: 'center' }}>
-                <h1 style={{ color: '#ffffff', margin: 0, fontSize: '24px' }}>Promobi</h1>
+                <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="160" alt="Promobi" style={{ marginBottom: '10px' }} />
+                <h1 style={{ color: '#ffffff', margin: 0, fontSize: '20px' }}>Confirmação de Pedido</h1>
             </div>
 
             {/* Body */}
@@ -42,7 +43,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
 
             {/* Footer */}
             <div style={{ backgroundColor: '#f1f5f9', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
-                <p style={{ margin: 0 }}>© 2024 Promobi Services. Todos os direitos reservados.</p>
+                <p style={{ margin: 0 }}>© 2026 Promobi Services. Todos os direitos reservados.</p>
                 <p style={{ margin: '5px 0 0 0' }}>Orlando, FL - USA</p>
             </div>
         </div>

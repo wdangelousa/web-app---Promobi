@@ -12,11 +12,20 @@ export async function sendOrderEmails(order: any) {
 
     const { id, user, totalAmount, paymentProvider } = order;
 
+    let customerRecipient = user.email;
+    let adminRecipient = process.env.TEAM_EMAIL || 'belebmd@gmail.com';
+
+    if (process.env.NODE_ENV === 'development') {
+        customerRecipient = 'wdangelo81@gmail.com';
+        adminRecipient = 'wdangelo81@gmail.com';
+        console.log(`[sendOrderEmails] Development mode: Redirecting emails to ${customerRecipient}`);
+    }
+
     try {
         // 1. Send Customer Email
         await resend.emails.send({
-            from: 'Promobi Notifications <onboarding@resend.dev>', // Update with verified domain later
-            to: user.email,
+            from: 'Promobi <no-reply@promobi.us>',
+            to: customerRecipient,
             subject: `Recebemos seu pedido #${id}`,
             react: <OrderConfirmationEmail
                 orderId={id}
@@ -28,8 +37,8 @@ export async function sendOrderEmails(order: any) {
 
         // 2. Send Admin Notification
         await resend.emails.send({
-            from: 'Promobi System <onboarding@resend.dev>',
-            to: [process.env.TEAM_EMAIL || 'belebmd@gmail.com'],
+            from: 'Promobi System <system@promobi.us>',
+            to: [adminRecipient],
             subject: `[Novo Pedido] #${id} - ${user.fullName}`,
             react: <AdminNotificationEmail
                 orderId={id}

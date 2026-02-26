@@ -113,7 +113,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                             <h2 className="text-2xl font-bold text-gray-900">Resumo do Pedido</h2>
                             <p className="text-sm text-gray-500">Documentação para {order.user.fullName}</p>
                         </div>
-                        <div className="bg-orange-50 text-[#f58220] px-3 py-1 rounded-full text-xs font-bold border border-orange-100">
+                        <div className="bg-amber-50 text-[#f5b000] px-3 py-1 rounded-full text-xs font-bold border border-amber-100">
                             #{order.id}
                         </div>
                     </div>
@@ -129,7 +129,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                             <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Prazo Definido</p>
                             <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-[#f58220]" />
+                                <Clock className="w-4 h-4 text-[#f5b000]" />
                                 <span className="text-sm font-bold text-gray-800">
                                     {order.urgency === 'standard' ? 'Standard (10 dias)' : order.urgency === 'urgent' ? 'Urgente (48h)' : 'Flash (24h)'}
                                 </span>
@@ -204,7 +204,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                         {/* Final Total Card */}
                         <div className="bg-slate-900 rounded-2xl p-6 text-white text-center shadow-lg">
                             <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">Subtotal Final</p>
-                            <p className="text-5xl font-black text-[#f58220] tracking-tighter">${order.totalAmount.toFixed(2)}</p>
+                            <p className="text-5xl font-black text-[#f5b000] tracking-tighter">${order.totalAmount.toFixed(2)}</p>
                             <div className="mt-4 pt-4 border-t border-white/10 flex justify-between text-xs text-gray-400">
                                 <span>Moeda:</span>
                                 <span className="font-bold text-white">Dólares (USD)</span>
@@ -225,7 +225,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                         <p className="text-[10px] text-gray-500">Checkout Stripe Seguro</p>
                                     </div>
                                 </div>
-                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'stripe' ? 'border-[#f58220] bg-[#f58220]' : 'border-gray-200'}`}>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'stripe' ? 'border-[#f5b000] bg-[#f5b000]' : 'border-gray-200'}`}>
                                     {selectedMethod === 'stripe' && <Check className="w-3 h-3 text-white" />}
                                 </div>
                             </button>
@@ -242,7 +242,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                         <p className="text-[10px] text-gray-500">Transferência Bancária USA</p>
                                     </div>
                                 </div>
-                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'zelle' ? 'border-[#f58220] bg-[#f58220]' : 'border-gray-200'}`}>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'zelle' ? 'border-[#f5b000] bg-[#f5b000]' : 'border-gray-200'}`}>
                                     {selectedMethod === 'zelle' && <Check className="w-3 h-3 text-white" />}
                                 </div>
                             </button>
@@ -259,7 +259,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                         <p className="text-[10px] text-gray-500">approx. R$ {(order.totalAmount * 5.25).toFixed(2)}</p>
                                     </div>
                                 </div>
-                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'pix' ? 'border-[#f58220] bg-[#f58220]' : 'border-gray-200'}`}>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === 'pix' ? 'border-[#f5b000] bg-[#f5b000]' : 'border-gray-200'}`}>
                                     {selectedMethod === 'pix' && <Check className="w-3 h-3 text-white" />}
                                 </div>
                             </button>
@@ -297,7 +297,7 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                 <button
                                     onClick={handleStripePayment}
                                     disabled={isProcessing}
-                                    className="w-full bg-[#f58220] py-4 rounded-2xl text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-orange-200 active:scale-95 transition-all"
+                                    className="w-full bg-[#f5b000] py-4 rounded-2xl text-black font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-200 active:scale-95 transition-all"
                                 >
                                     {isProcessing ? 'Verificando...' : <>Ir para Cartão <ArrowRight className="w-5 h-5" /></>}
                                 </button>

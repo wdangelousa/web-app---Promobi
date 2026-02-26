@@ -6,29 +6,33 @@ import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface SendReviewLinkParams {
-    email: string;
-    name: string;
-    orderId: number;
+  email: string;
+  name: string;
+  orderId: number;
 }
 
 export async function sendReviewLink({ email, name, orderId }: SendReviewLinkParams) {
-    try {
-        const reviewLink = `https://web-app-promobi.vercel.app/revisar/${orderId}`;
-        // OBS: Usando um domínio genérico ou o que estiver em VERCEL_URL. 
-        // Idealmente, usar process.env.NEXT_PUBLIC_APP_URL se configurado.
+  try {
+    const reviewLink = `https://web-app-promobi.vercel.app/revisar/${orderId}`;
 
-        const { data, error } = await resend.emails.send({
-            from: 'Promobi <contato@promobi.com.br>', // Ajustar conforme domínio verificado no Resend
-            to: [email],
-            subject: 'Sua tradução está pronta para revisão! 📄',
-            html: `
+    let recipient = email;
+    if (process.env.NODE_ENV === 'development') {
+      recipient = 'wdangelo81@gmail.com';
+      console.log(`[sendReviewLink] Development mode: Redirecting email from ${email} to ${recipient}`);
+    }
+
+    const { data, error } = await resend.emails.send({
+      from: 'Promobi <contato@promobi.us>',
+      to: [recipient],
+      subject: 'Sua tradução está pronta para revisão! 📄',
+      html: `
         <!DOCTYPE html>
         <html>
           <head>
             <style>
               .button {
-                background-color: #2563eb;
-                color: white;
+                background-color: #f5b000;
+                color: #000000;
                 padding: 12px 24px;
                 border-radius: 6px;
                 text-decoration: none;
@@ -58,7 +62,8 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
           <body>
             <div class="container">
               <div class="header">
-                <h1 style="color: #1f2937;">Promobi Traduções</h1>
+                <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" style="margin-bottom: 10px;">
+                <h1 style="color: #1f2937; margin-top: 0;">Tradução Pronta</h1>
               </div>
               <div class="content">
                 <h2 style="color: #374151;">Olá, ${name}! 👋</h2>
@@ -75,7 +80,7 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
                 </div>
                 <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
                   Se o botão não funcionar, copie e cole este link no seu navegador:<br>
-                  <a href="${reviewLink}" style="color: #2563eb;">${reviewLink}</a>
+                  <a href="${reviewLink}" style="color: #f5b000;">${reviewLink}</a>
                 </p>
               </div>
               <div style="text-align: center; margin-top: 20px; color: #9ca3af; font-size: 12px;">
@@ -85,17 +90,17 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
           </body>
         </html>
       `,
-        });
+    });
 
-        if (error) {
-            console.error('Error sending email:', error);
-            throw new Error(error.message);
-        }
-
-        return { success: true, data };
-    } catch (error) {
-        console.error('Server Action Error:', error);
-        // Não lançar erro para não quebrar a UI, apenas retornar false ou logar
-        return { success: false, error };
+    if (error) {
+      console.error('Error sending email:', error);
+      throw new Error(error.message);
     }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Server Action Error:', error);
+    // Não lançar erro para não quebrar a UI, apenas retornar false ou logar
+    return { success: false, error };
+  }
 }
