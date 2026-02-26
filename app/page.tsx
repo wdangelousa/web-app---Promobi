@@ -588,10 +588,19 @@ export default function Home() {
                     </div>
 
                     {/* Desktop Nav */}
-                    <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-                        <Link href="/" className="hover:text-[#f58220] transition-colors py-2">Início</Link>
-                        <Link href="/upload" className="hover:text-[#f58220] transition-colors py-2">Enviar Documentos</Link>
-                        <a href="/admin/orders" className="text-slate-900 border border-slate-200 px-4 py-3 rounded-full hover:bg-slate-50 transition-colors">Área Administrativa</a>
+                    <nav className="hidden md:flex items-center gap-4 text-sm">
+                        <a
+                            href="#calculator"
+                            className="bg-[#f58220] hover:bg-orange-600 text-white px-6 py-2.5 rounded-full font-bold shadow-md hover:shadow-orange-200 hover:scale-[1.02] transition-all active:scale-95 flex items-center gap-2"
+                        >
+                            Comece seu Pedido <ArrowRight className="h-4 w-4" />
+                        </a>
+                        <a
+                            href="/admin"
+                            className="flex items-center gap-1.5 text-slate-400 hover:text-slate-500 transition-colors text-xs font-medium"
+                        >
+                            <Lock className="h-3.5 w-3.5" /> Área Restrita
+                        </a>
                     </nav>
 
                     {/* Mobile Menu Button */}
@@ -612,27 +621,20 @@ export default function Home() {
                             exit={{ opacity: 0, height: 0 }}
                             className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
                         >
-                            <nav className="flex flex-col p-4 space-y-4 text-sm font-medium text-slate-600">
-                                <Link
-                                    href="/"
-                                    className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                >
-                                    Início
-                                </Link>
-                                <Link
-                                    href="/upload"
-                                    className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                >
-                                    Enviar Documentos
-                                </Link>
+                            <nav className="flex flex-col p-4 space-y-3 text-sm font-medium">
                                 <a
-                                    href="/admin/orders"
-                                    className="p-2 text-[#f58220] font-bold bg-orange-50 rounded-lg transition-colors flex items-center gap-2"
+                                    href="#calculator"
+                                    className="p-3 bg-[#f58220] text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-md active:scale-95"
                                     onClick={() => setMobileMenuOpen(false)}
                                 >
-                                    <Lock className="h-4 w-4" /> Área Administrativa
+                                    Comece seu Pedido <ArrowRight className="h-4 w-4" />
+                                </a>
+                                <a
+                                    href="/admin"
+                                    className="p-2 text-slate-400 text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    <Lock className="h-3.5 w-3.5" /> Área Restrita
                                 </a>
                             </nav>
                         </motion.div>
@@ -667,17 +669,20 @@ export default function Home() {
                             Unimos a precisão técnica de alto nível com a conveniência da notarização oficial imediata. Documentos prontos para imigração (USCIS) e negócios em tempo recorde.
                         </motion.p>
 
-                        <motion.div variants={fadeInUp} className="flex gap-4">
-                            <Link href="/upload" className="bg-[#f58220] hover:bg-orange-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-orange-200 transition-all active:scale-95 flex items-center gap-2">
-                                Traduzir Agora <ArrowRight className="h-5 w-5" />
-                            </Link>
+                        {/* Authority Seals — above the fold, before the CTA */}
+                        <motion.div variants={fadeInUp} className="flex items-center gap-6">
+                            <Image src="/logo-notary.png" width={240} height={96} alt="Florida Notary Public" className="h-16 md:h-20 w-auto object-contain" />
+                            <div className="h-10 w-px bg-slate-200" />
+                            <Image src="/logo-ata.png" width={240} height={96} alt="ATA Member" className="h-16 md:h-20 w-auto object-contain" />
                         </motion.div>
 
-                        {/* Integrated Authority Seals */}
-                        <motion.div variants={fadeInUp} className="pt-8 flex items-center gap-8 opacity-100 transition-all duration-500">
-                            <Image src="/logo-notary.png" width={300} height={120} alt="Florida Notary" className="h-24 md:h-32 w-auto object-contain" />
-                            <div className="h-12 w-px bg-slate-200"></div>
-                            <Image src="/logo-ata.png" width={300} height={120} alt="ATA Member" className="h-24 md:h-32 w-auto object-contain" />
+                        <motion.div variants={fadeInUp}>
+                            <a
+                                href="#calculator"
+                                className="inline-flex items-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl hover:shadow-orange-300 hover:scale-[1.03] transition-all active:scale-95"
+                            >
+                                Comece seu Pedido <ArrowRight className="h-5 w-5" />
+                            </a>
                         </motion.div>
                     </motion.div>
 

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import { Avatar } from '@/components/admin/Avatar'
+import Image from 'next/image'
 
 type UserProps = {
     fullName: string;
@@ -31,13 +32,14 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
         <aside className="w-64 bg-gray-900 text-white flex flex-col fixed h-full shadow-xl z-20 overflow-y-auto">
             {/* Brand Logo & User Profile */}
             <div className="p-6 border-b border-gray-800 space-y-6">
-                <Link href="/admin/dashboard" className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-[#f58220] rounded-lg shadow-lg flex items-center justify-center font-bold text-white tracking-tighter shrink-0">
-                        PR
-                    </div>
-                    <h1 className="text-xl font-bold text-white tracking-wider cursor-pointer">
-                        PROMOBI
-                    </h1>
+                <Link href="/admin/dashboard" className="flex items-center">
+                    <Image
+                        src="/logo.png"
+                        width={160}
+                        height={55}
+                        alt="Promobi"
+                        className="h-10 w-auto object-contain brightness-0 invert"
+                    />
                 </Link>
 
                 <div className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
