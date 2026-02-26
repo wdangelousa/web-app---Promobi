@@ -113,7 +113,7 @@ export async function approveDocument(
 export async function releaseToClient(
   orderId: number,
   releasedBy: string,
-  options: { sendToClient: boolean; sendToTranslator: boolean } = { sendToClient: true, sendToTranslator: false }
+  options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean } = { sendToClient: true, sendToTranslator: false, isRetry: false }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const user = await getCurrentUser()
@@ -178,7 +178,7 @@ export async function releaseToClient(
       }
     }
 
-    console.log(`[releaseToClient] ✅ Order #${orderId} COMPLETED by ${releasedBy}`)
+    console.log(`[releaseToClient] ✅ Order #${orderId} ${options.isRetry ? 'RESENT' : 'COMPLETED'} by ${releasedBy}`)
     return { success: true }
 
   } catch (err: any) {
@@ -189,7 +189,7 @@ export async function releaseToClient(
 
 // ─── Delivery email to client ─────────────────────────────────────────────────
 
-async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean }) {
+async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean }) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
   const translatorEmail = 'belebmd@gmail.com'
@@ -200,7 +200,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   if (recipients.length === 0) return
 
-  console.log(`[sendDeliveryEmail] Disparando e-mail para: ${recipients.join(', ')}`)
+  console.log(`[sendDeliveryEmail] ${options.isRetry ? 'REENVIO MANUAL' : 'DISPARO INICIAL'} - Disparando e-mail para: ${recipients.join(', ')}`)
 
   const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
 
@@ -228,8 +228,10 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     .join('')
 
   // TEST MODE: redirect to wdangelo81@gmail.com in development or when testing.
-  const isTestMode = process.env.NODE_ENV === 'development' || process.env.EMAIL_TEST_MODE === 'true'
+  const isTestMode = process.env.NODE_ENV === 'development' || process.env.EMAIL_TEST_MODE === 'true' || options.isRetry === true
   const testRecipient = 'wdangelo81@gmail.com'
+
+  console.log(`[sendDeliveryEmail] Metadata Check: API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isTestMode=${isTestMode} | isRetry=${options.isRetry}`)
 
   const { data, error } = await resend.emails.send({
     from: 'Promobi Delivery <entrega@promobi.us>',
@@ -284,9 +286,9 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
   })
 
   if (error) {
-    console.error(`[sendDeliveryEmail] ❌ Falha no Resend para [${recipients.join(', ')}]:`, error)
-    throw new Error(`Resend: ${error.message}`)
+    console.error(`[sendDeliveryEmail] ❌ Falha no Resend:`, JSON.stringify(error, null, 2))
+    throw new Error(`Resend Error: ${error.message} (${(error as any).name || 'Unknown'})`)
   } else {
-    console.log(`[sendDeliveryEmail] ✅ Enviado com sucesso! ID: ${data?.id} | Recipientes: ${recipients.join(', ')}`)
+    console.log(`[sendDeliveryEmail] ✅ Enviado com sucesso!`, JSON.stringify(data, null, 2))
   }
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import DocPageRotations from './DocPageRotations'
@@ -62,6 +62,7 @@ export default function Workbench({ order }: { order: Order }) {
         order.documents[0]?.id ?? null
     )
     const [editorContent, setEditorContent] = useState('')
+    const [isResending, setIsResending] = useState(false)
 
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
@@ -364,6 +365,28 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    const handleResendEmail = async () => {
+        if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
+        setIsResending(true)
+        try {
+            const { releaseToClient } = await import('../../../../actions/workbench')
+            const result = await releaseToClient(order.id, 'Isabele', {
+                sendToClient: true,
+                sendToTranslator: true,
+                isRetry: true
+            })
+            if (result.success) {
+                alert('✅ E-mail de entrega reenviado com sucesso!')
+            } else {
+                alert('❌ Erro ao reenviar: ' + result.error)
+            }
+        } catch (err: any) {
+            alert('❌ Erro fatal: ' + err.message)
+        } finally {
+            setIsResending(false)
+        }
+    }
+
     if (!selectedDoc) return <div className="p-4 text-sm text-gray-500">Nenhum documento encontrado.</div>
 
     const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
@@ -374,9 +397,23 @@ export default function Workbench({ order }: { order: Order }) {
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
             <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
-                <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between shrink-0">
+                <div className="flex flex-col gap-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Documentos</span>
-                    <span className="text-[10px] bg-gray-700 text-gray-300 rounded-full px-1.5 py-0.5 font-mono">{order.documents.length}</span>
+                    {order.status === 'COMPLETED' && (
+                        <div className="flex flex-col gap-1.5 px-0.5">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase">
+                                <CheckCircle className="h-3 w-3" /> Status: Enviado
+                            </div>
+                            <button
+                                onClick={handleResendEmail}
+                                disabled={isResending}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50"
+                            >
+                                {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                                Reenviar E-mail
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <button onClick={toggleSelectAll} className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border-b border-gray-800 hover:bg-gray-800 transition-colors shrink-0">
