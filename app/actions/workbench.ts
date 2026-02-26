@@ -213,13 +213,13 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
           <!-- Header -->
           <div style="background: #0F1117; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between;">
             <div>
-              <p style="color: #E8751A; font-size: 11px; font-weight: bold;
+              <p style="color: #f5b000; font-size: 11px; font-weight: bold;
                         letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
               <h1 style="color: white; font-size: 24px; margin: 0; font-weight: bold;">
                 Sua tradução está pronta! 🎉
               </h1>
             </div>
-            <img src="https://web-app-promobi.vercel.app/logo-capa.png" alt="Promobi" style="height: 40px; width: auto;" />
+            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" alt="Promobi" style="height: 45px; width: auto;" />
           </div>
         <div style="display:flex; align-items:center; justify-content:space-between;
                     border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;
@@ -229,7 +229,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
             <span style="font-size:13px; color:#374151; font-weight:600;">${name}</span>
           </div>
           <a href="${d.delivery_pdf_url}"
-             style="background:#F5A623; color:#111827; text-decoration:none;
+             style="background:#f5b000; color:#111827; text-decoration:none;
                     padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold;">
             Baixar PDF
           </a>
@@ -251,17 +251,17 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
-        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #f58220; overflow: hidden;">
+        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #111827; overflow: hidden;">
           <tr>
             <td style="text-align: center; padding: 30px; background: #fff;">
-              <img src="https://web-app-promobi.vercel.app/logo-capa.png" width="220" alt="Promobi" />
+              <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" />
             </td>
           </tr>
           <tr>
             <td style="padding: 40px;">
               <h2 style="color: #111827; margin-top: 0;">Sua Tradução Certificada está pronta! 🎉</h2>
-              <p style="margin: 0 0 12px;">Olá, <strong>${clientName}</strong>,</p>
-              <p style="margin: 0 0 12px; line-height: 1.6;">
+              <p style="margin: 0 0 12px; color: #374151;">Olá, <strong>${clientName}</strong>,</p>
+              <p style="margin: 0 0 12px; line-height: 1.6; color: #374151;">
                 Entregamos em anexo o seu Kit de Tradução Oficial, certificado pelos padrões da <strong>ATA (American Translators Association)</strong>.
               </p>
 
@@ -273,7 +273,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
                 ${docLinks}
               </div>
 
-              <p style="margin: 0 0 4px;">Atenciosamente,<br><strong>Isabele Bandeira de Moraes D'Angelo</strong><br><span style="color: #f58220;">Promobi Translation Services</span></p>
+              <p style="margin: 0 0 4px; color: #374151;">Atenciosamente,<br><strong>Isabele Bandeira de Moraes D'Angelo</strong><br><span style="color: #f5b000; font-weight: bold;">Promobi Translation Services</span></p>
             </td>
           </tr>
         </table>
