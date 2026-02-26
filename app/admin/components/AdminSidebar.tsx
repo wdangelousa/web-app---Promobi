@@ -8,12 +8,11 @@ import {
     Settings,
     LogOut,
     DollarSign,
-    UserCircle,
     FilePlus,
     Monitor
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
-import Image from 'next/image'
+import { Avatar } from '@/components/admin/Avatar'
 
 type UserProps = {
     fullName: string;
@@ -42,9 +41,7 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
                 </Link>
 
                 <div className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gray-700 to-gray-600 flex items-center justify-center shrink-0">
-                        <UserCircle className="w-6 h-6 text-gray-300" />
-                    </div>
+                    <Avatar name={user.fullName || 'Administrador'} size="md" />
                     <div className="overflow-hidden">
                         <h3 className="text-sm font-bold text-gray-100 truncate">{user.fullName || 'Administrador'}</h3>
                         <p className="text-[10px] text-gray-400 truncate uppercase tracking-wider font-medium">{user.role}</p>

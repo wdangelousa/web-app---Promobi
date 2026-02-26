@@ -9,12 +9,13 @@ import { normalizeOrder } from '@/lib/orderAdapter'
 export default async function WorkbenchOrderPage({
   params,
 }: {
-  params: { orderId: string }
+  params: Promise<{ orderId: string }>
 }) {
   const user = await getCurrentUser()
   if (!user || user.role !== 'OPERATIONS') redirect('/admin')
 
-  const orderId = parseInt(params.orderId)
+  const { orderId: orderIdParam } = await params
+  const orderId = parseInt(orderIdParam)
   if (isNaN(orderId)) notFound()
 
   const order = await prisma.order.findUnique({

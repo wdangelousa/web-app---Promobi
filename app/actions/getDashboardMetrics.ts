@@ -1,16 +1,13 @@
 'use server'
 
 import prisma from '../../lib/prisma'
-import { cookies } from 'next/headers'
+import { getCurrentUser } from '@/app/actions/auth'
 
 export async function getDashboardMetrics(period: 'today' | '7days' | 'month' = 'month') {
     try {
-        // Security Check
-        const cookieStore = await cookies()
-        const authCookie = cookieStore.get('admin_auth')
-        if (authCookie?.value !== 'true') {
-            return { success: false, error: "Unauthorized" }
-        }
+        // Auth guard — the admin layout already requires login, but double-check here.
+        const user = await getCurrentUser()
+        if (!user) return { success: false, error: 'Unauthorized' }
 
         // Date Logic
         const now = new Date()

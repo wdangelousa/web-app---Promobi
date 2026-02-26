@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, AlignLeft, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import DocPageRotations from './DocPageRotations'
@@ -52,36 +52,6 @@ function getStatusInfo(doc: Document): StatusInfo {
     return { label: 'Pendente', pill: 'bg-gray-600/40 text-gray-400 ring-gray-500/20' }
 }
 
-// ── Formatting helper ─────────────────────────────────────────────────────────
-
-function applyPromobiFormatting(html: string): string {
-    const plain = html
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n\n')
-        .replace(/<\/div>/gi, '\n')
-        .replace(/<\/li>/gi, '\n')
-        .replace(/<\/h[1-6]>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\n{3,}/g, '\n\n')
-        .trim()
-
-    return plain
-        .split(/\n\n/)
-        .filter((p) => p.trim())
-        .map(
-            (p) =>
-                `<p style="font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 0 0 0.8em 0;">${p
-                    .replace(/\n/g, '<br>')
-                    .trim()}</p>`
-        )
-        .join('')
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -169,11 +139,6 @@ export default function Workbench({ order }: { order: Order }) {
         } finally {
             setIsSavingDraft(false)
         }
-    }
-
-    const handleApplyPromobiStandard = () => {
-        const formatted = applyPromobiFormatting(editorContent)
-        if (formatted) setEditorContent(formatted)
     }
 
     const handleTranslateAI = async () => {
@@ -481,10 +446,6 @@ export default function Workbench({ order }: { order: Order }) {
                     <span className="h-4 w-px bg-gray-300 mx-0.5" />
 
                     {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
-
-                    <button onClick={handleApplyPromobiStandard} title="Padrão USCIS/ATA" className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-indigo-100 flex items-center gap-1">
-                        <AlignLeft className="h-3 w-3" /> Padrão
-                    </button>
 
                     <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 border border-purple-200 text-purple-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-purple-100 flex items-center gap-1 disabled:opacity-50">
                         {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} IA
