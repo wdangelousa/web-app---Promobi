@@ -229,13 +229,13 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   // TEST MODE: redirect to wdangelo81@gmail.com in development or when testing.
   const isTestMode = process.env.NODE_ENV === 'development' || process.env.EMAIL_TEST_MODE === 'true' || options.isRetry === true
-  const testRecipient = 'wdangelo81@gmail.com'
+  const testRecipients = ['wdangelo81@gmail.com', 'belebmd@gmail.com']
 
   console.log(`[sendDeliveryEmail] Metadata Check: API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isTestMode=${isTestMode} | isRetry=${options.isRetry}`)
 
   const { data, error } = await resend.emails.send({
-    from: 'Promobi Delivery <entrega@promobi.us>',
-    to: isTestMode ? [testRecipient] : recipients,
+    from: 'Promobi Delivery <onboarding@resend.dev>',
+    to: isTestMode ? testRecipients : recipients,
     subject: (isTestMode ? `[TESTE] ` : '') + `📩 Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
       <!DOCTYPE html>
