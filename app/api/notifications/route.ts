@@ -21,7 +21,7 @@ import {
 } from '@/lib/mail';
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'wdangelo81@gmail.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'belebmd@gmail.com';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
 
 // ── BRL Admin Alert (inline — no extra file needed) ───────────────────────────

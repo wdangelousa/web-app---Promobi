@@ -26,10 +26,10 @@ export async function sendOrderEmails(order: any) {
             />,
         });
 
-        // 2. Send Admin Notification (Parallel execution not strictly needed here for simplicity, but good for speed)
+        // 2. Send Admin Notification
         await resend.emails.send({
             from: 'Promobi System <onboarding@resend.dev>',
-            to: ['walter@promobi.com', 'isabele@promobi.com'], // Replace with actual admin emails or env var
+            to: [process.env.TEAM_EMAIL || 'belebmd@gmail.com'],
             subject: `[Novo Pedido] #${id} - ${user.fullName}`,
             react: <AdminNotificationEmail
                 orderId={id}

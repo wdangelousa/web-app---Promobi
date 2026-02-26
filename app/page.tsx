@@ -348,6 +348,9 @@ export default function Home() {
 
     // ── Manual WhatsApp Concierge for BRL payments ────────────────────────────
     const handleManualPayment = () => {
+        // Guard: prevent double-send if WhatsApp was already opened
+        if (whatsappSent || loading) return
+
         const selectedDocs = documents.filter(d => d.isSelected)
         const hasNotarization = selectedDocs.some(d => d.notarized) || serviceType === 'notarization'
         const dollarAmount = totalPrice.toFixed(2)
