@@ -227,16 +227,13 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
     })
     .join('')
 
-  // TEST MODE: redirect to wdangelo81@gmail.com in development or when testing.
-  const isTestMode = true // FORCED FOR VALIDATION
-  const testRecipients = ['wdangelo81@gmail.com']
-
-  console.log(`[sendDeliveryEmail] !!! FORCING TEST RECIPIENT: wdangelo81@gmail.com !!!`)
-  console.log(`[sendDeliveryEmail] Metadata Check: API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isRetry=${options.isRetry}`)
+  // SANDBOX MODE: single verified recipient only — Resend rejects multiple unverified recipients.
+  console.log(`[sendDeliveryEmail] !!! SANDBOX: destinatário único → wdangelo81@gmail.com !!!`)
+  console.log(`[sendDeliveryEmail] API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isRetry=${options.isRetry}`)
 
   const { data, error } = await resend.emails.send({
     from: 'Promobi Delivery <onboarding@resend.dev>',
-    to: testRecipients,
+    to: 'wdangelo81@gmail.com',
     subject: `📩 [VALIDAÇÃO] Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
       <!DOCTYPE html>
