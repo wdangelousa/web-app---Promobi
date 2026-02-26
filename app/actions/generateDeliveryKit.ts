@@ -95,10 +95,27 @@ async function _buildCoverPageInDoc(
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
     const isPreview = options?.preview ?? false
     try {
-        const doc = await prisma.document.findUnique({
-            where: { id: documentId },
-            include: { order: true },
-        })
+        let doc: any = null
+        let retries = 0
+        const maxRetries = 2
+
+        while (retries < maxRetries) {
+            try {
+                doc = await prisma.document.findUnique({
+                    where: { id: documentId },
+                    include: { order: true },
+                })
+                if (doc) break
+            } catch (err: any) {
+                retries++
+                if (err.message?.includes('MaxClientsInSessionMode') || err.code === 'P2024') {
+                    console.warn(`[generateDeliveryKit] Database connection busy, retrying... (${retries}/${maxRetries})`)
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                } else {
+                    throw err
+                }
+            }
+        }
 
         if (!doc || doc.orderId !== orderId) return { success: false, error: 'Documento não encontrado.' }
 
