@@ -94,10 +94,15 @@ async function _buildCoverPageInDoc(
 
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
     const isPreview = options?.preview ?? false
+    // AJUSTE DE ID: Se o orderId for > 1000, provavelmente é o ID de exibição.
+    const dbOrderId = orderId > 1000 ? orderId - 1000 : orderId
+
+    console.log(`[generateDeliveryKit] 🔍 Iniciando geração: OrderID=${orderId} (DB: ${dbOrderId}), DocID=${documentId}, Preview=${isPreview}`)
+
     try {
         let doc: any = null
         let retries = 0
-        const maxRetries = 2
+        const maxRetries = 3
 
         while (retries < maxRetries) {
             try {
@@ -105,19 +110,33 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     where: { id: documentId },
                     include: { order: true },
                 })
-                if (doc) break
-            } catch (err: any) {
-                retries++
-                if (err.message?.includes('MaxClientsInSessionMode') || err.code === 'P2024') {
-                    console.warn(`[generateDeliveryKit] Database connection busy, retrying... (${retries}/${maxRetries})`)
-                    await new Promise(resolve => setTimeout(resolve, 500))
+
+                if (doc) {
+                    console.log(`[generateDeliveryKit] ✅ Documento encontrado: ID=${doc.id}, OrderID no Doc=${doc.orderId}`)
+                    break
                 } else {
-                    throw err
+                    console.warn(`[generateDeliveryKit] ⚠️ Documento ${documentId} não encontrado na tentativa ${retries + 1}`)
                 }
+            } catch (err: any) {
+                console.warn(`[generateDeliveryKit] ❌ Erro na tentativa ${retries + 1}:`, err.message)
+            }
+
+            retries++
+            if (retries < maxRetries) {
+                console.log(`[generateDeliveryKit] ⏳ Aguardando 500ms para retry...`)
+                await new Promise(resolve => setTimeout(resolve, 500))
             }
         }
 
-        if (!doc || doc.orderId !== orderId) return { success: false, error: 'Documento não encontrado.' }
+        if (!doc) {
+            console.error(`[generateDeliveryKit] 🛑 Falha final: Documento ${documentId} não existe no banco.`)
+            return { success: false, error: 'Documento não encontrado no banco de dados.' }
+        }
+
+        if (doc.orderId !== dbOrderId) {
+            console.error(`[generateDeliveryKit] 🛑 Conflito de ID: Doc.orderId(${doc.orderId}) !== dbOrderId(${dbOrderId})`)
+            return { success: false, error: 'Documento não pertence a este pedido.' }
+        }
 
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
