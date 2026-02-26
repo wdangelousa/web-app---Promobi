@@ -79,9 +79,10 @@ async function _buildCoverPageInDoc(
     const black = rgb(0, 0, 0)
 
     // Preenchemos os dados no novo template "limpo", alinhados à direita do texto base (X: 210)
+    const displayOrderNumber = String(orderId + 1000).padStart(4, '0') + '-USA'
     capaPage.drawText(docType.toUpperCase(), { x: 210, y: 618, size: 11, font: fontHelv, color: black })
     capaPage.drawText(totalPages.toString().padStart(2, '0'), { x: 210, y: 570, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(`${orderId.toString().padStart(4, '0')}-USA`, { x: 210, y: 554, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(displayOrderNumber, { x: 210, y: 554, size: 11, font: fontHelv, color: black })
 
     // Data cravada no canto inferior esquerdo
     capaPage.drawText(`Dated: ${dateStr}`, { x: 70, y: 110, size: 11, font: fontHelv, color: black })
@@ -122,8 +123,9 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const LINE_HEIGHT = FONT_SIZE * 1.5
         const FOOTER_SIZE = 8
 
+        // Name used on certificate cover: operator-edited field takes priority
         const docName = doc.exactNameOnDoc || doc.docType
-        const docType = doc.docType || 'Certified Translation'
+        const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
 
         // ── 4. TRANSLATION PAGES ──────────────────────────────────────────────────
         let translationPageCount = 0

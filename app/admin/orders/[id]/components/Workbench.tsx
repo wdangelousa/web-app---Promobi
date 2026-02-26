@@ -83,6 +83,9 @@ export default function Workbench({ order }: { order: Order }) {
     )
 
     const [optimisticExternalUrl, setOptimisticExternalUrl] = useState<string | null>(null)
+    const [docNameInput, setDocNameInput] = useState('')
+    const [isSavingDocName, setIsSavingDocName] = useState(false)
+    const [docNameSaved, setDocNameSaved] = useState(false)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -98,6 +101,8 @@ export default function Workbench({ order }: { order: Order }) {
         if (isNewDoc) {
             justTranslatedRef.current = null
             setEditorContent(selectedDoc.translatedText || '<p>Aguardando tradução...</p>')
+            setDocNameInput(selectedDoc.exactNameOnDoc || selectedDoc.docType || '')
+            setDocNameSaved(false)
         } else if (justTranslatedRef.current) {
             setEditorContent(justTranslatedRef.current)
         } else {
@@ -219,6 +224,28 @@ export default function Workbench({ order }: { order: Order }) {
             alert('Erro ao gerar preview: ' + err.message)
         } finally {
             setIsPreviewingKit(false)
+        }
+    }
+
+    const handleSaveDocName = async () => {
+        if (!selectedDoc) return
+        const trimmed = docNameInput.trim()
+        if (trimmed === (selectedDoc.exactNameOnDoc ?? selectedDoc.docType ?? '')) return
+        setIsSavingDocName(true)
+        try {
+            const { updateDocumentName } = await import('../../../../actions/workbench')
+            const result = await updateDocumentName(selectedDoc.id, trimmed)
+            if (result.success) {
+                setDocNameSaved(true)
+                setTimeout(() => setDocNameSaved(false), 2000)
+                router.refresh()
+            } else {
+                alert('Erro ao salvar nome: ' + result.error)
+            }
+        } catch (err: any) {
+            alert('Erro ao salvar nome: ' + err.message)
+        } finally {
+            setIsSavingDocName(false)
         }
     }
 
@@ -470,6 +497,24 @@ export default function Workbench({ order }: { order: Order }) {
                     <button onClick={handleApproveDoc} disabled={isApproving || activeDocIsReviewed} className={`px-2.5 py-1.5 rounded text-[11px] font-bold flex items-center gap-1 border ${activeDocIsReviewed ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60'}`}>
                         {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />} {activeDocIsReviewed ? 'Revisado ✓' : 'Aprovar'}
                     </button>
+                </div>
+
+                {/* ── NOME OFICIAL DO DOCUMENTO ────────────────────────────── */}
+                <div className="px-3 py-2 border-b border-gray-200 bg-white shrink-0 flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                        Nome Oficial (EN)
+                    </label>
+                    <input
+                        type="text"
+                        value={docNameInput}
+                        onChange={(e) => setDocNameInput(e.target.value)}
+                        onBlur={handleSaveDocName}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                        placeholder="ex: Birth Certificate"
+                        className="flex-1 text-xs text-gray-800 border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#f58220] focus:border-[#f58220] placeholder:text-gray-300 transition-colors"
+                    />
+                    {isSavingDocName && <Loader2 className="h-3 w-3 animate-spin text-gray-400 shrink-0" />}
+                    {docNameSaved && <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />}
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-0">

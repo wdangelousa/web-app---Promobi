@@ -40,6 +40,28 @@ export async function saveTranslationDraft(
   }
 }
 
+// ─── updateDocumentName ───────────────────────────────────────────────────────
+
+export async function updateDocumentName(
+  docId: number,
+  name: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return { success: false, error: 'Não autorizado.' }
+
+    await prisma.document.update({
+      where: { id: docId },
+      data: { exactNameOnDoc: name.trim() || null },
+    })
+
+    return { success: true }
+  } catch (err: any) {
+    console.error('[updateDocumentName]', err)
+    return { success: false, error: err.message ?? 'Erro ao salvar nome.' }
+  }
+}
+
 // ─── setDocumentReviewed ──────────────────────────────────────────────────────
 
 export async function setDocumentReviewed(
@@ -197,7 +219,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
                 Sua tradução está pronta! 🎉
               </h1>
             </div>
-            <img src="https://web-app-promobi.vercel.app/logo.png" alt="Promobi" style="height: 40px; width: auto;" />
+            <img src="https://web-app-promobi.vercel.app/logo-capa.png" alt="Promobi" style="height: 40px; width: auto;" />
           </div>
         <div style="display:flex; align-items:center; justify-content:space-between;
                     border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;
@@ -207,7 +229,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
             <span style="font-size:13px; color:#374151; font-weight:600;">${name}</span>
           </div>
           <a href="${d.delivery_pdf_url}"
-             style="background:#E8751A; color:white; text-decoration:none;
+             style="background:#F5A623; color:#111827; text-decoration:none;
                     padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold;">
             Baixar PDF
           </a>
@@ -224,7 +246,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
   const { data, error } = await resend.emails.send({
     from: 'Promobi <onboarding@resend.dev>',
     to: isTestMode ? [testRecipient] : recipients,
-    subject: (isTestMode ? `[TESTE] ` : '') + `📩 Sua tradução certificada está pronta — Pedido #${order.id}`,
+    subject: (isTestMode ? `[TESTE] ` : '') + `📩 Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -232,7 +254,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
         <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border-bottom: 4px solid #f58220; overflow: hidden;">
           <tr>
             <td style="text-align: center; padding: 30px; background: #fff;">
-              <img src="https://web-app-promobi.vercel.app/logo.png" width="220" alt="Promobi" />
+              <img src="https://web-app-promobi.vercel.app/logo-capa.png" width="220" alt="Promobi" />
             </td>
           </tr>
           <tr>
