@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma'
 import Workbench from './components/Workbench'
 import Link from 'next/link'
-import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { getCurrentUser } from '@/app/actions/auth'
 import { Role } from '@prisma/client'
