@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import Stripe from 'stripe'
 import prisma from '../../lib/prisma'
+import { getGlobalSettings } from '@/app/actions/settings'
 
 export async function createCheckoutSession(orderId: number) {
     try {
@@ -32,12 +33,15 @@ export async function createCheckoutSession(orderId: number) {
 
         // --- STRIPE CHECKOUT ---
         if (order.paymentProvider === 'STRIPE') {
-            if (!process.env.STRIPE_SECRET_KEY) {
-                console.error("Missing STRIPE_SECRET_KEY")
+            const settings = await getGlobalSettings()
+            const stripeSecretKey = settings.stripeKey || process.env.STRIPE_SECRET_KEY
+
+            if (!stripeSecretKey) {
+                console.error("Missing Stripe Secret Key (Settings and ENV)")
                 return { success: false, error: "Erro de configuração de pagamento" }
             }
 
-            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder')
+            const stripe = new Stripe(stripeSecretKey)
 
             // Create Checkout Session
             const session = await stripe.checkout.sessions.create({

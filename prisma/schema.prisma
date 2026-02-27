@@ -29,32 +29,32 @@ model Order {
   urgency              String          @default("normal")
   uspsTracking         String?
   createdAt            DateTime        @default(now())
-  sentAt               DateTime?
   paymentProvider      PaymentProvider @default(STRIPE)
   deliveryUrl          String?
   metadata             String?
   paymentMethod        String?
   hasTranslation       Boolean         @default(true)
   hasNotary            Boolean         @default(false)
+  sentAt               DateTime?
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }
 
 model Document {
-  id                 Int      @id @default(autoincrement())
-  orderId            Int
-  docType            String
-  originalFileUrl    String
-  translatedFileUrl  String?
-  translatedText     String?
-  exactNameOnDoc     String?
-  createdAt          DateTime @default(now())
-  translation_status      String   @default("pending")
-  delivery_pdf_url        String?
-  isReviewed              Boolean  @default(false)
-  externalTranslationUrl  String?
-  pageRotations           Json?
-  order                   Order    @relation(fields: [orderId], references: [id])
+  id                     Int      @id @default(autoincrement())
+  orderId                Int
+  docType                String
+  originalFileUrl        String
+  translatedFileUrl      String?
+  translatedText         String?
+  exactNameOnDoc         String?
+  createdAt              DateTime @default(now())
+  translation_status     String   @default("pending")
+  delivery_pdf_url       String?
+  isReviewed             Boolean  @default(false)
+  externalTranslationUrl String?
+  pageRotations          Json?
+  order                  Order    @relation(fields: [orderId], references: [id])
 }
 
 model Setting {

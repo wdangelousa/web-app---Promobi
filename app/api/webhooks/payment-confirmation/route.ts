@@ -3,13 +3,16 @@ import prisma from '../../../../lib/prisma';
 import { generateTranslationDraft } from '../../../../app/actions/generateTranslation';
 import Stripe from 'stripe';
 
-// Initialize Stripe
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
-    apiVersion: '2024-12-18.acacia' as any, // Use latest or matching version
-});
+import { getGlobalSettings } from '../../../../app/actions/settings';
 
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+// Helper to get Stripe instance dynamically
+async function getStripeInstance() {
+    const settings = await getGlobalSettings();
+    const secretKey = settings.stripeKey || process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
+    return new Stripe(secretKey, {
+        apiVersion: '2024-12-18.acacia' as any,
+    });
+}
 
 export async function POST(request: NextRequest) {
     const payload = await request.text();
@@ -18,6 +21,7 @@ export async function POST(request: NextRequest) {
     let event;
 
     try {
+        const stripe = await getStripeInstance();
         if (!process.env.STRIPE_WEBHOOK_SECRET) {
             console.error("Missing STRIPE_WEBHOOK_SECRET");
             return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
