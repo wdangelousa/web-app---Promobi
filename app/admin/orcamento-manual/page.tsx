@@ -21,11 +21,13 @@ import {
     EyeOff,
     Eye,
     X,
-    RotateCcw
+    RotateCcw,
+    Search
 } from 'lucide-react'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
 import { PDFDocument } from 'pdf-lib'
+import { searchCustomers, CustomerSearchResult } from '../../actions/search-customers'
 
 // --- TYPES ---
 type PageWithInclusion = {
@@ -76,6 +78,12 @@ export default function OrcamentoManual() {
     const [clientEmail, setClientEmail] = useState('')
     const [clientPhone, setClientPhone] = useState('')
 
+    // --- SMART SEARCH STATE ---
+    const [searchQuery, setSearchQuery] = useState('')
+    const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([])
+    const [isSearching, setIsSearching] = useState(false)
+    const [showDropdown, setShowDropdown] = useState(false)
+
     const [loading, setLoading] = useState(false)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
@@ -101,6 +109,41 @@ export default function OrcamentoManual() {
     useEffect(() => {
         getGlobalSettings().then(setGlobalSettings)
     }, [])
+
+    // --- DEBOUNCED SEARCH EFFECT ---
+    useEffect(() => {
+        const fetchCustomers = async () => {
+            if (searchQuery.length >= 3) {
+                setIsSearching(true)
+                try {
+                    const results = await searchCustomers(searchQuery)
+                    setSearchResults(results)
+                    setShowDropdown(true)
+                } catch (err) {
+                    console.error('Error searching customers', err)
+                } finally {
+                    setIsSearching(false)
+                }
+            } else {
+                setSearchResults([])
+                setShowDropdown(false)
+            }
+        }
+
+        const timer = setTimeout(() => {
+            fetchCustomers()
+        }, 300)
+
+        return () => clearTimeout(timer)
+    }, [searchQuery])
+
+    const handleSelectCustomer = (customer: CustomerSearchResult) => {
+        setClientName(customer.fullName)
+        setClientEmail(customer.email)
+        if (customer.phone) setClientPhone(customer.phone)
+        setShowDropdown(false)
+        setSearchQuery('')
+    }
 
     const NOTARY_FEE_PER_DOC = globalSettings?.notaryFee || 25.00
     const URGENCY_MULTIPLIER: Record<string, number> = {
@@ -440,6 +483,71 @@ export default function OrcamentoManual() {
                         {/* 1. Client Info */}
                         <div className="mb-8 pb-8 border-b border-slate-100">
                             <h3 className="text-lg font-bold mb-4">1. Dados do Cliente</h3>
+
+                            {/* Smart Search Input */}
+                            <div className="mb-6 relative">
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Buscar Cliente Recorrente</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                        <Search className="h-4 w-4 text-slate-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="🔍 Buscar cliente existente (Nome ou E-mail)..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onFocus={() => { if (searchResults.length > 0) setShowDropdown(true) }}
+                                        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                                        className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f58220]/50 shadow-sm transition-all"
+                                    />
+                                    {isSearching && (
+                                        <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                            <div className="w-4 h-4 border-2 border-slate-300 border-t-[#f58220] rounded-full animate-spin"></div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Results Dropdown */}
+                                <AnimatePresence>
+                                    {showDropdown && searchResults.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+                                        >
+                                            {searchResults.map((customer) => (
+                                                <div
+                                                    key={customer.id}
+                                                    onClick={() => handleSelectCustomer(customer)}
+                                                    className="p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between transition-colors group"
+                                                >
+                                                    <div>
+                                                        <p className="text-sm font-bold text-slate-800 group-hover:text-[#f58220] transition-colors">{customer.fullName}</p>
+                                                        <p className="text-xs text-slate-500">{customer.email}</p>
+                                                    </div>
+                                                    {customer.phone && (
+                                                        <span className="text-xs text-slate-400 font-mono bg-slate-100 px-2 py-1 rounded">{customer.phone}</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                                <AnimatePresence>
+                                    {showDropdown && searchQuery.length >= 3 && searchResults.length === 0 && !isSearching && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg p-4 text-center text-sm text-slate-500"
+                                        >
+                                            Nenhum cliente encontrado.
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Nome Completo</label>
