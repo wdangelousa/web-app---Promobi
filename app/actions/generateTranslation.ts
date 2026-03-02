@@ -14,7 +14,7 @@ async function analyzeDocument(fileUrl: string): Promise<string> {
   }
 
   const analyzeUrl =
-    `${endpoint}/documentModels/prebuilt-layout:analyze?api-version=2023-10-31-preview`
+    `${endpoint}/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
 
   const submitRes = await fetch(analyzeUrl, {
     method: 'POST',
