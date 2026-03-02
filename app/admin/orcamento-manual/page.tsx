@@ -89,7 +89,8 @@ export default function OrcamentoManual() {
     const [breakdown, setBreakdown] = useState({
         basePrice: 0, urgencyFee: 0, notaryFee: 0,
         totalDocs: 0, totalCount: 0,
-        minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0
+        minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0,
+        volumeDiscountPercentage: 0, volumeDiscountAmount: 0
     })
 
     const [expandedDocs, setExpandedDocs] = useState<string[]>([])
@@ -305,12 +306,24 @@ export default function OrcamentoManual() {
 
         const baseWithUrgency = base * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
         const urgencyFee = baseWithUrgency - base
-        const total = baseWithUrgency + notary
+
+        let volumeDiscountPercentage = 0;
+        let volumeDiscountAmount = 0;
+        if (serviceType === 'translation') {
+            if (totalPages >= 51) volumeDiscountPercentage = 15;
+            else if (totalPages >= 31) volumeDiscountPercentage = 10;
+            else if (totalPages >= 16) volumeDiscountPercentage = 5;
+
+            volumeDiscountAmount = baseWithUrgency * (volumeDiscountPercentage / 100);
+        }
+
+        const total = baseWithUrgency - volumeDiscountAmount + notary
 
         setBreakdown({
             basePrice: base, urgencyFee, notaryFee: notary,
             totalDocs: sel.length, totalCount: totalPages,
-            minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0
+            minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0,
+            volumeDiscountPercentage, volumeDiscountAmount
         })
         setTotalPrice(total)
     }, [documents, urgency, serviceType, globalSettings])
@@ -736,6 +749,9 @@ export default function OrcamentoManual() {
                                             <div>
                                                 <span className="font-bold">Total Calculado</span>
                                                 <p className="text-xs text-slate-400 mt-0.5">{breakdown.totalDocs} docs · {breakdown.totalCount} págs incluídas</p>
+                                                {breakdown.volumeDiscountAmount > 0 && (
+                                                    <p className="text-sm font-bold text-green-500 mt-1">Desconto de Volume ({breakdown.volumeDiscountPercentage}%): -${breakdown.volumeDiscountAmount.toFixed(2)}</p>
+                                                )}
                                             </div>
                                             <span className="text-2xl font-black text-[#f58220]">${totalPrice.toFixed(2)}</span>
                                         </div>

@@ -346,6 +346,7 @@ export default function ConciergePage() {
         totalDocs: 0, totalCount: 0,
         minOrderApplied: false, totalMinimumAdjustment: 0,
         totalDiscountApplied: 0, totalSavings: 0, excludedPages: 0,
+        volumeDiscountPercentage: 0, volumeDiscountAmount: 0
     })
 
     useEffect(() => {
@@ -373,7 +374,18 @@ export default function ConciergePage() {
         }
 
         const baseWithUrgency = base * (URGENCY_MUL[urgency] ?? 1.0)
-        let total = baseWithUrgency + notary
+
+        let volumeDiscountPercentage = 0;
+        let volumeDiscountAmount = 0;
+        if (serviceType === 'translation') {
+            if (totalPages >= 51) volumeDiscountPercentage = 15;
+            else if (totalPages >= 31) volumeDiscountPercentage = 10;
+            else if (totalPages >= 16) volumeDiscountPercentage = 5;
+
+            volumeDiscountAmount = baseWithUrgency * (volumeDiscountPercentage / 100);
+        }
+
+        let total = baseWithUrgency - volumeDiscountAmount + notary
         let disc = 0
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') { disc = total * 0.05; total *= 0.95 }
 
@@ -382,6 +394,7 @@ export default function ConciergePage() {
             totalDocs: sel.length, totalCount: totalPages,
             minOrderApplied: false, totalMinimumAdjustment: 0,
             totalDiscountApplied: disc, totalSavings: original - base, excludedPages: excluded,
+            volumeDiscountPercentage, volumeDiscountAmount
         })
         setTotalPrice(total)
     }, [documents, urgency, paymentPlan, serviceType, globalSettings])
@@ -762,6 +775,9 @@ export default function ConciergePage() {
                             </div>
                             {breakdown.notaryFee > 0 && (
                                 <div className="flex justify-between text-sm text-green-400 font-medium"><span>Notarização:</span><span>+${breakdown.notaryFee.toFixed(2)}</span></div>
+                            )}
+                            {breakdown.volumeDiscountAmount > 0 && (
+                                <div className="flex justify-between text-sm text-emerald-400 font-bold"><span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%):</span><span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span></div>
                             )}
                             <div className="h-px bg-white/10 my-2" />
                             {deepPending > 0 && !fastProgress && (

@@ -10,14 +10,14 @@ export const dynamic = 'force-dynamic';
 
 // Status chips with labels, colors and priority order for Isabele's workflow
 const STATUS_CHIPS = [
-    { value: 'ALL',                      label: 'Todos',              color: 'bg-gray-100 text-gray-700 border-gray-200' },
+    { value: 'ALL', label: 'Todos', color: 'bg-gray-100 text-gray-700 border-gray-200' },
     { value: 'MANUAL_TRANSLATION_NEEDED', label: '⚠️ Tradução Manual', color: 'bg-orange-100 text-orange-800 border-orange-300' },
-    { value: 'READY_FOR_REVIEW',          label: '✅ Pronto p/ Revisão', color: 'bg-teal-100 text-teal-800 border-teal-300' },
-    { value: 'TRANSLATING',               label: 'Em Tradução (IA)',   color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
-    { value: 'PAID',                      label: 'Pago',               color: 'bg-green-100 text-green-800 border-green-200' },
-    { value: 'PENDING',                   label: 'Pendente',           color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    { value: 'NOTARIZING',                label: 'Notarizando',        color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    { value: 'COMPLETED',                 label: 'Concluído',          color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    { value: 'READY_FOR_REVIEW', label: '✅ Pronto p/ Revisão', color: 'bg-teal-100 text-teal-800 border-teal-300' },
+    { value: 'TRANSLATING', label: 'Em Tradução (IA)', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+    { value: 'PAID', label: 'Pago', color: 'bg-green-100 text-green-800 border-green-200' },
+    { value: 'PENDING', label: 'Pendente', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+    { value: 'NOTARIZING', label: 'Notarizando', color: 'bg-purple-100 text-purple-800 border-purple-200' },
+    { value: 'COMPLETED', label: 'Concluído', color: 'bg-blue-100 text-blue-800 border-blue-200' },
 ];
 
 const getStatusColor = (status: string) => {
@@ -53,6 +53,8 @@ export default async function AdminOrdersPage({
     searchParams: Promise<{ status?: string }>
 }) {
     const currentUser = await getCurrentUser();
+
+    // Safety check for user role
     if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
     if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
 
@@ -76,19 +78,31 @@ export default async function AdminOrdersPage({
             take: 200,
         });
     } catch (err) {
-        console.error('[AdminOrdersPage] Critical error fetching orders:', err);
-        throw err;
+        console.error('[AdminOrdersPage] Database error fetching orders:', err);
+        // Do not throw, return empty list
+        rawOrders = [];
     }
 
-    // Count per status for chip badges (only when showing ALL, to avoid extra query)
+    // Count per status for chip badges
     let countsByStatus: Record<string, number> = {};
-    if (activeFilter === 'ALL') {
-        const grouped = await prisma.order.groupBy({ by: ['status'], _count: { id: true } });
-        for (const g of grouped) countsByStatus[g.status] = g._count.id;
+    try {
+        if (activeFilter === 'ALL') {
+            const grouped = await prisma.order.groupBy({ by: ['status'], _count: { id: true } });
+            for (const g of grouped) countsByStatus[g.status] = g._count.id;
+        }
+    } catch (err) {
+        console.error('[AdminOrdersPage] Error fetching status counts:', err);
     }
 
-    const orders = rawOrders
-        .map(o => { try { return normalizeOrder(o); } catch { return null; } })
+    const orders = (rawOrders || [])
+        .map(o => {
+            try {
+                return normalizeOrder(o);
+            } catch (e) {
+                console.error(`Failed to normalize order #${o?.id}:`, e);
+                return null;
+            }
+        })
         .filter(Boolean);
 
     return (
@@ -113,7 +127,7 @@ export default async function AdminOrdersPage({
                 </Link>
             </div>
 
-            {/* Quick-filter chips — Server-side navigation, zero JS required */}
+            {/* Quick-filter chips — Server-side navigation */}
             <div className="flex flex-wrap gap-2">
                 {STATUS_CHIPS.map(chip => {
                     const isActive = activeFilter === chip.value;
@@ -125,11 +139,10 @@ export default async function AdminOrdersPage({
                         <Link
                             key={chip.value}
                             href={chip.value === 'ALL' ? '/admin/orders' : `/admin/orders?status=${chip.value}`}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
-                                isActive
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
                                     ? `${chip.color} ring-2 ring-offset-1 ring-current shadow-sm`
                                     : `${chip.color} opacity-60 hover:opacity-100`
-                            }`}
+                                }`}
                         >
                             {chip.label}
                             {count !== undefined && (
@@ -158,14 +171,14 @@ export default async function AdminOrdersPage({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {orders.length === 0 && (
+                            {(orders || []).length === 0 && (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-12 text-center text-gray-400 text-sm">
                                         Nenhum pedido encontrado para este filtro.
                                     </td>
                                 </tr>
                             )}
-                            {orders.map((order: any) => (
+                            {(orders || []).map((order: any) => (
                                 <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900">#{order.id}</td>
                                     <td className="px-6 py-4">
@@ -185,7 +198,7 @@ export default async function AdminOrdersPage({
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusColor(order.status)}`}>
-                                            {order.status?.replace(/_/g, ' ')}
+                                            {order.status?.replace(/_/g, ' ') || 'STATUS'}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-gray-500">

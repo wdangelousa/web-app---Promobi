@@ -8,35 +8,35 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
-  orange:      '#E8751A',
+  orange: '#E8751A',
   orangeLight: '#FEF0E6',
-  dark:        '#0F1117',
-  slate:       '#374151',
-  gray:        '#6B7280',
-  lightGray:   '#9CA3AF',
-  border:      '#E5E7EB',
-  bgLight:     '#F9FAFB',
-  bgMid:       '#F3F4F6',
-  white:       '#FFFFFF',
-  green:       '#059669',
-  greenLight:  '#D1FAE5',
-  greenBg:     '#F0FDF4',
+  dark: '#0F1117',
+  slate: '#374151',
+  gray: '#6B7280',
+  lightGray: '#9CA3AF',
+  border: '#E5E7EB',
+  bgLight: '#F9FAFB',
+  bgMid: '#F3F4F6',
+  white: '#FFFFFF',
+  green: '#059669',
+  greenLight: '#D1FAE5',
+  greenBg: '#F0FDF4',
   greenBorder: '#6EE7B7',
-  amber:       '#92400E',
-  amberBg:     '#FEF3C7',
+  amber: '#92400E',
+  amberBg: '#FEF3C7',
   amberBorder: '#FDE68A',
-  redLight:    '#FEE2E2',
-  blueLight:   '#DBEAFE',
-  red:         '#B91C1C',
-  blue:        '#1D4ED8',
+  redLight: '#FEE2E2',
+  blueLight: '#DBEAFE',
+  red: '#B91C1C',
+  blue: '#1D4ED8',
 };
 
 // ─── Density config ───────────────────────────────────────────────────────────
 const DENSITY: Record<string, { label: string; color: string; bg: string; pct: string }> = {
-  high:    { label: 'ALTA',      color: '#B91C1C', bg: '#FEE2E2', pct: '100%' },
-  medium:  { label: 'MEDIA',     color: '#92400E', bg: '#FEF3C7', pct: '50%'  },
-  low:     { label: 'BAIXA',     color: '#065F46', bg: '#D1FAE5', pct: '25%'  },
-  blank:   { label: 'EM BRANCO', color: '#6B7280', bg: '#F3F4F6', pct: 'Free' },
+  high: { label: 'ALTA', color: '#B91C1C', bg: '#FEE2E2', pct: '100%' },
+  medium: { label: 'MEDIA', color: '#92400E', bg: '#FEF3C7', pct: '50%' },
+  low: { label: 'BAIXA', color: '#065F46', bg: '#D1FAE5', pct: '25%' },
+  blank: { label: 'EM BRANCO', color: '#6B7280', bg: '#F3F4F6', pct: 'Free' },
   scanned: { label: 'ESCANEADA', color: '#1D4ED8', bg: '#DBEAFE', pct: '100%' },
 };
 const getDensity = (d: string) => DENSITY[d] || DENSITY.high;
@@ -90,157 +90,160 @@ const S = StyleSheet.create({
   page: { fontFamily: 'Helvetica', backgroundColor: C.white, color: C.dark, fontSize: 10, paddingBottom: 56 },
 
   // Page 1 header
-  header:        { backgroundColor: C.dark, paddingHorizontal: 36, paddingTop: 24, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerAccent:  { height: 3, backgroundColor: C.orange },
-  logoWrap:      { width: 148, height: 42 },
-  logo:          { width: 148, height: 42, objectFit: 'contain', objectPositionX: 0 },
-  logoText:      { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.orange },
+  header: { backgroundColor: C.dark, paddingHorizontal: 36, paddingTop: 24, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerAccent: { height: 3, backgroundColor: C.orange },
+  logoWrap: { width: 148, height: 42 },
+  logo: { width: 148, height: 42, objectFit: 'contain', objectPositionX: 0 },
+  logoText: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.orange },
   headerTagline: { fontSize: 7, color: C.lightGray, marginTop: 5, letterSpacing: 0.5 },
-  headerRight:   { alignItems: 'flex-end' },
-  headerBadge:   { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, letterSpacing: 2, marginBottom: 2 },
-  headerId:      { fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.white },
-  headerDate:    { fontFamily: 'Courier', fontSize: 8, color: C.lightGray, marginTop: 3 },
+  headerRight: { alignItems: 'flex-end' },
+  headerBadge: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, letterSpacing: 2, marginBottom: 2 },
+  headerId: { fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.white },
+  headerDate: { fontFamily: 'Courier', fontSize: 8, color: C.lightGray, marginTop: 3 },
 
   // Hero — heroLeft: flex:1 is the key fix that prevents name from being clipped
-  hero:        { backgroundColor: C.bgLight, paddingHorizontal: 36, paddingTop: 20, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: C.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  heroLeft:    { flex: 1, marginRight: 18 },
-  heroLabel:   { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.gray, letterSpacing: 2.5, marginBottom: 7 },
+  hero: { backgroundColor: C.bgLight, paddingHorizontal: 36, paddingTop: 20, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: C.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroLeft: { flex: 1, marginRight: 18 },
+  heroLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.gray, letterSpacing: 2.5, marginBottom: 7 },
   heroNameRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  heroAccent:  { width: 4, height: 24, backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0, marginTop: 2 },
-  heroName:    { fontFamily: 'Helvetica-Bold', fontSize: 20, color: C.dark, flex: 1, lineHeight: 1.3 },
-  heroEmail:   { fontSize: 8, color: C.gray, marginTop: 5, marginLeft: 14 },
+  heroAccent: { width: 4, height: 24, backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0, marginTop: 2 },
+  heroName: { fontFamily: 'Helvetica-Bold', fontSize: 20, color: C.dark, flex: 1, lineHeight: 1.3 },
+  heroEmail: { fontSize: 8, color: C.gray, marginTop: 5, marginLeft: 14 },
 
   // 2 × 2 pill grid — fixed 260pt wide
-  heroGrid:   { width: 260 },
-  pillRow:    { flexDirection: 'row' },
+  heroGrid: { width: 260 },
+  pillRow: { flexDirection: 'row' },
   pillRowGap: { marginTop: 8 },
-  pill:       { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: C.white },
-  pillL:      { marginLeft: 8 },
-  pillGreen:  { borderColor: C.greenBorder, backgroundColor: C.greenBg },
+  pill: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: C.white },
+  pillL: { marginLeft: 8 },
+  pillGreen: { borderColor: C.greenBorder, backgroundColor: C.greenBg },
   pillOrange: { borderColor: C.orange, backgroundColor: C.orangeLight },
-  pillVal:    { fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.dark },
-  pillValGr:  { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.green },
-  pillValOr:  { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.orange },
-  pillLbl:    { fontSize: 7, color: C.gray, marginTop: 2 },
+  pillVal: { fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.dark },
+  pillValGr: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.green },
+  pillValOr: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.orange },
+  pillLbl: { fontSize: 7, color: C.gray, marginTop: 2 },
 
   // Section label
-  secRow:   { paddingHorizontal: 28, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  secDot:   { width: 6, height: 6, backgroundColor: C.orange, borderRadius: 3, marginRight: 8 },
+  secRow: { paddingHorizontal: 28, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
+  secDot: { width: 6, height: 6, backgroundColor: C.orange, borderRadius: 3, marginRight: 8 },
   secTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.dark, letterSpacing: 1.5 },
-  secLine:  { flex: 1, height: 1, backgroundColor: C.border, marginLeft: 10 },
+  secLine: { flex: 1, height: 1, backgroundColor: C.border, marginLeft: 10 },
 
   // Document card
-  card:      { marginHorizontal: 20, marginBottom: 8, borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden' },
-  cardHead:  { backgroundColor: C.bgMid, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.border },
-  cardLeft:  { flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 12 },
-  tagBadge:  { fontFamily: 'Helvetica-Bold', fontSize: 7, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginRight: 8, marginTop: 1, flexShrink: 0 },
+  card: { marginHorizontal: 20, marginBottom: 8, borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden' },
+  cardHead: { backgroundColor: C.bgMid, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.border },
+  cardLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 12 },
+  tagBadge: { fontFamily: 'Helvetica-Bold', fontSize: 7, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginRight: 8, marginTop: 1, flexShrink: 0 },
   cardTitle: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.dark, flex: 1, lineHeight: 1.4 },
   cardRight: { alignItems: 'flex-end', flexShrink: 0 },
-  pgBadge:   { flexDirection: 'row', alignItems: 'baseline', backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, marginBottom: 4 },
-  pgNum:     { fontFamily: 'Helvetica-Bold', fontSize: 12, color: C.dark },
-  pgLbl:     { fontSize: 7, color: C.gray, marginLeft: 3 },
-  subtotal:  { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.dark },
+  pgBadge: { flexDirection: 'row', alignItems: 'baseline', backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, marginBottom: 4 },
+  pgNum: { fontFamily: 'Helvetica-Bold', fontSize: 12, color: C.dark },
+  pgLbl: { fontSize: 7, color: C.gray, marginLeft: 3 },
+  subtotal: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.dark },
 
   // Excluded pages — compact amber strip
-  exclRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#FFFBF5', borderBottomWidth: 1, borderBottomColor: C.amberBorder },
-  exclBar:  { width: 3, alignSelf: 'stretch', backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0 },
+  exclRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#FFFBF5', borderBottomWidth: 1, borderBottomColor: C.amberBorder },
+  exclBar: { width: 3, alignSelf: 'stretch', backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0 },
   exclBody: { flex: 1 },
   exclHead: { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: C.amber },
-  exclPgs:  { fontSize: 7, color: C.gray, marginTop: 1.5 },
+  exclPgs: { fontSize: 7, color: C.gray, marginTop: 1.5 },
   exclSave: { fontFamily: 'Helvetica-Bold', fontSize: 10, color: C.green, marginLeft: 10, flexShrink: 0 },
 
   // Density rows (included pages only)
-  densBody:    { paddingHorizontal: 14, paddingVertical: 7 },
-  densRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  densBody: { paddingHorizontal: 14, paddingVertical: 7 },
+  densRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   densRowLast: { marginBottom: 0 },
-  densRange:   { fontFamily: 'Courier', fontSize: 8, color: C.gray, width: 80 },
-  densArrow:   { fontSize: 7, color: C.lightGray, marginHorizontal: 5 },
-  densBadge:   { fontFamily: 'Helvetica-Bold', fontSize: 6.5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, marginRight: 8 },
-  densPct:     { fontFamily: 'Courier', fontSize: 8, color: C.gray, flex: 1 },
-  densPrice:   { fontFamily: 'Helvetica-Bold', fontSize: 8.5, color: C.slate },
+  densRange: { fontFamily: 'Courier', fontSize: 8, color: C.gray, width: 80 },
+  densArrow: { fontSize: 7, color: C.lightGray, marginHorizontal: 5 },
+  densBadge: { fontFamily: 'Helvetica-Bold', fontSize: 6.5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, marginRight: 8 },
+  densPct: { fontFamily: 'Courier', fontSize: 8, color: C.gray, flex: 1 },
+  densPrice: { fontFamily: 'Helvetica-Bold', fontSize: 8.5, color: C.slate },
 
   // Savings box (last page, after all cards)
-  savingsBox:   { marginHorizontal: 20, marginTop: 12, borderWidth: 1, borderColor: C.greenBorder, borderRadius: 8, overflow: 'hidden', backgroundColor: C.greenBg },
-  savingsHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.greenBorder },
-  savingsLeft:  { flex: 1, marginRight: 16 },
+  savingsBox: { marginHorizontal: 20, marginTop: 12, borderWidth: 1, borderColor: C.greenBorder, borderRadius: 8, overflow: 'hidden', backgroundColor: C.greenBg },
+  savingsHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.greenBorder },
+  savingsLeft: { flex: 1, marginRight: 16 },
   savingsTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.green, letterSpacing: 0.8 },
-  savingsSub:   { fontSize: 7, color: '#065F46', marginTop: 2 },
-  savingsAmt:   { fontFamily: 'Helvetica-Bold', fontSize: 22, color: C.green },
+  savingsSub: { fontSize: 7, color: '#065F46', marginTop: 2 },
+  savingsAmt: { fontFamily: 'Helvetica-Bold', fontSize: 22, color: C.green },
   savingsStats: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.greenBorder },
-  statItem:     { flex: 1, alignItems: 'center' },
-  statDiv:      { width: 1, backgroundColor: C.greenBorder },
-  statNum:      { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.dark },
-  statNumGr:    { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.green },
-  statLbl:      { fontSize: 7, color: C.gray, marginTop: 2, textAlign: 'center' },
-  savingsDesc:  { paddingHorizontal: 16, paddingVertical: 9, fontSize: 7.5, color: '#065F46', lineHeight: 1.6 },
+  statItem: { flex: 1, alignItems: 'center' },
+  statDiv: { width: 1, backgroundColor: C.greenBorder },
+  statNum: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.dark },
+  statNumGr: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.green },
+  statLbl: { fontSize: 7, color: C.gray, marginTop: 2, textAlign: 'center' },
+  savingsDesc: { paddingHorizontal: 16, paddingVertical: 9, fontSize: 7.5, color: '#065F46', lineHeight: 1.6 },
 
   // Methodology note — page 1 only, not on single-page proposals
-  methBox:   { marginHorizontal: 20, marginTop: 8, backgroundColor: C.bgLight, borderLeftWidth: 3, borderLeftColor: C.orange, borderRadius: 4, paddingHorizontal: 12, paddingVertical: 8 },
+  methBox: { marginHorizontal: 20, marginTop: 8, backgroundColor: C.bgLight, borderLeftWidth: 3, borderLeftColor: C.orange, borderRadius: 4, paddingHorizontal: 12, paddingVertical: 8 },
   methTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, letterSpacing: 0.5, marginBottom: 3 },
-  methText:  { fontSize: 7.5, color: C.slate, lineHeight: 1.6 },
+  methText: { fontSize: 7.5, color: C.slate, lineHeight: 1.6 },
 
   // Total investment
-  totalBox:    { marginHorizontal: 20, marginTop: 12, backgroundColor: C.dark, borderRadius: 10, paddingHorizontal: 26, paddingVertical: 18 },
+  totalBox: { marginHorizontal: 20, marginTop: 12, backgroundColor: C.dark, borderRadius: 10, paddingHorizontal: 26, paddingVertical: 18 },
   totalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  totalLabel:  { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.lightGray, letterSpacing: 2, marginBottom: 4 },
-  totalName:   { fontFamily: 'Helvetica-Bold', fontSize: 15, color: C.white },
-  totalMeta:   { fontSize: 8, color: C.lightGray, marginTop: 3 },
-  totalRight:  { alignItems: 'flex-end' },
-  totalCurr:   { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.orange, marginBottom: 2 },
-  totalVal:    { fontFamily: 'Helvetica-Bold', fontSize: 34, color: C.orange, lineHeight: 1 },
-  totalDiv:    { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 12 },
-  payRow:      { flexDirection: 'row' },
-  payCard:     { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 7, paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginRight: 8 },
+  totalLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.lightGray, letterSpacing: 2, marginBottom: 4 },
+  totalName: { fontFamily: 'Helvetica-Bold', fontSize: 15, color: C.white },
+  totalMeta: { fontSize: 8, color: C.lightGray, marginTop: 3 },
+  totalRight: { alignItems: 'flex-end' },
+  totalCurr: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.orange, marginBottom: 2 },
+  totalVal: { fontFamily: 'Helvetica-Bold', fontSize: 34, color: C.orange, lineHeight: 1 },
+  totalDiscountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(5, 150, 105, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(5, 150, 105, 0.3)' },
+  totalDiscountLbl: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.greenBorder },
+  totalDiscountVal: { fontFamily: 'Helvetica-Bold', fontSize: 11, color: C.greenBorder },
+  totalDiv: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 12 },
+  payRow: { flexDirection: 'row' },
+  payCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 7, paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginRight: 8 },
   payCardLast: { marginRight: 0 },
-  payTitle:    { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.white, marginBottom: 3 },
-  payText:     { fontSize: 7, color: C.lightGray },
+  payTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.white, marginBottom: 3 },
+  payText: { fontSize: 7, color: C.lightGray },
 
   // Footer — absolute, every page
-  footer:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.bgMid, borderTopWidth: 1, borderTopColor: C.border, paddingHorizontal: 36, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  footerAddr:    { fontSize: 7, color: C.slate },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.bgMid, borderTopWidth: 1, borderTopColor: C.border, paddingHorizontal: 36, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  footerAddr: { fontSize: 7, color: C.slate },
   footerContact: { fontSize: 7, color: C.gray, marginTop: 2 },
-  footerRight:   { alignItems: 'flex-end' },
-  footerUrl:     { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.orange },
-  footerPage:    { fontSize: 7, color: C.lightGray, marginTop: 2 },
+  footerRight: { alignItems: 'flex-end' },
+  footerUrl: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.orange },
+  footerPage: { fontSize: 7, color: C.lightGray, marginTop: 2 },
 
   // Continuation header (pages 2+)
-  contHead:   { backgroundColor: C.dark, paddingHorizontal: 36, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  contLeft:   { flexDirection: 'row', alignItems: 'center' },
-  contDot:    { width: 5, height: 5, backgroundColor: C.orange, borderRadius: 3, marginRight: 7 },
-  contTitle:  { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.white },
-  contMeta:   { fontSize: 8, color: C.lightGray },
+  contHead: { backgroundColor: C.dark, paddingHorizontal: 36, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  contLeft: { flexDirection: 'row', alignItems: 'center' },
+  contDot: { width: 5, height: 5, backgroundColor: C.orange, borderRadius: 3, marginRight: 7 },
+  contTitle: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.white },
+  contMeta: { fontSize: 8, color: C.lightGray },
   contAccent: { height: 2, backgroundColor: C.orange },
 });
 
 // ─── DocCard component ────────────────────────────────────────────────────────
 const DocCard = ({ doc, idx, base }: { doc: any; idx: number; base: number }) => {
-  const raw    = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
-  const name   = displayName(raw);
+  const raw = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
+  const name = displayName(raw);
   const isLink = !!doc.externalLink;
-  const isPDF  = /\.pdf$/i.test(raw);
+  const isPDF = /\.pdf$/i.test(raw);
 
   const tagColor = isLink
     ? { color: C.blue, backgroundColor: C.blueLight }
     : isPDF
-    ? { color: C.red,  backgroundColor: C.redLight  }
-    : { color: C.blue, backgroundColor: C.blueLight };
+      ? { color: C.red, backgroundColor: C.redLight }
+      : { color: C.blue, backgroundColor: C.blueLight };
   const tagLabel = isLink ? 'LINK' : isPDF ? 'PDF' : 'DOC';
 
   // Split pages
-  const allPages    = doc.analysis?.pages || [];
+  const allPages = doc.analysis?.pages || [];
   const includedPgs = allPages.length > 0
     ? allPages.filter((p: any) => p.included !== false)
     : [];
   const excludedPgs = allPages.filter((p: any) => p.included === false);
-  const incCount    = includedPgs.length || doc.count || 1;
-  const excCount    = excludedPgs.length;
-  const excSavings  = excludedPgs.reduce((s: number, p: any) => s + (p.price || 0), 0);
+  const incCount = includedPgs.length || doc.count || 1;
+  const excCount = excludedPgs.length;
+  const excSavings = excludedPgs.reduce((s: number, p: any) => s + (p.price || 0), 0);
 
   const subtotal = (doc.analysis?.totalPrice ?? incCount * base) + (doc.notarized ? 25 : 0);
 
   // Density ranges from included pages only
   const srcPages = includedPgs.length > 0 ? includedPgs : allPages;
-  const ranges   = buildRanges(srcPages);
+  const ranges = buildRanges(srcPages);
 
   const priceHint = (pct: string) => {
     if (pct === 'Free') return 'Gratis';
@@ -313,14 +316,14 @@ interface ProposalPDFProps {
 }
 
 export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFProps) => {
-  const meta  = safeMeta(order?.metadata);
-  const docs  = meta?.documents ?? [];
-  const base  = globalSettings?.basePrice || 9;
+  const meta = safeMeta(order?.metadata);
+  const docs = meta?.documents ?? [];
+  const base = globalSettings?.basePrice || 9;
 
-  const totalDocs  = docs.length;
-  const totalAmt   = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
+  const totalDocs = docs.length;
+  const totalAmt = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
   const clientName = order?.user?.fullName || order?.clientName || 'Cliente Promobi';
-  const clientEmail= order?.user?.email    || order?.clientEmail || '';
+  const clientEmail = order?.user?.email || order?.clientEmail || '';
 
   // Total included pages
   const totalPages = docs.reduce((s: number, d: any) => {
@@ -335,10 +338,10 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
     s + ((d.analysis?.pages?.length) || d.count || 0), 0);
   const totalExcluded = docs.reduce((s: number, d: any) =>
     s + (d.analysis?.pages || []).filter((p: any) => p.included === false).length, 0);
-  const totalSavings  = docs.reduce((s: number, d: any) =>
+  const totalSavings = docs.reduce((s: number, d: any) =>
     s + (d.analysis?.pages || [])
-        .filter((p: any) => p.included === false)
-        .reduce((acc: number, p: any) => acc + (p.price || 0), 0), 0);
+      .filter((p: any) => p.included === false)
+      .reduce((acc: number, p: any) => acc + (p.price || 0), 0), 0);
   const hasSavings = totalSavings > 0.005;
 
   // Pagination — FIRST=3 (page 1 has tall hero), REST=5
@@ -356,12 +359,12 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
   return (
     <Document title={`Proposta-Promobi-${order?.id}`} author="Promobi">
       {chunks.map((chunk, pi) => {
-        const isFirst   = pi === 0;
-        const isLast    = pi === totalPdfPages - 1;
-        const pageNum   = pi + 1;
+        const isFirst = pi === 0;
+        const isLast = pi === totalPdfPages - 1;
+        const pageNum = pi + 1;
         // Methodology: page 1 only, skip if this is also the last page
         // (avoids overcrowding single-page proposals with few docs)
-        const showMeth  = isFirst && !isLast;
+        const showMeth = isFirst && !isLast;
 
         return (
           <Page key={pi} size="A4" style={S.page}>
@@ -451,9 +454,9 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
             {chunk.length === 0
               ? <View style={{ marginHorizontal: 20, padding: 20 }}><Text style={{ color: C.gray }}>Nenhum documento selecionado.</Text></View>
               : chunk.map((doc: any, di: number) => {
-                  const gi = isFirst ? di : FIRST + (pi - 1) * REST + di;
-                  return <DocCard key={gi} doc={doc} idx={gi} base={base} />;
-                })
+                const gi = isFirst ? di : FIRST + (pi - 1) * REST + di;
+                return <DocCard key={gi} doc={doc} idx={gi} base={base} />;
+              })
             }
 
             {/* ── METHODOLOGY — page 1 only, not on single-page proposals ── */}
@@ -524,12 +527,18 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalVal}>${totalAmt.toFixed(2)}</Text>
                   </View>
                 </View>
+                {meta?.breakdown?.volumeDiscountAmount > 0 && (
+                  <View style={S.totalDiscountRow}>
+                    <Text style={S.totalDiscountLbl}>DESCONTO DE VOLUME ({meta.breakdown.volumeDiscountPercentage}%)</Text>
+                    <Text style={S.totalDiscountVal}>-${meta.breakdown.volumeDiscountAmount.toFixed(2)}</Text>
+                  </View>
+                )}
                 <View style={S.totalDiv} />
                 <View style={S.payRow}>
                   {[
-                    { t: 'ZELLE',        s: 'Transferencia instantanea nos EUA' },
-                    { t: 'PIX / BOLETO', s: 'Pagamento via Brasil'              },
-                    { t: 'CARTAO',       s: 'Credito ou debito via Stripe'      },
+                    { t: 'ZELLE', s: 'Transferencia instantanea nos EUA' },
+                    { t: 'PIX / BOLETO', s: 'Pagamento via Brasil' },
+                    { t: 'CARTAO', s: 'Credito ou debito via Stripe' },
                   ].map((p, i, arr) => (
                     <View key={i} style={[S.payCard, i === arr.length - 1 ? S.payCardLast : {}]}>
                       <Text style={S.payTitle}>{p.t}</Text>

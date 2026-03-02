@@ -360,6 +360,12 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                 <span>-${breakdown.totalDiscountApplied.toFixed(2)}</span>
                             </div>
                         )}
+                        {breakdown.volumeDiscountAmount > 0 && (
+                            <div className="flex justify-between text-green-400 font-bold">
+                                <span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%)</span>
+                                <span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex justify-between items-end mb-6 relative z-10">

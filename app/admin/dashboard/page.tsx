@@ -21,11 +21,15 @@ export const dynamic = 'force-dynamic'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(val: number) {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 0,
-    }).format(val)
+    try {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            maximumFractionDigits: 0,
+        }).format(val || 0)
+    } catch {
+        return '$0'
+    }
 }
 
 function getGreeting(): string {
@@ -41,42 +45,57 @@ export default async function DashboardPage() {
     const user = await getCurrentUser()
     if (!user) redirect('/login')
 
-    // ── Queries ──────────────────────────────────────────────────────────────
+    // ── Queries with Safety ──────────────────────────────────────────────────
     const monthStart = new Date()
     monthStart.setDate(1)
     monthStart.setHours(0, 0, 0, 0)
 
-    const [activeOrders, pendingOrders, monthRevenue, recentOrders] = await Promise.all([
-        prisma.order.count({
-            where: {
-                status: {
-                    in: ['TRANSLATING', 'READY_FOR_REVIEW', 'NOTARIZING', 'MANUAL_TRANSLATION_NEEDED'],
-                },
-            },
-        }),
-        prisma.order.count({
-            where: {
-                status: { in: ['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'] },
-            },
-        }),
-        prisma.order.aggregate({
-            _sum: { totalAmount: true },
-            where: {
-                status: {
-                    notIn: ['PENDING', 'PENDING_PAYMENT', 'CANCELLED', 'AWAITING_VERIFICATION'],
-                },
-                createdAt: { gte: monthStart },
-            },
-        }),
-        prisma.order.findMany({
-            take: 5,
-            orderBy: { createdAt: 'desc' },
-            include: { user: { select: { fullName: true } } },
-            where: { status: { not: 'CANCELLED' } },
-        }),
-    ])
+    let activeOrders = 0
+    let pendingOrders = 0
+    let monthRevenue: any = { _sum: { totalAmount: 0 } }
+    let recentOrders: any[] = []
 
-    const revenue = monthRevenue._sum.totalAmount ?? 0
+    try {
+        const results = await Promise.all([
+            prisma.order.count({
+                where: {
+                    status: {
+                        in: ['TRANSLATING', 'READY_FOR_REVIEW', 'NOTARIZING', 'MANUAL_TRANSLATION_NEEDED'],
+                    },
+                },
+            }),
+            prisma.order.count({
+                where: {
+                    status: { in: ['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'] },
+                },
+            }),
+            prisma.order.aggregate({
+                _sum: { totalAmount: true },
+                where: {
+                    status: {
+                        notIn: ['PENDING', 'PENDING_PAYMENT', 'CANCELLED', 'AWAITING_VERIFICATION'],
+                    },
+                    createdAt: { gte: monthStart },
+                },
+            }),
+            prisma.order.findMany({
+                take: 5,
+                orderBy: { createdAt: 'desc' },
+                include: { user: { select: { fullName: true } } },
+                where: { status: { not: 'CANCELLED' } },
+            }),
+        ])
+
+        activeOrders = results[0] || 0
+        pendingOrders = results[1] || 0
+        monthRevenue = results[2] || { _sum: { totalAmount: 0 } }
+        recentOrders = results[3] || []
+    } catch (error) {
+        console.error("[DashboardPage] Database query failure:", error)
+        // Fallbacks are already initialized above
+    }
+
+    const revenue = monthRevenue?._sum?.totalAmount ?? 0
 
     const stats = [
         {
@@ -112,14 +131,14 @@ export default async function DashboardPage() {
     ]
 
     const STATUS_MAP: Record<string, { label: string; cls: string }> = {
-        PENDING:               { label: 'Pendente',          cls: 'bg-yellow-100 text-yellow-700' },
-        PENDING_PAYMENT:       { label: 'Ag. Pagamento',     cls: 'bg-yellow-100 text-yellow-700' },
-        AWAITING_VERIFICATION: { label: 'Ag. Verificação',   cls: 'bg-blue-100 text-blue-700' },
-        TRANSLATING:           { label: 'Em Tradução',       cls: 'bg-indigo-100 text-indigo-700' },
-        READY_FOR_REVIEW:      { label: 'Em Revisão',        cls: 'bg-teal-100 text-teal-700' },
-        NOTARIZING:            { label: 'Notarizando',       cls: 'bg-purple-100 text-purple-700' },
-        MANUAL_TRANSLATION_NEEDED: { label: 'Manual',        cls: 'bg-orange-100 text-orange-700' },
-        COMPLETED:             { label: 'Concluído',         cls: 'bg-green-100 text-green-700' },
+        PENDING: { label: 'Pendente', cls: 'bg-yellow-100 text-yellow-700' },
+        PENDING_PAYMENT: { label: 'Ag. Pagamento', cls: 'bg-yellow-100 text-yellow-700' },
+        AWAITING_VERIFICATION: { label: 'Ag. Verificação', cls: 'bg-blue-100 text-blue-700' },
+        TRANSLATING: { label: 'Em Tradução', cls: 'bg-indigo-100 text-indigo-700' },
+        READY_FOR_REVIEW: { label: 'Em Revisão', cls: 'bg-teal-100 text-teal-700' },
+        NOTARIZING: { label: 'Notarizando', cls: 'bg-purple-100 text-purple-700' },
+        MANUAL_TRANSLATION_NEEDED: { label: 'Manual', cls: 'bg-orange-100 text-orange-700' },
+        COMPLETED: { label: 'Concluído', cls: 'bg-green-100 text-green-700' },
     }
 
     return (
@@ -199,14 +218,14 @@ export default async function DashboardPage() {
                         </div>
 
                         <div className="space-y-2">
-                            {recentOrders.length === 0 && (
+                            {(recentOrders || []).length === 0 && (
                                 <p className="text-sm text-slate-400 text-center py-8">
-                                    Nenhum pedido ainda.
+                                    Nenhum pedido recente.
                                 </p>
                             )}
-                            {recentOrders.map((order) => {
-                                const st = STATUS_MAP[order.status] ?? {
-                                    label: order.status,
+                            {(recentOrders || []).map((order) => {
+                                const st = STATUS_MAP[order?.status] ?? {
+                                    label: order?.status || '?',
                                     cls: 'bg-slate-100 text-slate-600',
                                 }
                                 return (
@@ -224,7 +243,7 @@ export default async function DashboardPage() {
                                                     {order.user?.fullName ?? 'Cliente'}
                                                 </p>
                                                 <p className="text-xs text-slate-400">
-                                                    {new Date(order.createdAt).toLocaleDateString('pt-BR')}
+                                                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString('pt-BR') : 'N/A'}
                                                 </p>
                                             </div>
                                         </div>
@@ -267,7 +286,7 @@ export default async function DashboardPage() {
                                 {
                                     label: 'Novo Orçamento Manual',
                                     desc: 'Crie um pedido para um cliente',
-                                    href: '/admin/concierge',
+                                    href: '/admin/orcamento-manual',
                                     icon: FileText,
                                     color: 'text-purple-600',
                                     bg: 'bg-purple-50',

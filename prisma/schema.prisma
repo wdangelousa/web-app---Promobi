@@ -36,6 +36,8 @@ model Order {
   hasTranslation       Boolean         @default(true)
   hasNotary            Boolean         @default(false)
   sentAt               DateTime?
+  discountPercentage   Float?          @default(0)
+  discountAmount       Float?          @default(0)
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }

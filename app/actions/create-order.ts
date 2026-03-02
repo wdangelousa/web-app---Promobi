@@ -59,13 +59,27 @@ export async function createOrder(data: CreateOrderInput) {
         };
 
         let totalAmount = 0;
+        let discountPercentage = 0;
+        let discountAmount = 0;
+
         if (data.grandTotalOverride) {
             totalAmount = data.grandTotalOverride;
+            discountPercentage = data.breakdown?.volumeDiscountPercentage || 0;
+            discountAmount = data.breakdown?.volumeDiscountAmount || 0;
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
+
+            if (totalCount >= 51) discountPercentage = 15;
+            else if (totalCount >= 31) discountPercentage = 10;
+            else if (totalCount >= 16) discountPercentage = 5;
+            else discountPercentage = 0;
+
+            discountAmount = base * (discountPercentage / 100);
+            const baseAfterDiscount = base - discountAmount;
+
             const notary = data.documents.reduce((a, d) => a + (d.notarized ? NOTARY_FEE_PER_DOC : 0), 0);
-            totalAmount = base + notary;
+            totalAmount = baseAfterDiscount + notary;
         }
 
         // ── 2. Derive flags from serviceType ──────────────────────────────────
@@ -105,6 +119,8 @@ export async function createOrder(data: CreateOrderInput) {
                         urgency: data.urgency,
                         serviceType: data.serviceType,
                     }),
+                    discountPercentage,
+                    discountAmount,
                     documents: {
                         create: data.documents.map((doc) => ({
                             docType: doc.fileName?.split('.').pop() ?? 'file',

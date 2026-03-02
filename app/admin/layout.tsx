@@ -15,11 +15,25 @@ export default async function AdminLayout({
 }: {
     children: React.ReactNode
 }) {
-    const user = await getCurrentUser()
+    let user = null;
+
+    try {
+        user = await getCurrentUser()
+    } catch (error) {
+        console.error("[AdminLayout] Critical auth failure:", error)
+        // If we can't even check auth, we should ideally show a very basic error
+    }
 
     if (!user) {
-        const supabase = await createClient()
-        const { data: { user: authUser } } = await supabase.auth.getUser()
+        // Attempt to get basic info from Supabase if Prisma failed
+        let authEmail = 'Desconhecido';
+        try {
+            const supabase = await createClient()
+            const { data: { user: authUser } } = await supabase.auth.getUser()
+            authEmail = authUser?.email || 'Desconhecido';
+        } catch (e) {
+            console.error("[AdminLayout] Double failure - Supabase also failed:", e);
+        }
 
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -27,22 +41,21 @@ export default async function AdminLayout({
                     <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
                         <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                     </div>
-                    <h2 className="text-xl font-bold text-gray-900">Acesso Restrito</h2>
+                    <h2 className="text-xl font-bold text-gray-900">Acesso Restrito ou Falha de Conexão</h2>
                     <div className="space-y-1">
-                        <p className="text-gray-500 text-sm">Seu usuário foi autenticado, mas não possui permissão no banco de dados.</p>
-                        <p className="text-gray-400 text-xs font-mono bg-gray-50 p-2 rounded truncate">{authUser?.email || 'Desconhecido'}</p>
+                        <p className="text-gray-500 text-sm">Não foi possível verificar suas permissões no momento. Isso pode ser uma falha temporária no banco de dados.</p>
+                        <p className="text-gray-400 text-xs font-mono bg-gray-50 p-2 rounded truncate">{authEmail}</p>
                     </div>
                     <div className="flex flex-col gap-2 pt-4">
                         <a href="/login" className="bg-gray-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-gray-800 transition-colors">Voltar para Login</a>
-                        <button
-                            onClick={async () => {
-                                'use server'
-                                await logout()
-                            }}
-                            className="text-gray-500 hover:text-red-500 text-xs transition-colors"
-                        >
-                            Sair desta conta
-                        </button>
+                        <form action={logout}>
+                            <button
+                                type="submit"
+                                className="w-full text-gray-500 hover:text-red-500 text-xs transition-colors"
+                            >
+                                Sair desta conta
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
