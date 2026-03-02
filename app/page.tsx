@@ -80,7 +80,9 @@ export default function Home() {
         totalCount: 0,
         minOrderApplied: false,
         totalMinimumAdjustment: 0,
-        totalDiscountApplied: 0
+        totalDiscountApplied: 0,
+        volumeDiscountPercentage: 0,
+        volumeDiscountAmount: 0
     })
 
     const [activeFaq, setActiveFaq] = useState<number | null>(null)
@@ -321,7 +323,18 @@ export default function Home() {
         const baseWithUrgency = totalBaseAfterFloor * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
         const urgencyPart = baseWithUrgency - totalBaseAfterFloor
 
-        let total = baseWithUrgency + notary
+        // 4. Calculate Volume Discount (Only on translation part, excluding notary)
+        let volumeDiscountPercentage = 0;
+        let volumeDiscountAmount = 0;
+        if (serviceType === 'translation') {
+            if (totalPages >= 51) volumeDiscountPercentage = 15;
+            else if (totalPages >= 31) volumeDiscountPercentage = 10;
+            else if (totalPages >= 16) volumeDiscountPercentage = 5;
+
+            volumeDiscountAmount = baseWithUrgency * (volumeDiscountPercentage / 100);
+        }
+
+        let total = baseWithUrgency - volumeDiscountAmount + notary
 
         // Apply 5% discount for upfront_discount on Standard only
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') {
@@ -337,7 +350,9 @@ export default function Home() {
             totalCount: totalPages,
             minOrderApplied,
             totalMinimumAdjustment,
-            totalDiscountApplied
+            totalDiscountApplied,
+            volumeDiscountPercentage,
+            volumeDiscountAmount
         })
 
         setTotalPrice(total)
