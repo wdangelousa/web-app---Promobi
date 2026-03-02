@@ -25,7 +25,6 @@
     "tailwindcss": "^4.1.18"
   },
   "dependencies": {
-    "@ilovepdf/ilovepdf-nodejs": "^0.3.1",
     "@prisma/client": "^6.19.2",
     "@react-email/components": "^1.0.8",
     "@react-pdf/renderer": "^4.3.2",
@@ -37,11 +36,9 @@
     "deepl-node": "^1.24.0",
     "framer-motion": "^12.34.1",
     "jsonwebtoken": "^9.0.3",
-    "jspdf": "^4.1.0",
     "lucide-react": "^0.574.0",
     "next": "^16.1.6",
     "pdf-lib": "^1.17.1",
-    "pdf2json": "^4.0.2",
     "pdfjs-dist": "^5.4.624",
     "prisma": "^6.19.2",
     "react": "^19.2.4",
