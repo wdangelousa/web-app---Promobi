@@ -315,10 +315,10 @@ export default function PayClient({ order, metadata }: PayClientProps) {
                                 <div className="space-y-2">
                                     <p className="text-[10px] text-purple-400 uppercase font-bold">Dados para Zelle</p>
                                     <div
-                                        onClick={() => copyToClipboard('contact@promobi.com', 'E-mail Zelle')}
+                                        onClick={() => copyToClipboard('zelle@promobi.us', 'E-mail Zelle')}
                                         className="flex items-center justify-between bg-white p-3 rounded-xl border border-purple-200 cursor-pointer hover:border-purple-400 transition-colors"
                                     >
-                                        <span className="text-sm font-bold text-slate-800">contact@promobi.com</span>
+                                        <span className="text-sm font-bold text-slate-800">zelle@promobi.us</span>
                                         <Copy className="w-4 h-4 text-purple-400" />
                                     </div>
                                     <p className="text-[10px] text-purple-600 italic">* Beneficiário: Promobi Services LLC</p>

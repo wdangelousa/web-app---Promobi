@@ -446,7 +446,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-purple-200 text-sm">
                                         <div className="bg-white p-4 rounded-lg border border-purple-100 mb-4 text-center">
                                             <p className="text-slate-500 mb-1">Envie o valor exato para o número Zelle abaixo:</p>
-                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">(321) 324-5851</p>
+                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">zelle@promobi.us</p>
                                             <p className="text-xs text-slate-400 mt-2">Promobi Corporate Services LLC</p>
                                         </div>
                                         <button
