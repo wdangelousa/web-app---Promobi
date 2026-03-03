@@ -8,12 +8,7 @@ import {
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 
-// TinyMCE loads from Tiny Cloud CDN (no-api-key shows a domain warning banner;
-// replace with a free key from https://www.tiny.cloud/auth/signup/ to remove it)
-const TinyEditor = dynamic(
-    () => import('@tinymce/tinymce-react').then((mod) => ({ default: mod.Editor })),
-    { ssr: false, loading: () => <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Carregando editor...</div> }
-)
+import Editor from '@/components/Workbench/Editor'
 
 const TINY_PLUGINS = [
     'advlist', 'autolink', 'lists', 'link', 'charmap', 'preview',
@@ -436,12 +431,13 @@ export default function Workbench({ order }: { order: Order }) {
     const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
     const activeDocIsReviewed = localReviewed.has(selectedDoc.id)
 
+
     return (
         <div className="relative h-[calc(100vh-80px)] flex overflow-hidden">
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
             <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
-                <div className="flex flex-col gap-1.5 shrink-0">
+                <div className="p-4 flex flex-col gap-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Documentos</span>
                     {order.status === 'COMPLETED' && (
                         <div className="flex flex-col gap-1.5 px-0.5">
@@ -497,321 +493,168 @@ export default function Workbench({ order }: { order: Order }) {
                 )}
             </div>
 
-            {/* ── CENTER: PDF VIEWER ────────────────────────────────────────────── */}
-            <div className="flex-1 min-w-0 bg-gray-800 border-r border-gray-700 flex flex-col">
-                <div className="bg-gray-900 text-white px-3 py-2 flex justify-between items-center text-xs shrink-0">
-                    <span className="font-bold flex items-center gap-2 truncate">
-                        <FileText className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{selectedDoc.translatedFileUrl ? 'PDF Traduzido (DeepL)' : 'Documento Original'}</span>
-                    </span>
-                    <div className="flex items-center gap-3 shrink-0 ml-2">
-                        {selectedDoc.translatedFileUrl && (
-                            <a href={selectedDoc.translatedFileUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"><Eye className="w-3 h-3" /> Abrir ↗</a>
-                        )}
-                        {selectedDoc.delivery_pdf_url && (
-                            <a href={selectedDoc.delivery_pdf_url} target="_blank" rel="noreferrer" className="text-[#f58220] hover:text-orange-300 font-bold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Kit ↗</a>
-                        )}
+            {/* ── MAIN WORKSPACE ────────────────────────────────────────────────── */}
+            <div className="flex-1 flex flex-col min-w-0 bg-white relative">
+
+                {/* Secondary Header (Workflow Extras) */}
+                <div className="border-b border-gray-200 px-3 py-2 flex flex-wrap items-center gap-3 bg-gray-50 shrink-0 z-20">
+                    <div className="flex items-center gap-2 flex-1 min-w-[300px]">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Official Name (EN)</label>
                         <input
-                            type="file"
-                            ref={replaceFileInputRef}
-                            className="hidden"
-                            accept=".pdf,image/jpeg,image/png"
-                            onChange={handleReplaceOriginal}
+                            type="text"
+                            value={docNameInput}
+                            onChange={(e) => setDocNameInput(e.target.value)}
+                            onBlur={handleSaveDocName}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                            className="flex-1 text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none"
                         />
-                        <button
-                            onClick={() => replaceFileInputRef.current?.click()}
-                            disabled={isReplacing}
-                            title="Substituir o arquivo original enviado pelo cliente"
-                            className="text-gray-500 hover:text-rose-400 font-bold flex items-center gap-1 text-xs disabled:opacity-50 transition-colors"
-                        >
-                            {isReplacing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                            <span>{isReplacing ? 'Enviando...' : 'Substituir'}</span>
-                        </button>
+                        {isSavingDocName && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+                        {docNameSaved && <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
                     </div>
-                </div>
 
-                <div className="flex-1 relative bg-gray-500">
-                    {viewUrl && viewUrl !== 'PENDING_UPLOAD' ? (
-                        <iframe key={viewUrl} src={viewUrl} className="w-full h-full" title="PDF Viewer" />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-white text-sm">Arquivo pendente de upload</div>
-                    )}
-                </div>
-            </div>
-
-            {/* ── RIGHT: EDITOR & UPLOAD DE PDF ─────────────────────────────────── */}
-            <div className="flex-1 min-w-0 flex flex-col bg-white">
-                <div className="border-b border-gray-200 px-3 py-2 flex flex-wrap items-center gap-1.5 bg-gray-50 shrink-0">
-                    <span className="text-xs font-bold text-gray-600 truncate max-w-[130px] mr-1" title={selectedDoc.exactNameOnDoc || selectedDoc.docType}>
-                        {selectedDoc.exactNameOnDoc || selectedDoc.docType}
-                    </span>
-                    <span className="h-4 w-px bg-gray-300 mx-0.5" />
-
-                    {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
-
-                    <div className="flex items-center gap-1 border border-gray-200 rounded p-0.5 bg-white shadow-sm ml-1">
+                    <div className="flex items-center gap-2">
                         <select
                             value={aiEngine}
                             onChange={(e) => setAiEngine(e.target.value)}
                             disabled={isTranslating}
-                            title="Motor de IA para Tradução"
-                            className="text-[10px] font-bold text-gray-600 bg-transparent border-none focus:ring-0 cursor-pointer pr-6 py-1 outline-none disabled:opacity-50"
+                            className="text-[11px] border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 outline-none"
                         >
-                            <option value="azure-deepl">Layout Preciso - Azure + DeepL</option>
-                            <option value="google-gemini">Contexto Jurídico - Google Gemini</option>
+                            <option value="azure-deepl">Azure + DeepL</option>
+                            <option value="google-gemini">Google Gemini</option>
                         </select>
-                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 text-purple-700 px-2 py-1.5 rounded-sm text-[11px] font-bold hover:bg-purple-100 flex items-center gap-1 disabled:opacity-50 transition-colors">
-                            {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} IA
+                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
+                            {isTranslating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} IA
                         </button>
+
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
+                            {isUploadingExternal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />} PDF Externo
+                        </button>
+
+                        {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
                     </div>
-
-                    {/* Left: External PDF */}
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-50 border border-gray-200 text-gray-500 px-3 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 transition-colors disabled:opacity-50">
-                        {isUploadingExternal ? <Loader2 className="h-3 w-3 animate-spin" /> : <UploadCloud className="h-3 w-3" />} PDF Externo
-                    </button>
-
-                    <span className="flex-1" />
-
-                    {/* Center: Save and Advanced Editor */}
-                    <div className="flex items-center gap-2">
-                        <button onClick={handleSave} disabled={isSavingDraft || !!selectedDoc.externalTranslationUrl} className="bg-white border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 disabled:opacity-50">
-                            <Save className="h-3 w-3" /> {isSavingDraft ? 'Salvando...' : 'Salvar'}
-                        </button>
-
-                        <button onClick={() => setIsFullEditorOpen(true)} className="bg-blue-600 text-white px-4 py-1.5 rounded text-[11px] font-bold hover:bg-blue-700 flex items-center gap-1 transition-colors shadow-sm">
-                            <Maximize2 className="h-3 w-3" /> Editor Avançado
-                        </button>
-                    </div>
-
-                    <span className="flex-1" />
-
-                    {/* Right: Approve */}
-                    <button onClick={handleApproveDoc} disabled={isApproving || activeDocIsReviewed} className={`px-4 py-1.5 rounded text-[11px] font-bold flex items-center gap-1 border ${activeDocIsReviewed ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60'}`}>
-                        {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />} {activeDocIsReviewed ? 'Revisado ✓' : 'Aprovar'}
-                    </button>
                 </div>
 
-                {/* ── NOME OFICIAL DO DOCUMENTO ────────────────────────────── */}
-                <div className="px-3 py-2 border-b border-gray-200 bg-white shrink-0 flex items-center gap-2">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                        Nome Oficial (EN)
-                    </label>
-                    <input
-                        type="text"
-                        value={docNameInput}
-                        onChange={(e) => setDocNameInput(e.target.value)}
-                        onBlur={handleSaveDocName}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
-                        placeholder="ex: Birth Certificate"
-                        className="flex-1 text-xs text-gray-800 border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#f58220] focus:border-[#f58220] placeholder:text-gray-300 transition-colors"
-                    />
-                    {isSavingDocName && <Loader2 className="h-3 w-3 animate-spin text-gray-400 shrink-0" />}
-                    {docNameSaved && <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />}
-                </div>
-
-                {/* ── EDITOR ─────────────────────────────────────────────────── */}
-                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-                    {(optimisticExternalUrl || selectedDoc.externalTranslationUrl) && (
-                        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
-                            <p className="text-emerald-800 text-xs font-semibold leading-snug">
-                                ✅ Tradução Externa Anexada: O PDF carregado será usado na geração do Kit Oficial.
-                            </p>
-                            <div className="flex items-center gap-3 shrink-0">
-                                <a href={optimisticExternalUrl || selectedDoc.externalTranslationUrl!} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
-                                    <Eye className="w-3 h-3" /> Visualizar PDF
-                                </a>
-                                <button onClick={handleRemoveExternal} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1.5">
-                                    <Trash2 className="w-3 h-3" /> Remover Anexo
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                    <TinyEditor
-                        key={selectedDocId ?? 0}
-                        apiKey="no-api-key"
-                        value={editorContent}
-                        onEditorChange={(newValue: string) => setEditorContent(newValue)}
-                        init={{
-                            plugins: TINY_PLUGINS,
-                            toolbar: TINY_TOOLBAR,
-                            menubar: true,
-                            height: 700,
-                            content_style: TINY_CONTENT_STYLE,
-                            paste_data_images: true,
-                            browser_spellcheck: true,
-                            resize: false,
-                            statusbar: false,
-                        }}
+                {/* The New Editor Component with PDF + TinyMCE */}
+                <div className="flex-1 min-h-0">
+                    <Editor
+                        content={editorContent}
+                        setContent={setEditorContent}
+                        pdfUrl={selectedDoc.originalFileUrl}
+                        onSave={handleSave}
+                        onPreviewKit={() => setShowPreviewModal(true)}
+                        onApprove={handleApproveDoc}
                     />
                 </div>
             </div>
 
-            {/* ── MODAL PRÉ-VISUALIZAÇÃO ──────────────────────────────────────── */}
+            {/* ── OVERLAYS ──────────────────────────────────────────────────────── */}
+
+            {/* Modal Pré-visualização */}
             {showPreviewModal && (
-                <div className="fixed inset-0 z-50 bg-gray-100 overflow-y-auto" onClick={() => setShowPreviewModal(false)}>
-                    {/* Barra superior */}
-                    <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-2 bg-gray-800 shadow">
-                        <span className="text-white text-sm font-semibold">Pré-visualização — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
-                        <button
-                            onClick={() => setShowPreviewModal(false)}
-                            className="flex items-center gap-1.5 text-white/80 hover:text-white text-sm font-medium"
-                        >
-                            <X className="h-4 w-4" /> Fechar
-                        </button>
-                    </div>
-                    {/* Folha US Letter — estilos inline, sem dependência do Quill */}
-                    <div className="py-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
-                        <div
-                            style={{
-                                width: '21.59cm',
-                                minHeight: '27.94cm',
-                                backgroundColor: 'white',
-                                padding: '2.54cm',
-                                boxShadow: '0 0 15px rgba(0,0,0,0.15)',
-                                fontFamily: "'Times New Roman', Times, serif",
-                                fontSize: '12pt',
-                                lineHeight: '1.6',
-                                color: '#1a1a1a',
-                            }}
-                            dangerouslySetInnerHTML={{ __html: editorContent }}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* ── FULL-SCREEN EDITOR ──────────────────────────────────────────── */}
-            {isFullEditorOpen && (
-                <div className="fixed inset-0 z-[100] flex flex-col bg-gray-900">
-
-                    {/* Header */}
-                    <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shrink-0 shadow-md border-b border-gray-700">
-                        <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-blue-400" />
-                            <span className="text-base font-semibold">Editor Avançado</span>
-                            <span className="text-gray-400 text-sm">— {selectedDoc.exactNameOnDoc || selectedDoc.docType}</span>
+                <div className="fixed inset-0 z-[60] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPreviewModal(false)}>
+                    <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
+                            <span className="text-white font-semibold flex items-center gap-2">
+                                <Eye className="h-4 w-4" /> Preview — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}
+                            </span>
+                            <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => setShowReference((v) => !v)}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded text-gray-200 transition-colors"
-                            >
-                                {showReference ? (
-                                    <><Eye className="h-3.5 w-3.5" /> Ocultar Original</>
-                                ) : (
-                                    <><Eye className="h-3.5 w-3.5 opacity-50" /> Ver Original</>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setIsFullEditorOpen(false)}
-                                className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded text-white transition-colors"
-                            >
-                                Voltar sem salvar
-                            </button>
-                            <button
-                                onClick={async () => { await handleSave(); setIsFullEditorOpen(false) }}
-                                disabled={isSavingDraft}
-                                className="px-5 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded text-white font-bold shadow transition-colors disabled:opacity-60 flex items-center gap-1.5"
-                            >
-                                {isSavingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                Salvar e Fechar
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Split body */}
-                    <div className="flex-1 flex overflow-hidden min-h-0">
-
-                        {/* Left — PDF reference panel */}
-                        {showReference && (
-                            <div className="w-[42%] shrink-0 flex flex-col border-r border-gray-700 bg-gray-800">
-                                <div className="px-3 py-1.5 bg-gray-900 border-b border-gray-700 shrink-0">
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Documento Original</span>
-                                </div>
-                                <div className="flex-1 min-h-0 relative">
-                                    {selectedDoc.originalFileUrl && selectedDoc.originalFileUrl !== 'PENDING_UPLOAD' ? (
-                                        <iframe
-                                            key={selectedDoc.originalFileUrl}
-                                            src={selectedDoc.originalFileUrl}
-                                            className="absolute inset-0 w-full h-full"
-                                            title="Documento Original"
-                                        />
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-                                            Arquivo indisponível
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Right — TinyMCE editor */}
-                        <div className="flex-1 min-w-0 overflow-y-auto">
-                            <TinyEditor
-                                key={`full-${selectedDocId ?? 0}`}
-                                apiKey="no-api-key"
-                                value={editorContent}
-                                onEditorChange={(newValue: string) => setEditorContent(newValue)}
-                                init={{
-                                    plugins: TINY_PLUGINS,
-                                    toolbar: TINY_TOOLBAR,
-                                    menubar: true,
-                                    height: 900,
-                                    content_style: TINY_CONTENT_STYLE,
-                                    paste_data_images: true,
-                                    browser_spellcheck: true,
-                                    resize: false,
-                                    statusbar: false,
+                        <div className="flex-1 overflow-y-auto bg-gray-100 p-8 flex justify-center">
+                            <div
+                                style={{
+                                    width: '21.59cm',
+                                    minHeight: '27.94cm',
+                                    backgroundColor: 'white',
+                                    padding: '2.54cm',
+                                    boxShadow: '0 0 15px rgba(0,0,0,0.1)',
+                                    fontFamily: "'Times New Roman', Times, serif",
+                                    fontSize: '12pt',
+                                    lineHeight: '1.6',
+                                    color: '#1a1a1a',
                                 }}
+                                dangerouslySetInnerHTML={{ __html: editorContent }}
                             />
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ── FLOATING BOTTOM BAR ─────────────────────────────────────────── */}
-            <div className={`absolute bottom-0 left-0 right-0 z-40 bg-gray-900 border-t-2 border-[#f58220] shadow-2xl transition-transform duration-200 ease-out ${someSelected ? 'translate-y-0' : 'translate-y-full'}`}>
-                <div className="px-6 py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <CheckSquare className="h-5 w-5 text-[#f58220] shrink-0" />
-                        <div className="min-w-0">
-                            <p className="text-white text-sm font-semibold leading-tight">{selectedDocsForDelivery.length} documento(s) selecionado(s)</p>
-                        </div>
+            {/* Full Editor Modal */}
+            {isFullEditorOpen && (
+                <div className="fixed inset-0 z-[100] flex flex-col bg-gray-900">
+                    <Editor
+                        content={editorContent}
+                        setContent={(v) => {
+                            setEditorContent(v)
+                        }}
+                        pdfUrl={selectedDoc.originalFileUrl}
+                        onSave={async () => {
+                            await handleSave()
+                            setIsFullEditorOpen(false)
+                        }}
+                        onPreviewKit={() => setShowPreviewModal(true)}
+                        onApprove={async () => {
+                            await handleApproveDoc()
+                            setIsFullEditorOpen(false)
+                        }}
+                    />
+                    <button
+                        onClick={() => setIsFullEditorOpen(false)}
+                        className="absolute top-4 right-4 z-[110] bg-gray-800/50 hover:bg-gray-800 text-white p-2 rounded-full transition-colors"
+                    >
+                        <X className="h-5 w-5" />
+                    </button>
+                </div>
+            )}
+
+            {/* Floating Selection Bar */}
+            <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-40 bg-gray-900 border border-gray-700 shadow-2xl px-6 py-4 rounded-2xl flex items-center gap-8 transition-all duration-300 ${someSelected ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-20 opacity-0 scale-95 pointer-events-none'}`}>
+                <div className="flex items-center gap-3">
+                    <CheckSquare className="h-6 w-6 text-orange-500" />
+                    <div>
+                        <p className="text-white text-sm font-bold tracking-tight">{selectedDocsForDelivery.length} Document(s) Selected</p>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                        <button onClick={() => setSelectedDocsForDelivery([])} className="text-gray-400 hover:text-gray-200 p-1.5 rounded hover:bg-gray-700"><X className="h-4 w-4" /></button>
-                        <button onClick={() => setShowDeliveryModal(true)} disabled={generatingKits} className="bg-[#f58220] hover:bg-orange-500 disabled:bg-orange-300 text-white font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 text-sm shadow-lg">
-                            <Send className="h-4 w-4" /> Confirmar Envio...
-                        </button>
-                    </div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button onClick={() => setSelectedDocsForDelivery([])} className="text-gray-500 hover:text-gray-300"><X className="h-5 w-5" /></button>
+                    <button onClick={() => setShowDeliveryModal(true)} disabled={generatingKits} className="bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 shadow-lg transition-all active:scale-95">
+                        {generatingKits ? <Loader2 className="h-4 h-4 animate-spin" /> : <Send className="h-4 h-4" />} Confirm Delivery
+                    </button>
                 </div>
             </div>
 
-            {/* ── MODAL DE SEGURANÇA (PRE-FLIGHT) ─────────────────────────────── */}
+            {/* Delivery Confirmation */}
             {showDeliveryModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-[500px] p-6 border border-gray-200">
-                        <h2 className="text-xl font-bold text-gray-900 border-b border-gray-100 pb-3 mb-4 flex items-center gap-2">
-                            <Send className="w-5 h-5 text-[#f58220]" /> Confirmar Disparo do Kit
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-100">
+                        <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                            <Send className="w-5 h-5 text-orange-500" /> Delivery Settings
                         </h2>
-                        <p className="text-sm text-gray-500 mb-4">Você está prestes a certificar {selectedDocsForDelivery.length} documento(s). Escolha quem deve receber o email agora:</p>
+                        <p className="text-sm text-gray-500 mb-6">Confirm recipients for the certified kits:</p>
 
-                        <div className="space-y-3">
-                            <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer border border-gray-200 hover:border-gray-300 transition-colors">
-                                <input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-[#f58220] rounded border-gray-300" />
-                                <span className="text-gray-800 font-medium text-sm">Enviar para o Cliente: {order.user.fullName} <span className="text-gray-500 font-normal">({order.user.email})</span></span>
+                        <div className="space-y-3 mb-8">
+                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer border border-transparent hover:border-gray-200 transition-all">
+                                <input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500 rounded border-gray-300" />
+                                <div>
+                                    <p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p>
+                                    <p className="text-gray-400 text-xs truncate max-w-[200px]">{order.user.email}</p>
+                                </div>
                             </label>
 
-                            <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer border border-gray-200 hover:border-gray-300 transition-colors">
-                                <input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-[#f58220] rounded border-gray-300" />
-                                <span className="text-gray-800 font-medium text-sm">Enviar cópia p/ Tradutora <span className="text-gray-500 font-normal">(belebmd@gmail.com)</span></span>
+                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer border border-transparent hover:border-gray-200 transition-all">
+                                <input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500 rounded border-gray-300" />
+                                <div>
+                                    <p className="text-gray-900 font-bold text-sm">Translator</p>
+                                    <p className="text-gray-400 text-xs">belebmd@gmail.com</p>
+                                </div>
                             </label>
                         </div>
 
-                        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
-                            <button onClick={() => setShowDeliveryModal(false)} className="px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
-                            <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="px-5 py-2.5 text-sm font-bold text-white bg-[#f58220] rounded-lg hover:bg-orange-500 disabled:opacity-50 flex items-center gap-2 transition-colors">
-                                {generatingKits ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Gerar e Disparar
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+                            <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="flex-[2] py-3 text-sm font-bold text-white bg-gray-900 rounded-xl hover:bg-black transition-all shadow-xl shadow-gray-900/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+                                {generatingKits ? <Loader2 className="h-4 h-4 animate-spin" /> : <Send className="h-4 h-4" />} Deliver Kits
                             </button>
                         </div>
                     </div>
