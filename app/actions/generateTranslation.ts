@@ -16,6 +16,9 @@ async function analyzeDocument(fileUrl: string): Promise<string> {
 
   const analyzeUrl = `${baseUrl}/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
 
+  console.log(`[AzureDI] URL → ${analyzeUrl}`)
+  console.log(`[AzureDI] KEY_PREFIX → ${apiKey.substring(0, 6)}...`)
+
   const submitRes = await fetch(analyzeUrl, {
     method: 'POST',
     headers: {
