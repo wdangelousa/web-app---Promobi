@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(req: Request) {
     try {
-        const { fileUrl, targetLang } = await req.json()
+        const { fileUrl } = await req.json()
 
         if (!fileUrl) {
             return NextResponse.json({ error: 'fileUrl is required' }, { status: 400 })
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         // As of the official JS SDK, the easiest reliable fallback for the v1beta 404 is simply 'gemini-1.5-pro' or 'gemini-1.5-flash'.
         // If they still 404 under the default configuration, we ensure we pass the correct model ID formats that works natively with the latest backend.
         const model = genAI.getGenerativeModel(
-            { model: 'gemini-1.5-flash' },
+            { model: 'gemini-2.0-flash' },
             { apiVersion: 'v1beta' }
         )
 
