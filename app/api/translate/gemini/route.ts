@@ -29,7 +29,7 @@ export async function POST(req: Request) {
         // If they still 404 under the default configuration, we ensure we pass the correct model ID formats that works natively with the latest backend.
         const model = genAI.getGenerativeModel(
             { model: 'gemini-1.5-flash' },
-            { apiVersion: 'v1' }
+            { apiVersion: 'v1beta' }
         )
 
         // 3. System prompt & query
