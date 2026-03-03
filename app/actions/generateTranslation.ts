@@ -6,15 +6,15 @@ import prisma from '../../lib/prisma'
 // ─── Azure Document Intelligence ─────────────────────────────────────────────
 
 async function analyzeDocument(fileUrl: string): Promise<string> {
-  const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT?.replace(/\/$/, '')
   const apiKey = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
+  const endpointRaw = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || ''
+  const baseUrl = endpointRaw.replace(/\/$/, '').replace(/\/formrecognizer$/, '')
 
-  if (!endpoint || !apiKey) {
+  if (!baseUrl || !apiKey) {
     throw new Error('Missing AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT or AZURE_DOCUMENT_INTELLIGENCE_KEY')
   }
 
-  const analyzeUrl =
-    `${endpoint}/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
+  const analyzeUrl = `${baseUrl}/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
 
   const submitRes = await fetch(analyzeUrl, {
     method: 'POST',
