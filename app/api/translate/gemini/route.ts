@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
         // 2. Instantiate Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' })
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
         // 3. System prompt & query
         const prompt = `Você é um tradutor juramentado especialista. Traduza o documento PDF anexo fielmente para o Inglês (EUA). Mantenha a formatação original (títulos, parágrafos, tabelas) usando HTML semântico limpo.
