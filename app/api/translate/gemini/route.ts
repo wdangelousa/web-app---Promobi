@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: Request) {
     try {
         const { fileUrl } = await req.json()
@@ -24,7 +26,11 @@ export async function POST(req: Request) {
 
         // 2. Instantiate Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' })
+        console.log('[Gemini API] Requesting translation via gemini-1.5-pro on v1 API...')
+        const model = genAI.getGenerativeModel(
+            { model: 'gemini-1.5-pro' },
+            { apiVersion: 'v1' }
+        )
 
         // 3. System prompt & query
         const prompt = `Você é um tradutor juramentado especialista. Traduza o documento PDF anexo fielmente para o Inglês (EUA). Mantenha a formatação original (títulos, parágrafos, tabelas) usando HTML semântico limpo.
