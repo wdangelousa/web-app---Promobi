@@ -26,10 +26,10 @@ export async function POST(req: Request) {
 
         // 2. Instantiate Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        console.log('[Gemini API] Requesting translation via gemini-1.5-pro on v1 API...')
+        const versionId = 'REV_MAR_03_02_35'
+        console.log(`[Gemini API] [${versionId}] Requesting translation via gemini-2.0-flash...`)
         const model = genAI.getGenerativeModel(
-            { model: 'gemini-1.5-pro' },
-            { apiVersion: 'v1' }
+            { model: 'gemini-2.0-flash' }
         )
 
         // 3. System prompt & query
