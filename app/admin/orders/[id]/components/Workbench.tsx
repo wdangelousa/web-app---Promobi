@@ -7,7 +7,6 @@ import {
     Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
-import DocPageRotations from './DocPageRotations'
 import 'react-quill-new/dist/quill.snow.css'
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false })
@@ -516,12 +515,6 @@ export default function Workbench({ order }: { order: Order }) {
                         <div className="flex items-center justify-center h-full text-white text-sm">Arquivo pendente de upload</div>
                     )}
                 </div>
-                <DocPageRotations
-                    key={selectedDoc.id}
-                    docId={selectedDoc.id}
-                    docUrl={selectedDoc.originalFileUrl}
-                    initialRotations={selectedDoc.pageRotations ?? null}
-                />
             </div>
 
             {/* ── RIGHT: EDITOR & UPLOAD DE PDF ─────────────────────────────────── */}
@@ -593,9 +586,31 @@ export default function Workbench({ order }: { order: Order }) {
                     {docNameSaved && <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />}
                 </div>
 
-                <div className="flex-1 flex flex-col min-h-0">
+                {/* ── DESK + PAPER ─────────────────────────────────────────────── */}
+                <style>{`
+                    .wb-paper .ql-toolbar.ql-snow {
+                        position: sticky; top: 0; z-index: 50;
+                        background: #fff;
+                        border: none !important;
+                        border-bottom: 1px solid #e5e7eb !important;
+                        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+                    }
+                    .wb-paper .ql-container.ql-snow { border: none !important; }
+                    .wb-paper .ql-editor {
+                        min-height: calc(279.4mm - 44px) !important;
+                        padding: 25.4mm !important;
+                        font-family: 'Times New Roman', Times, serif !important;
+                        font-size: 12pt !important;
+                        line-height: 1.5 !important;
+                        color: #1f2937 !important;
+                    }
+                `}</style>
+                <div
+                    className="flex-1 min-h-0 overflow-y-auto"
+                    style={{ background: '#F3F4F6', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '2rem', paddingBottom: '4rem', gap: '0.75rem' }}
+                >
                     {(optimisticExternalUrl || selectedDoc.externalTranslationUrl) && (
-                        <div className="shrink-0 bg-emerald-100 border border-emerald-300 mx-3 mt-2 mb-1 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3">
+                        <div className="bg-emerald-100 border border-emerald-300 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3" style={{ width: '215.9mm' }}>
                             <p className="text-emerald-800 text-xs font-semibold leading-snug">
                                 ✅ Tradução Externa Anexada: O PDF carregado será usado na geração do Kit Oficial.
                             </p>
@@ -609,7 +624,10 @@ export default function Workbench({ order }: { order: Order }) {
                             </div>
                         </div>
                     )}
-                    <div className="quill-workspace">
+                    <div
+                        className="wb-paper bg-white"
+                        style={{ width: '215.9mm', minHeight: '279.4mm', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}
+                    >
                         <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
                     </div>
                 </div>
