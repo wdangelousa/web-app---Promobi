@@ -59,3 +59,5 @@ NÃO use Markdown (\`\`\`html). NÃO inclua explicações prévias.`
         return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 })
     }
 }
+
+// Forçando atualização para Gemini 2.0
