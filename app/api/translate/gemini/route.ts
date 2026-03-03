@@ -26,10 +26,10 @@ export async function POST(req: Request) {
 
         // 2. Instantiate Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        const versionId = 'REV_MAR_03_02_35'
-        console.log(`[Gemini API] [${versionId}] Requesting translation via gemini-2.0-flash...`)
+        const versionId = 'REV_MAR_03_25_FLASH'
+        console.log(`[Gemini API] [${versionId}] Requesting translation via gemini-2.5-flash...`)
         const model = genAI.getGenerativeModel(
-            { model: 'gemini-2.0-flash' }
+            { model: 'gemini-2.5-flash' }
         )
 
         // 3. System prompt & query
@@ -60,4 +60,4 @@ NÃO use Markdown (\`\`\`html). NÃO inclua explicações prévias.`
     }
 }
 
-// Forçando atualização para Gemini 2.0
+// Usando Gemini 2.5 Flash (estável)
