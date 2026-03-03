@@ -8,16 +8,16 @@ import prisma from '../../lib/prisma'
 async function analyzeDocument(fileUrl: string): Promise<string> {
   const apiKey = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
   const endpointRaw = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || ''
-  const baseUrl = endpointRaw.replace(/\/$/, '').replace(/\/formrecognizer$/, '')
+  const baseUrl = endpointRaw.replace(/\/$/, '')
 
   if (!baseUrl || !apiKey) {
     throw new Error('Missing AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT or AZURE_DOCUMENT_INTELLIGENCE_KEY')
   }
 
-  const analyzeUrl = `${baseUrl}/documentModels/prebuilt-layout:analyze?api-version=2024-11-30`
+  // FormRecognizer resources (kind: FormRecognizer) require the /formrecognizer prefix + v3.1 GA version
+  const analyzeUrl = `${baseUrl}/formrecognizer/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
 
   console.log(`[AzureDI] URL → ${analyzeUrl}`)
-  console.log(`[AzureDI] KEY_PREFIX → ${apiKey.substring(0, 6)}...`)
 
   const submitRes = await fetch(analyzeUrl, {
     method: 'POST',
