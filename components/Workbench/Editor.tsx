@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Editor as TinyMCEEditor } from '@tinymce/tinymce-react';
 
+import { Loader2 } from 'lucide-react';
+
 interface EditorProps {
     content: string;
     setContent: (content: string) => void;
     pdfUrl?: string;
     onSave?: () => void;
     onPreviewKit?: () => void; // O Preview Kit volta aqui
+    isPreviewingKit?: boolean;
     onApprove?: () => void;
 }
 
-export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove }: EditorProps) {
+export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, isPreviewingKit, onApprove }: EditorProps) {
 
     // Controle do Split View
     const [showReference, setShowReference] = useState(false);
@@ -55,9 +58,10 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     {/* O BOTÃO PREVIEW KIT ESTÁ AQUI - ESTILO LARANJA CONFORME SOLICITADO */}
                     <button
                         onClick={onPreviewKit}
-                        className="bg-[#f58220] hover:bg-[#e67610] text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition flex items-center gap-2"
+                        disabled={isPreviewingKit}
+                        className="bg-[#f58220] hover:bg-[#e67610] disabled:bg-orange-300 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition flex items-center gap-2"
                     >
-                        📦 Preview Kit
+                        {isPreviewingKit ? <Loader2 className="h-4 w-4 animate-spin" /> : '📦'} {isPreviewingKit ? 'Gerando...' : 'Preview Kit'}
                     </button>
 
                     <button
