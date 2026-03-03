@@ -52,6 +52,21 @@ function getStatusInfo(doc: Document): StatusInfo {
 }
 
 
+// ── HTML sanitizer for AI output ──────────────────────────────────────────────
+
+function cleanAiHtml(raw: string): string {
+    let html = raw
+    // Remove <img> tags (broken images from coats of arms, logos, etc.)
+    html = html.replace(/<img[^>]*>/gi, '')
+    // Remove <figure> / <figcaption> wrappers that usually contain those images
+    html = html.replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, '')
+    // Remove stray alt-text captions that Gemini sometimes emits as plain text
+    html = html.replace(/Coat of Arms of Brazil/gi, '')
+    // Collapse runs of empty Quill paragraphs at the very start
+    html = html.replace(/^(\s*<p>\s*(<br\s*\/?>\s*)?<\/p>\s*)+/i, '')
+    return html.trim()
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Workbench({ order }: { order: Order }) {
@@ -192,12 +207,13 @@ export default function Workbench({ order }: { order: Order }) {
                 const data = await res.json()
                 if (!res.ok) throw new Error(data.error || 'Erro na API Gemini')
 
-                justTranslatedRef.current = data.translatedText
-                setEditorContent(data.translatedText)
+                const cleanedText = cleanAiHtml(data.translatedText)
+                justTranslatedRef.current = cleanedText
+                setEditorContent(cleanedText)
 
                 // Saving automatically just like the other route
                 const { saveTranslationDraft } = await import('../../../../actions/workbench')
-                await saveTranslationDraft(selectedDoc.id, data.translatedText)
+                await saveTranslationDraft(selectedDoc.id, cleanedText)
 
                 router.refresh()
             } else {
@@ -206,8 +222,9 @@ export default function Workbench({ order }: { order: Order }) {
                 const newText = (result as any).text || (result as any).translatedText
 
                 if (result.success && newText) {
-                    justTranslatedRef.current = newText
-                    setEditorContent(newText)
+                    const cleanedNewText = cleanAiHtml(newText)
+                    justTranslatedRef.current = cleanedNewText
+                    setEditorContent(cleanedNewText)
                     router.refresh()
                 } else if (result.success) {
                     alert('Tradução concluída, mas sem texto retornado. Recarregue a página.')
