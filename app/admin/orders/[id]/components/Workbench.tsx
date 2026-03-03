@@ -89,6 +89,8 @@ export default function Workbench({ order }: { order: Order }) {
     const [isSavingDocName, setIsSavingDocName] = useState(false)
     const [docNameSaved, setDocNameSaved] = useState(false)
 
+    const [showPreviewModal, setShowPreviewModal] = useState(false)
+
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
@@ -558,6 +560,10 @@ export default function Workbench({ order }: { order: Order }) {
                         <Save className="h-3 w-3" /> {isSavingDraft ? 'Salvando...' : 'Salvar'}
                     </button>
 
+                    <button onClick={() => setShowPreviewModal(true)} className="bg-violet-50 border border-violet-200 text-violet-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-violet-100 flex items-center gap-1 transition-colors">
+                        <Eye className="h-3 w-3" /> Pré-visualizar
+                    </button>
+
                     <span className="h-4 w-px bg-gray-300 mx-0.5" />
 
                     <button onClick={handlePreviewKit} disabled={isPreviewingKit || isSavingDraft} className="bg-sky-50 border border-sky-200 text-sky-700 px-2.5 py-1.5 rounded text-[11px] font-bold hover:bg-sky-100 flex items-center gap-1 disabled:opacity-50">
@@ -604,10 +610,30 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     )}
                     <div className="flex-1 overflow-auto">
-                        <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} className="h-full" modules={{ toolbar: [[{ header: [1, 2, false] }], ['bold', 'italic', 'underline', 'strike', 'blockquote'], [{ 'list': 'ordered' }, { 'list': 'bullet' }], ['clean']] }} />
+                        <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} className="h-full" modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
                     </div>
                 </div>
             </div>
+
+            {/* ── MODAL PRÉ-VISUALIZAÇÃO ──────────────────────────────────────── */}
+            {showPreviewModal && (
+                <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 overflow-y-auto py-8" onClick={() => setShowPreviewModal(false)}>
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setShowPreviewModal(false)}
+                            className="absolute -top-9 right-0 flex items-center gap-1.5 text-white/80 hover:text-white text-sm font-medium"
+                        >
+                            <X className="h-4 w-4" /> Fechar
+                        </button>
+                        {/* Folha A4 */}
+                        <div
+                            className="bg-white shadow-2xl"
+                            style={{ width: '210mm', minHeight: '297mm', padding: '25mm 20mm', fontFamily: 'Arial, sans-serif', fontSize: '11pt', lineHeight: '1.5', color: '#000' }}
+                            dangerouslySetInnerHTML={{ __html: editorContent }}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* ── FLOATING BOTTOM BAR ─────────────────────────────────────────── */}
             <div className={`absolute bottom-0 left-0 right-0 z-40 bg-gray-900 border-t-2 border-[#f58220] shadow-2xl transition-transform duration-200 ease-out ${someSelected ? 'translate-y-0' : 'translate-y-full'}`}>
