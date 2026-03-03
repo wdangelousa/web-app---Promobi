@@ -4,12 +4,39 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
-import 'react-quill-new/dist/quill.snow.css'
 
-const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false })
+// TinyMCE loads from Tiny Cloud CDN (no-api-key shows a domain warning banner;
+// replace with a free key from https://www.tiny.cloud/auth/signup/ to remove it)
+const TinyEditor = dynamic(
+    () => import('@tinymce/tinymce-react').then((mod) => ({ default: mod.Editor })),
+    { ssr: false, loading: () => <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Carregando editor...</div> }
+)
+
+const TINY_PLUGINS = [
+    'advlist', 'autolink', 'lists', 'link', 'charmap', 'preview',
+    'anchor', 'searchreplace', 'visualblocks', 'code', 'autoresize',
+    'insertdatetime', 'media', 'table', 'help', 'wordcount',
+]
+
+const TINY_TOOLBAR =
+    'undo redo | blocks fontfamily fontsize | ' +
+    'bold italic underline strikethrough | forecolor backcolor | ' +
+    'alignleft aligncenter alignright alignjustify | ' +
+    'bullist numlist outdent indent | table | removeformat | help'
+
+const TINY_CONTENT_STYLE = `
+    body {
+        font-family: 'Times New Roman', Times, serif;
+        font-size: 12pt;
+        line-height: 1.6;
+        color: #1a1a1a;
+        margin: 1in;
+        background: #fff;
+    }
+`
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,7 +109,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
     const [isApproving, setIsApproving] = useState(false)
-    const [isPreviewingKit, setIsPreviewingKit] = useState(false)
     const [isUploadingExternal, setIsUploadingExternal] = useState(false)
     const [isReplacing, setIsReplacing] = useState(false)
 
@@ -105,34 +131,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [showPreviewModal, setShowPreviewModal] = useState(false)
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
-
-    // Inject paper editor styles directly into <head> — bypasses all CSS cascade issues
-    useEffect(() => {
-        const id = 'wb-paper-styles'
-        if (document.getElementById(id)) return
-        const el = document.createElement('style')
-        el.id = id
-        el.textContent = `
-            .wb-paper .ql-toolbar.ql-snow {
-                position: sticky; top: 0; z-index: 50;
-                background: #fff;
-                border: none !important;
-                border-bottom: 1px solid #e5e7eb !important;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-            }
-            .wb-paper .ql-container.ql-snow { border: none !important; }
-            .wb-paper .ql-editor {
-                min-height: 24cm !important;
-                padding: 2.54cm !important;
-                font-family: 'Times New Roman', Times, serif !important;
-                font-size: 12pt !important;
-                line-height: 1.6 !important;
-                color: #1a1a1a !important;
-            }
-        `
-        document.head.appendChild(el)
-        return () => { el.remove() }
-    }, [])
+    const [showReference, setShowReference] = useState(true)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -178,37 +177,6 @@ export default function Workbench({ order }: { order: Order }) {
     const allSelected = selectedDocsForDelivery.length === order.documents.length
     const someSelected = selectedDocsForDelivery.length > 0
     // const { toast, dialog } = useUIFeedback()
-
-    // Sanitizer for incoming AI translations
-    useEffect(() => {
-        if (editorContent && editorContent.includes('<img')) {
-            const cleanContent = editorContent
-                .replace(/<img[^>]*>/gi, '') // Remove any image
-                .replace(/Coat of Arms of Brazil/gi, '') // Remove frequent ghost captions
-                .replace(/Republic of Brazil/gi, 'Republic of Brazil'); // Keep text if needed
-
-            if (cleanContent !== editorContent) setEditorContent(cleanContent);
-        }
-    }, [editorContent]);
-
-    // Handle incoming translation from FullEditor
-    const handleFullEditorSave = (newHtml: string) => {
-        setEditorContent(newHtml) // This line was problematic in the original instruction, assuming it was meant to just set content.
-        // The rest of the code below seems to be a copy of handleSave, which is likely not the intent for a 'handleFullEditorSave'
-        // that is supposed to be called *from* the full editor.
-        // If the intent was to save, the function should be async and call the save action.
-        // For now, I'm commenting out the saving part to avoid duplicate logic and potential issues.
-        // setIsSavingDraft(true)
-        // try {
-        //     const { saveTranslationDraft } = await import('../../../../actions/workbench')
-        //     const result = await saveTranslationDraft(selectedDoc.id, editorContent)
-        //     if (!result.success) alert('Erro ao salvar: ' + result.error)
-        // } catch (err: any) {
-        //     alert('Erro ao salvar rascunho: ' + err.message)
-        // } finally {
-        //     setIsSavingDraft(false)
-        // }
-    }
 
     const handleSave = async () => {
         if (!selectedDoc) return
@@ -301,30 +269,6 @@ export default function Workbench({ order }: { order: Order }) {
             alert('Erro ao aprovar tradução: ' + err.message)
         } finally {
             setIsApproving(false)
-        }
-    }
-
-    const handlePreviewKit = async () => {
-        if (!selectedDoc) return
-        setIsPreviewingKit(true)
-        try {
-            if (!selectedDoc.externalTranslationUrl) {
-                const { saveTranslationDraft } = await import('../../../../actions/workbench')
-                await saveTranslationDraft(selectedDoc.id, editorContent)
-            }
-
-            const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true })
-
-            if (result.success && result.deliveryUrl) {
-                window.open(result.deliveryUrl, '_blank', 'noopener,noreferrer')
-            } else {
-                alert('Erro ao gerar preview: ' + (result.error ?? 'desconhecido'))
-            }
-        } catch (err: any) {
-            alert('Erro ao gerar preview: ' + err.message)
-        } finally {
-            setIsPreviewingKit(false)
         }
     }
 
@@ -666,13 +610,10 @@ export default function Workbench({ order }: { order: Order }) {
                     {docNameSaved && <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />}
                 </div>
 
-                {/* ── DESK + PAPER ─────────────────────────────────────────────── */}
-                <div
-                    className="flex-1 min-h-0 overflow-y-auto overflow-x-auto"
-                    style={{ background: '#E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1.5rem 4rem' }}
-                >
+                {/* ── EDITOR ─────────────────────────────────────────────────── */}
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
                     {(optimisticExternalUrl || selectedDoc.externalTranslationUrl) && (
-                        <div className="bg-emerald-100 border border-emerald-300 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3 mb-2 w-full max-w-[215.9mm]">
+                        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
                             <p className="text-emerald-800 text-xs font-semibold leading-snug">
                                 ✅ Tradução Externa Anexada: O PDF carregado será usado na geração do Kit Oficial.
                             </p>
@@ -686,17 +627,23 @@ export default function Workbench({ order }: { order: Order }) {
                             </div>
                         </div>
                     )}
-                    <div
-                        className="wb-paper bg-white relative"
-                        style={{ width: 'min(215.9mm, 100%)', minHeight: '27.94cm', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 20px 25px -5px rgba(0,0,0,0.1)' }}
-                    >
-                        {/* Quick View App Bar */}
-                        <div className="bg-gray-50 border-b border-gray-200 px-3 py-1 text-xs text-gray-500 flex justify-between items-center z-10 sticky top-0">
-                            <span>👁️ Visualização Rápida</span>
-                            <span className="text-blue-600 cursor-pointer hover:underline" onClick={() => setIsFullEditorOpen(true)}>Abrir Editor Completo →</span>
-                        </div>
-                        <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
-                    </div>
+                    <TinyEditor
+                        key={selectedDocId ?? 0}
+                        apiKey="no-api-key"
+                        value={editorContent}
+                        onEditorChange={(newValue: string) => setEditorContent(newValue)}
+                        init={{
+                            plugins: TINY_PLUGINS,
+                            toolbar: TINY_TOOLBAR,
+                            menubar: true,
+                            height: 700,
+                            content_style: TINY_CONTENT_STYLE,
+                            paste_data_images: true,
+                            browser_spellcheck: true,
+                            resize: false,
+                            statusbar: false,
+                        }}
+                    />
                 </div>
             </div>
 
@@ -713,33 +660,48 @@ export default function Workbench({ order }: { order: Order }) {
                             <X className="h-4 w-4" /> Fechar
                         </button>
                     </div>
-                    {/* Folha US Letter com classes do Quill para WYSIWYG */}
+                    {/* Folha US Letter — estilos inline, sem dependência do Quill */}
                     <div className="py-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="quill" style={{ width: '21.59cm' }}>
-                            <div className="ql-container ql-snow" style={{ border: 'none' }}>
-                                <div
-                                    className="ql-editor"
-                                    style={{ minHeight: '27.94cm', backgroundColor: 'white', padding: '2.54cm', boxShadow: '0 0 15px rgba(0,0,0,0.15)', color: 'black' }}
-                                    dangerouslySetInnerHTML={{ __html: editorContent }}
-                                />
-                            </div>
-                        </div>
+                        <div
+                            style={{
+                                width: '21.59cm',
+                                minHeight: '27.94cm',
+                                backgroundColor: 'white',
+                                padding: '2.54cm',
+                                boxShadow: '0 0 15px rgba(0,0,0,0.15)',
+                                fontFamily: "'Times New Roman', Times, serif",
+                                fontSize: '12pt',
+                                lineHeight: '1.6',
+                                color: '#1a1a1a',
+                            }}
+                            dangerouslySetInnerHTML={{ __html: editorContent }}
+                        />
                     </div>
                 </div>
             )}
 
             {/* ── FULL-SCREEN EDITOR ──────────────────────────────────────────── */}
             {isFullEditorOpen && (
-                <div className="fixed inset-0 z-[100] bg-gray-100 flex flex-col">
+                <div className="fixed inset-0 z-[100] flex flex-col bg-gray-900">
 
                     {/* Header */}
-                    <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shrink-0 shadow-md">
+                    <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shrink-0 shadow-md border-b border-gray-700">
                         <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-blue-400" />
                             <span className="text-base font-semibold">Editor Avançado</span>
                             <span className="text-gray-400 text-sm">— {selectedDoc.exactNameOnDoc || selectedDoc.docType}</span>
                         </div>
                         <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setShowReference((v) => !v)}
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded text-gray-200 transition-colors"
+                            >
+                                {showReference ? (
+                                    <><Eye className="h-3.5 w-3.5" /> Ocultar Original</>
+                                ) : (
+                                    <><Eye className="h-3.5 w-3.5 opacity-50" /> Ver Original</>
+                                )}
+                            </button>
                             <button
                                 onClick={() => setIsFullEditorOpen(false)}
                                 className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded text-white transition-colors"
@@ -757,25 +719,51 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     </div>
 
-                    {/* Desk — scrollable gray area */}
-                    <div className="flex-1 overflow-y-auto overflow-x-auto" style={{ background: '#E8EAED' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2.5rem 2rem 5rem' }}>
-                            {/* Paper */}
-                            <div
-                                className="wb-paper bg-white"
-                                style={{
-                                    width: 'min(215.9mm, 100%)',
-                                    minHeight: '279.4mm',
-                                    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.3), 0 4px 6px -1px rgba(0,0,0,0.1)',
-                                }}
-                            >
-                                <ReactQuill
-                                    theme="snow"
-                                    value={editorContent}
-                                    onChange={setEditorContent}
-                                    modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }}
-                                />
+                    {/* Split body */}
+                    <div className="flex-1 flex overflow-hidden min-h-0">
+
+                        {/* Left — PDF reference panel */}
+                        {showReference && (
+                            <div className="w-[42%] shrink-0 flex flex-col border-r border-gray-700 bg-gray-800">
+                                <div className="px-3 py-1.5 bg-gray-900 border-b border-gray-700 shrink-0">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Documento Original</span>
+                                </div>
+                                <div className="flex-1 min-h-0 relative">
+                                    {selectedDoc.originalFileUrl && selectedDoc.originalFileUrl !== 'PENDING_UPLOAD' ? (
+                                        <iframe
+                                            key={selectedDoc.originalFileUrl}
+                                            src={selectedDoc.originalFileUrl}
+                                            className="absolute inset-0 w-full h-full"
+                                            title="Documento Original"
+                                        />
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                                            Arquivo indisponível
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                        )}
+
+                        {/* Right — TinyMCE editor */}
+                        <div className="flex-1 min-w-0 overflow-y-auto">
+                            <TinyEditor
+                                key={`full-${selectedDocId ?? 0}`}
+                                apiKey="no-api-key"
+                                value={editorContent}
+                                onEditorChange={(newValue: string) => setEditorContent(newValue)}
+                                init={{
+                                    plugins: TINY_PLUGINS,
+                                    toolbar: TINY_TOOLBAR,
+                                    menubar: true,
+                                    height: 900,
+                                    content_style: TINY_CONTENT_STYLE,
+                                    paste_data_images: true,
+                                    browser_spellcheck: true,
+                                    resize: false,
+                                    statusbar: false,
+                                }}
+                            />
                         </div>
                     </div>
                 </div>
