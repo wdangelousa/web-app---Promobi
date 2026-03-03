@@ -90,6 +90,34 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [showPreviewModal, setShowPreviewModal] = useState(false)
 
+    // Inject paper editor styles directly into <head> — bypasses all CSS cascade issues
+    useEffect(() => {
+        const id = 'wb-paper-styles'
+        if (document.getElementById(id)) return
+        const el = document.createElement('style')
+        el.id = id
+        el.textContent = `
+            .wb-paper .ql-toolbar.ql-snow {
+                position: sticky; top: 0; z-index: 50;
+                background: #fff;
+                border: none !important;
+                border-bottom: 1px solid #e5e7eb !important;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            }
+            .wb-paper .ql-container.ql-snow { border: none !important; }
+            .wb-paper .ql-editor {
+                min-height: 24cm !important;
+                padding: 2.54cm !important;
+                font-family: 'Times New Roman', Times, serif !important;
+                font-size: 12pt !important;
+                line-height: 1.6 !important;
+                color: #1a1a1a !important;
+            }
+        `
+        document.head.appendChild(el)
+        return () => { el.remove() }
+    }, [])
+
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
@@ -587,30 +615,12 @@ export default function Workbench({ order }: { order: Order }) {
                 </div>
 
                 {/* ── DESK + PAPER ─────────────────────────────────────────────── */}
-                <style>{`
-                    .wb-paper .ql-toolbar.ql-snow {
-                        position: sticky; top: 0; z-index: 50;
-                        background: #fff;
-                        border: none !important;
-                        border-bottom: 1px solid #e5e7eb !important;
-                        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-                    }
-                    .wb-paper .ql-container.ql-snow { border: none !important; }
-                    .wb-paper .ql-editor {
-                        min-height: calc(279.4mm - 44px) !important;
-                        padding: 25.4mm !important;
-                        font-family: 'Times New Roman', Times, serif !important;
-                        font-size: 12pt !important;
-                        line-height: 1.5 !important;
-                        color: #1f2937 !important;
-                    }
-                `}</style>
                 <div
-                    className="flex-1 min-h-0 overflow-y-auto"
-                    style={{ background: '#F3F4F6', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '2rem', paddingBottom: '4rem', gap: '0.75rem' }}
+                    className="flex-1 min-h-0 overflow-y-auto overflow-x-auto"
+                    style={{ background: '#E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1.5rem 4rem' }}
                 >
                     {(optimisticExternalUrl || selectedDoc.externalTranslationUrl) && (
-                        <div className="bg-emerald-100 border border-emerald-300 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3" style={{ width: '215.9mm' }}>
+                        <div className="bg-emerald-100 border border-emerald-300 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3 mb-2 w-full max-w-[215.9mm]">
                             <p className="text-emerald-800 text-xs font-semibold leading-snug">
                                 ✅ Tradução Externa Anexada: O PDF carregado será usado na geração do Kit Oficial.
                             </p>
@@ -626,7 +636,7 @@ export default function Workbench({ order }: { order: Order }) {
                     )}
                     <div
                         className="wb-paper bg-white"
-                        style={{ width: '215.9mm', minHeight: '279.4mm', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}
+                        style={{ width: 'min(215.9mm, 100%)', minHeight: '27.94cm', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 20px 25px -5px rgba(0,0,0,0.1)' }}
                     >
                         <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
                     </div>
