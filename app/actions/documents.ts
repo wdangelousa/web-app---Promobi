@@ -63,3 +63,46 @@ export async function replaceOriginalDocument(formData: FormData) {
         return { success: false, error: err.message || 'Erro interno ao processar o arquivo.' }
     }
 }
+
+// ─── repairDocumentLinks ──────────────────────────────────────────────────────
+// Cura as URLs de documentos 404 refazendo o getPublicUrl com o Supabase.
+// Especialmente util para IFrames que perderam contexto de URL ou de bucket.
+export async function repairDocumentLinks(orderId: number) {
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { documents: true }
+        });
+
+        if (!order) return { success: false, error: 'Pedido não encontrado' };
+
+        let repairedCount = 0;
+
+        // Obter URL pública gerada na hora e atualizar banco onde der diferente
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+        const supabaseForRepair = createClient(supabaseUrl, supabaseKey);
+
+        for (const doc of order.documents) {
+            if (doc.originalFileUrl && doc.originalFileUrl.includes('/documents/')) {
+                const urlParts = doc.originalFileUrl.split('/documents/');
+                if (urlParts.length > 1) {
+                    const filePath = urlParts[1].split('?')[0];
+                    const { data } = supabaseForRepair.storage.from('documents').getPublicUrl(filePath);
+
+                    if (data.publicUrl && data.publicUrl !== doc.originalFileUrl) {
+                        await prisma.document.update({
+                            where: { id: doc.id },
+                            data: { originalFileUrl: data.publicUrl }
+                        });
+                        repairedCount++;
+                    }
+                }
+            }
+        }
+
+        return { success: true, count: repairedCount }
+    } catch (error: any) {
+        return { success: false, error: error.message }
+    }
+}
