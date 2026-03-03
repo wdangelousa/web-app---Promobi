@@ -22,15 +22,9 @@ export async function POST(req: Request) {
         const pdfBuffer = await pdfRes.arrayBuffer()
         const base64Data = Buffer.from(pdfBuffer).toString('base64')
 
-        // 2. Instantiate Gemini using the v1 API
+        // 2. Instantiate Gemini 2.0 Flash (current default generation)
         const genAI = new GoogleGenerativeAI(apiKey)
-        // Force the library to use the v1 stable endpoint by adjusting the global fetch configuration or specifying it explicitly.
-        // As of the official JS SDK, the easiest reliable fallback for the v1beta 404 is simply 'gemini-1.5-pro' or 'gemini-1.5-flash'.
-        // If they still 404 under the default configuration, we ensure we pass the correct model ID formats that works natively with the latest backend.
-        const model = genAI.getGenerativeModel(
-            { model: 'gemini-2.0-flash' },
-            { apiVersion: 'v1beta' }
-        )
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
         // 3. System prompt & query
         const prompt = `Você é um tradutor juramentado especialista. Traduza o documento PDF anexo fielmente para o Inglês (EUA). Mantenha a formatação original (títulos, parágrafos, tabelas) usando HTML semântico limpo.
