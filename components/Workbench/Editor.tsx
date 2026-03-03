@@ -43,7 +43,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </button>
                 </div>
 
-                {/* Direita: Botões de Ação (Preview Kit Restaurado) */}
+                {/* Direita: Botões de Ação (Preview Kit Restaurado com Estilo Laranja) */}
                 <div className="flex items-center gap-3">
                     <button
                         onClick={onSave}
@@ -52,10 +52,10 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                         💾 Salvar
                     </button>
 
-                    {/* O BOTÃO PREVIEW KIT ESTÁ AQUI */}
+                    {/* O BOTÃO PREVIEW KIT ESTÁ AQUI - ESTILO LARANJA CONFORME SOLICITADO */}
                     <button
                         onClick={onPreviewKit}
-                        className="text-indigo-600 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 px-4 py-1.5 rounded-md text-sm font-semibold transition flex items-center gap-2"
+                        className="bg-[#f58220] hover:bg-[#e67610] text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition flex items-center gap-2"
                     >
                         📦 Preview Kit
                     </button>
@@ -83,7 +83,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </div>
                 )}
 
-                {/* Painel Direito: TinyMCE com API KEY */}
+                {/* Painel Direito: TinyMCE com API KEY e FLAGS DE BLOQUEIO DE BANNER */}
                 <div className={`h-full bg-[#F3F4F6] transition-all duration-300 ${showReference ? 'w-1/2' : 'w-full'}`}>
                     <TinyMCEEditor
                         apiKey="82ofpgepw5tsxa9oqyjs2vmkgc65souf4227m6sikgnxq5jz"
@@ -91,8 +91,11 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                         onEditorChange={(newValue) => setContent(newValue)}
                         init={{
                             height: '100%',
-                            menubar: true,
-                            statusbar: false,
+                            menubar: false,
+                            statusbar: true,
+                            branding: false,
+                            promotion: false,
+                            elementpath: false,
                             plugins: [
                                 'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
                                 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
