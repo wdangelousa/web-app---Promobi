@@ -94,3 +94,30 @@ body {
     line-height: 1.5 !important;
     color: #1f2937 !important;
 }
+
+/* FORÇAR VISUAL DO EDITOR - SOBRESCREVE TUDO */
+.wb-paper .ql-container.ql-snow {
+    border: none !important;
+    /* Remove borda cinza padrão */
+    font-family: 'Times New Roman', serif !important;
+    font-size: 12pt !important;
+}
+
+.wb-paper .ql-editor {
+    padding: 0 !important;
+    /* Remove padding duplo (já temos na div pai) */
+    min-height: 100% !important;
+}
+
+/* LIMPEZA DO PDF (LADO ESQUERDO) */
+/* Tenta ocultar thumbnails laterais comuns em libs de PDF */
+.rpv-core__inner-pages,
+.react-pdf__Document .react-pdf__Page__canvas {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    margin: 0 auto !important;
+}
+
+/* Ocultar barra lateral de thumbnails se existir classe padrão */
+.rpv-thumbnail-sidebar {
+    display: none !important;
+}

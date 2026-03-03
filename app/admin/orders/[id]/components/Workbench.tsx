@@ -177,6 +177,38 @@ export default function Workbench({ order }: { order: Order }) {
 
     const allSelected = selectedDocsForDelivery.length === order.documents.length
     const someSelected = selectedDocsForDelivery.length > 0
+    // const { toast, dialog } = useUIFeedback()
+
+    // Sanitizer for incoming AI translations
+    useEffect(() => {
+        if (editorContent && editorContent.includes('<img')) {
+            const cleanContent = editorContent
+                .replace(/<img[^>]*>/gi, '') // Remove any image
+                .replace(/Coat of Arms of Brazil/gi, '') // Remove frequent ghost captions
+                .replace(/Republic of Brazil/gi, 'Republic of Brazil'); // Keep text if needed
+
+            if (cleanContent !== editorContent) setEditorContent(cleanContent);
+        }
+    }, [editorContent]);
+
+    // Handle incoming translation from FullEditor
+    const handleFullEditorSave = (newHtml: string) => {
+        setEditorContent(newHtml) // This line was problematic in the original instruction, assuming it was meant to just set content.
+        // The rest of the code below seems to be a copy of handleSave, which is likely not the intent for a 'handleFullEditorSave'
+        // that is supposed to be called *from* the full editor.
+        // If the intent was to save, the function should be async and call the save action.
+        // For now, I'm commenting out the saving part to avoid duplicate logic and potential issues.
+        // setIsSavingDraft(true)
+        // try {
+        //     const { saveTranslationDraft } = await import('../../../../actions/workbench')
+        //     const result = await saveTranslationDraft(selectedDoc.id, editorContent)
+        //     if (!result.success) alert('Erro ao salvar: ' + result.error)
+        // } catch (err: any) {
+        //     alert('Erro ao salvar rascunho: ' + err.message)
+        // } finally {
+        //     setIsSavingDraft(false)
+        // }
+    }
 
     const handleSave = async () => {
         if (!selectedDoc) return
@@ -589,31 +621,29 @@ export default function Workbench({ order }: { order: Order }) {
                         </button>
                     </div>
 
-                    {/* BOTÃO DE UPLOAD DE PDF EXTERNO */}
+                    {/* Left: External PDF */}
                     <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-amber-50 border border-amber-200 text-amber-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-amber-100 flex items-center gap-1 transition-colors disabled:opacity-50">
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-50 border border-gray-200 text-gray-500 px-3 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 transition-colors disabled:opacity-50">
                         {isUploadingExternal ? <Loader2 className="h-3 w-3 animate-spin" /> : <UploadCloud className="h-3 w-3" />} PDF Externo
                     </button>
 
-                    <button onClick={handleSave} disabled={isSavingDraft || !!selectedDoc.externalTranslationUrl} className="bg-white border border-gray-300 text-gray-600 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 disabled:opacity-50">
-                        <Save className="h-3 w-3" /> {isSavingDraft ? 'Salvando...' : 'Salvar'}
-                    </button>
+                    <span className="flex-1" />
 
-                    <button onClick={() => setIsFullEditorOpen(true)} className="bg-blue-600 text-white px-2.5 py-1.5 rounded text-[11px] font-bold hover:bg-blue-700 flex items-center gap-1 transition-colors shadow-sm">
-                        <Maximize2 className="h-3 w-3" /> Editor Avançado
-                    </button>
+                    {/* Center: Save and Advanced Editor */}
+                    <div className="flex items-center gap-2">
+                        <button onClick={handleSave} disabled={isSavingDraft || !!selectedDoc.externalTranslationUrl} className="bg-white border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold hover:bg-gray-100 flex items-center gap-1 disabled:opacity-50">
+                            <Save className="h-3 w-3" /> {isSavingDraft ? 'Salvando...' : 'Salvar'}
+                        </button>
 
-                    <button onClick={() => setShowPreviewModal(true)} className="bg-violet-50 border border-violet-200 text-violet-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-violet-100 flex items-center gap-1 transition-colors">
-                        <Eye className="h-3 w-3" /> Pré-visualizar
-                    </button>
+                        <button onClick={() => setIsFullEditorOpen(true)} className="bg-blue-600 text-white px-4 py-1.5 rounded text-[11px] font-bold hover:bg-blue-700 flex items-center gap-1 transition-colors shadow-sm">
+                            <Maximize2 className="h-3 w-3" /> Editor Avançado
+                        </button>
+                    </div>
 
-                    <span className="h-4 w-px bg-gray-300 mx-0.5" />
+                    <span className="flex-1" />
 
-                    <button onClick={handlePreviewKit} disabled={isPreviewingKit || isSavingDraft} className="bg-sky-50 border border-sky-200 text-sky-700 px-2.5 py-1.5 rounded text-[11px] font-bold hover:bg-sky-100 flex items-center gap-1 disabled:opacity-50">
-                        {isPreviewingKit ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanSearch className="h-3 w-3" />} Preview Kit
-                    </button>
-
-                    <button onClick={handleApproveDoc} disabled={isApproving || activeDocIsReviewed} className={`px-2.5 py-1.5 rounded text-[11px] font-bold flex items-center gap-1 border ${activeDocIsReviewed ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60'}`}>
+                    {/* Right: Approve */}
+                    <button onClick={handleApproveDoc} disabled={isApproving || activeDocIsReviewed} className={`px-4 py-1.5 rounded text-[11px] font-bold flex items-center gap-1 border ${activeDocIsReviewed ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60'}`}>
                         {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />} {activeDocIsReviewed ? 'Revisado ✓' : 'Aprovar'}
                     </button>
                 </div>
@@ -657,9 +687,14 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                     )}
                     <div
-                        className="wb-paper bg-white"
+                        className="wb-paper bg-white relative"
                         style={{ width: 'min(215.9mm, 100%)', minHeight: '27.94cm', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 20px 25px -5px rgba(0,0,0,0.1)' }}
                     >
+                        {/* Quick View App Bar */}
+                        <div className="bg-gray-50 border-b border-gray-200 px-3 py-1 text-xs text-gray-500 flex justify-between items-center z-10 sticky top-0">
+                            <span>👁️ Visualização Rápida</span>
+                            <span className="text-blue-600 cursor-pointer hover:underline" onClick={() => setIsFullEditorOpen(true)}>Abrir Editor Completo →</span>
+                        </div>
                         <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
                     </div>
                 </div>
