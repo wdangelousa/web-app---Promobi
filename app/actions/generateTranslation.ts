@@ -14,7 +14,7 @@ async function analyzeDocument(fileUrl: string): Promise<string> {
     throw new Error('Missing AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT or AZURE_DOCUMENT_INTELLIGENCE_KEY')
   }
 
-  const analyzeUrl = `${baseUrl}/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`
+  const analyzeUrl = `${baseUrl}/documentModels/prebuilt-layout:analyze?api-version=2024-11-30`
 
   console.log(`[AzureDI] URL → ${analyzeUrl}`)
   console.log(`[AzureDI] KEY_PREFIX → ${apiKey.substring(0, 6)}...`)
