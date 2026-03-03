@@ -232,47 +232,62 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             try {
                 const originalRes = await fetch(doc.originalFileUrl)
                 if (originalRes.ok) {
-                    const originalBuf = Buffer.from(await originalRes.arrayBuffer())
-
-                    // Per-page rotation map saved by the operator in the Workbench
-                    // @ts-ignore - pageRotations exists in DB; Prisma client cache may be stale
-                    const rotationsMap = (doc.pageRotations as Record<string, number> | null) ?? {}
-
-                    if (isImageUrl(doc.originalFileUrl)) {
-                        // Images are always 1 page (index 0)
-                        let image;
-                        if (doc.originalFileUrl.toLowerCase().includes('.png')) {
-                            image = await finalPdf.embedPng(originalBuf)
-                        } else {
-                            image = await finalPdf.embedJpg(originalBuf)
-                        }
-                        // Always create portrait page; landscape images scale to fit within it
-                        const scale = Math.min(PAGE_WIDTH / image.width, 792 / image.height)
-                        const scaledWidth = image.width * scale
-                        const scaledHeight = image.height * scale
-                        const page = finalPdf.addPage([PAGE_WIDTH, 792])
-                        const imageRotation = rotationsMap['0'] ?? 0
-                        if (imageRotation !== 0) page.setRotation(degrees(imageRotation))
-                        page.drawImage(image, {
-                            x: (PAGE_WIDTH - scaledWidth) / 2,
-                            y: (792 - scaledHeight) / 2,
-                            width: scaledWidth,
-                            height: scaledHeight,
-                        })
+                    const originalContentType = originalRes.headers.get('content-type') || ''
+                    if (originalContentType.includes('xml') || originalContentType.includes('html')) {
+                        console.warn(`[generateDeliveryKit] ⚠️ Aviso: Arquivo original retornou conteúdo inválido (${originalContentType}) - possível 404/Inacessível. Fallback ativado, seguindo sem ele.`)
                     } else {
-                        const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
-                        const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
-                        copied.forEach((p, i) => {
-                            // Per-page user rotation takes priority; fall back to the PDF's own metadata
-                            const savedRotation = rotationsMap[i.toString()] ?? 0
-                            const rotation = savedRotation !== 0 ? savedRotation : p.getRotation().angle
-                            p.setRotation(degrees(rotation))
-                            finalPdf.addPage(p)
-                        })
+                        const originalBuf = Buffer.from(await originalRes.arrayBuffer())
+
+                        // Per-page rotation map saved by the operator in the Workbench
+                        // @ts-ignore - pageRotations exists in DB; Prisma client cache may be stale
+                        const rotationsMap = (doc.pageRotations as Record<string, number> | null) ?? {}
+
+                        if (isImageUrl(doc.originalFileUrl)) {
+                            // Images are always 1 page (index 0)
+                            let image;
+                            try {
+                                if (doc.originalFileUrl.toLowerCase().includes('.png')) {
+                                    image = await finalPdf.embedPng(originalBuf)
+                                } else {
+                                    image = await finalPdf.embedJpg(originalBuf)
+                                }
+                                // Always create portrait page; landscape images scale to fit within it
+                                const scale = Math.min(PAGE_WIDTH / image.width, 792 / image.height)
+                                const scaledWidth = image.width * scale
+                                const scaledHeight = image.height * scale
+                                const page = finalPdf.addPage([PAGE_WIDTH, 792])
+                                const imageRotation = rotationsMap['0'] ?? 0
+                                if (imageRotation !== 0) page.setRotation(degrees(imageRotation))
+                                page.drawImage(image, {
+                                    x: (PAGE_WIDTH - scaledWidth) / 2,
+                                    y: (792 - scaledHeight) / 2,
+                                    width: scaledWidth,
+                                    height: scaledHeight,
+                                })
+                            } catch (imgErr) {
+                                console.warn('[generateDeliveryKit] ⚠️ Aviso: Erro ao injetar Imagem Original. Fallback ativado.', imgErr)
+                            }
+                        } else {
+                            try {
+                                const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
+                                const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
+                                copied.forEach((p, i) => {
+                                    // Per-page user rotation takes priority; fall back to the PDF's own metadata
+                                    const savedRotation = rotationsMap[i.toString()] ?? 0
+                                    const rotation = savedRotation !== 0 ? savedRotation : p.getRotation().angle
+                                    p.setRotation(degrees(rotation))
+                                    finalPdf.addPage(p)
+                                })
+                            } catch (pdfErr) {
+                                console.warn('[generateDeliveryKit] ⚠️ Aviso: Erro ao fazer o parse do PDF Original. Fallback ativado.', pdfErr)
+                            }
+                        }
                     }
+                } else {
+                    console.warn(`[generateDeliveryKit] ⚠️ Aviso: Arquivo original inacessível (HTTP ${originalRes.status}). Kit será completado sem ele.`)
                 }
             } catch (err) {
-                console.error('[generateDeliveryKit] Error appending original document:', err)
+                console.error('[generateDeliveryKit] ⚠️ Falha na busca pelo documento original (fallback ativo):', err)
             }
         }
 
