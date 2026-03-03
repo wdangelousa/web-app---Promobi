@@ -22,9 +22,9 @@ export async function POST(req: Request) {
         const pdfBuffer = await pdfRes.arrayBuffer()
         const base64Data = Buffer.from(pdfBuffer).toString('base64')
 
-        // 2. Instantiate Gemini 2.0 Flash (current default generation)
+        // 2. Instantiate Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' })
 
         // 3. System prompt & query
         const prompt = `Você é um tradutor juramentado especialista. Traduza o documento PDF anexo fielmente para o Inglês (EUA). Mantenha a formatação original (títulos, parágrafos, tabelas) usando HTML semântico limpo.
