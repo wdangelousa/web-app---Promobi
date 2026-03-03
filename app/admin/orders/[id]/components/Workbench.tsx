@@ -125,6 +125,8 @@ export default function Workbench({ order }: { order: Order }) {
     const [docNameSaved, setDocNameSaved] = useState(false)
 
     const [showPreviewModal, setShowPreviewModal] = useState(false)
+    const [isPreviewingKit, setIsPreviewingKit] = useState(false)
+    const [kitPreviewUrl, setKitPreviewUrl] = useState<string | null>(null)
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
 
@@ -185,6 +187,30 @@ export default function Workbench({ order }: { order: Order }) {
             alert('Erro ao salvar rascunho: ' + err.message)
         } finally {
             setIsSavingDraft(false)
+        }
+    }
+
+    const handlePreviewKit = async () => {
+        if (!selectedDoc) return
+        setIsPreviewingKit(true)
+        try {
+            if (!selectedDoc.externalTranslationUrl) {
+                const { saveTranslationDraft } = await import('../../../../actions/workbench')
+                await saveTranslationDraft(selectedDoc.id, editorContent)
+            }
+
+            const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
+            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true })
+            if (result.success && result.deliveryUrl) {
+                setKitPreviewUrl(result.deliveryUrl)
+                setShowPreviewModal(true)
+            } else {
+                alert('Erro ao gerar preview: ' + result.error)
+            }
+        } catch (err: any) {
+            alert('Erro ao gerar Preview Kit: ' + (err.message || String(err)))
+        } finally {
+            setIsPreviewingKit(false)
         }
     }
 
@@ -542,7 +568,8 @@ export default function Workbench({ order }: { order: Order }) {
                         setContent={setEditorContent}
                         pdfUrl={selectedDoc.originalFileUrl}
                         onSave={handleSave}
-                        onPreviewKit={() => setShowPreviewModal(true)}
+                        onPreviewKit={handlePreviewKit}
+                        isPreviewingKit={isPreviewingKit}
                         onApprove={handleApproveDoc}
                     />
                 </div>
@@ -551,30 +578,25 @@ export default function Workbench({ order }: { order: Order }) {
             {/* ── OVERLAYS ──────────────────────────────────────────────────────── */}
 
             {/* Modal Pré-visualização */}
+            {/* Modal Pré-visualização do Kit Oficial */}
             {showPreviewModal && (
                 <div className="fixed inset-0 z-[60] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPreviewModal(false)}>
                     <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
                             <span className="text-white font-semibold flex items-center gap-2">
-                                <Eye className="h-4 w-4" /> Preview — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}
+                                <Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}
                             </span>
                             <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
                         </div>
-                        <div className="flex-1 overflow-y-auto bg-gray-100 p-8 flex justify-center">
-                            <div
-                                style={{
-                                    width: '21.59cm',
-                                    minHeight: '27.94cm',
-                                    backgroundColor: 'white',
-                                    padding: '2.54cm',
-                                    boxShadow: '0 0 15px rgba(0,0,0,0.1)',
-                                    fontFamily: "'Times New Roman', Times, serif",
-                                    fontSize: '12pt',
-                                    lineHeight: '1.6',
-                                    color: '#1a1a1a',
-                                }}
-                                dangerouslySetInnerHTML={{ __html: editorContent }}
-                            />
+                        <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
+                            {kitPreviewUrl ? (
+                                <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" />
+                            ) : (
+                                <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3">
+                                    <Loader2 className="h-8 w-8 animate-spin" />
+                                    <span>Carregando visualização do Kit...</span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
