@@ -103,12 +103,12 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                             plugins: [
                                 'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
                                 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
-                                'insertdatetime', 'media', 'table', 'help', 'wordcount'
+                                'insertdatetime', 'media', 'table', 'help', 'wordcount', 'pagebreak'
                             ],
                             toolbar: 'undo redo | blocks | ' +
                                 'bold italic forecolor | alignleft aligncenter ' +
                                 'alignright alignjustify | bullist numlist outdent indent | ' +
-                                'table | removeformat | help',
+                                'pagebreak table | removeformat | help',
                             content_style: `
                 body { 
                   font-family: 'Times New Roman', serif; 
@@ -123,7 +123,16 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                   min-height: 11in;
                   margin: 0 auto;
                   padding: 1in;
+                  box-sizing: border-box;
                   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                  /* Visual Page Separator every 11 inches */
+                  background-image: repeating-linear-gradient(
+                    to bottom,
+                    transparent,
+                    transparent 10.98in,
+                    #cbd5e1 10.98in,
+                    #cbd5e1 11in
+                  );
                 }
                 @media (max-width: 1000px) {
                   .mce-content-body { width: 95%; padding: 0.5in; }
