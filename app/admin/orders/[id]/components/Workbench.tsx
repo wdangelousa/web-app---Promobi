@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, ScanSearch, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import 'react-quill-new/dist/quill.snow.css'
@@ -89,6 +89,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [docNameSaved, setDocNameSaved] = useState(false)
 
     const [showPreviewModal, setShowPreviewModal] = useState(false)
+    const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
 
     // Inject paper editor styles directly into <head> — bypasses all CSS cascade issues
     useEffect(() => {
@@ -581,6 +582,10 @@ export default function Workbench({ order }: { order: Order }) {
                         <Save className="h-3 w-3" /> {isSavingDraft ? 'Salvando...' : 'Salvar'}
                     </button>
 
+                    <button onClick={() => setIsFullEditorOpen(true)} className="bg-blue-600 text-white px-2.5 py-1.5 rounded text-[11px] font-bold hover:bg-blue-700 flex items-center gap-1 transition-colors shadow-sm">
+                        <Maximize2 className="h-3 w-3" /> Editor Avançado
+                    </button>
+
                     <button onClick={() => setShowPreviewModal(true)} className="bg-violet-50 border border-violet-200 text-violet-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-violet-100 flex items-center gap-1 transition-colors">
                         <Eye className="h-3 w-3" /> Pré-visualizar
                     </button>
@@ -664,6 +669,59 @@ export default function Workbench({ order }: { order: Order }) {
                                     className="ql-editor"
                                     style={{ minHeight: '27.94cm', backgroundColor: 'white', padding: '2.54cm', boxShadow: '0 0 15px rgba(0,0,0,0.15)', color: 'black' }}
                                     dangerouslySetInnerHTML={{ __html: editorContent }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── FULL-SCREEN EDITOR ──────────────────────────────────────────── */}
+            {isFullEditorOpen && (
+                <div className="fixed inset-0 z-[100] bg-gray-100 flex flex-col">
+
+                    {/* Header */}
+                    <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shrink-0 shadow-md">
+                        <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-blue-400" />
+                            <span className="text-base font-semibold">Editor Avançado</span>
+                            <span className="text-gray-400 text-sm">— {selectedDoc.exactNameOnDoc || selectedDoc.docType}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsFullEditorOpen(false)}
+                                className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded text-white transition-colors"
+                            >
+                                Voltar sem salvar
+                            </button>
+                            <button
+                                onClick={async () => { await handleSave(); setIsFullEditorOpen(false) }}
+                                disabled={isSavingDraft}
+                                className="px-5 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded text-white font-bold shadow transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                            >
+                                {isSavingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                Salvar e Fechar
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Desk — scrollable gray area */}
+                    <div className="flex-1 overflow-y-auto overflow-x-auto" style={{ background: '#E8EAED' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2.5rem 2rem 5rem' }}>
+                            {/* Paper */}
+                            <div
+                                className="wb-paper bg-white"
+                                style={{
+                                    width: 'min(215.9mm, 100%)',
+                                    minHeight: '279.4mm',
+                                    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.3), 0 4px 6px -1px rgba(0,0,0,0.1)',
+                                }}
+                            >
+                                <ReactQuill
+                                    theme="snow"
+                                    value={editorContent}
+                                    onChange={setEditorContent}
+                                    modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }}
                                 />
                             </div>
                         </div>
