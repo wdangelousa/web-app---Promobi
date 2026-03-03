@@ -609,8 +609,8 @@ export default function Workbench({ order }: { order: Order }) {
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-auto">
-                        <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} className="h-full" modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
+                    <div className="quill-workspace">
+                        <ReactQuill theme="snow" value={editorContent} onChange={setEditorContent} modules={{ toolbar: [[{ font: [] }, { size: [] }], ['bold', 'italic', 'underline', 'strike'], [{ color: [] }, { background: [] }], [{ align: [] }], [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }], ['clean']] }} />
                     </div>
                 </div>
             </div>

@@ -48,3 +48,28 @@ body {
     box-shadow: 0 0 0 1px rgba(255, 102, 0, 0.3);
     background: rgba(255, 255, 255, 0.05);
 }
+
+/* ── Workbench Editor — US Letter Page Simulation ────────────────────────── */
+.quill-workspace {
+    background-color: #f3f4f6;
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    display: flex;
+    justify-content: center;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.quill-workspace .ql-container {
+    border: none !important;
+}
+
+.quill-workspace .ql-editor {
+    width: 8.5in;
+    min-height: 11in;
+    padding: 1in !important;
+    background-color: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    color: #1f2937;
+    font-family: 'Times New Roman', serif;
+}
