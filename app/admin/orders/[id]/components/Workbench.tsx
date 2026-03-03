@@ -63,6 +63,7 @@ export default function Workbench({ order }: { order: Order }) {
     )
     const [editorContent, setEditorContent] = useState('')
     const [isResending, setIsResending] = useState(false)
+    const [aiEngine, setAiEngine] = useState('azure-deepl')
 
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
@@ -151,19 +152,39 @@ export default function Workbench({ order }: { order: Order }) {
         if (!selectedDoc) return
         setIsTranslating(true)
         try {
-            const { generateTranslationDraft } = await import('../../../../actions/generateTranslation')
-            const result = await generateTranslationDraft(order.id)
-            const newText = (result as any).text || (result as any).translatedText
+            if (aiEngine === 'google-gemini') {
+                if (!selectedDoc.originalFileUrl) throw new Error("Documento original indisponível")
+                const res = await fetch('/api/translate/gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileUrl: selectedDoc.originalFileUrl, targetLang: 'en-US' })
+                })
+                const data = await res.json()
+                if (!res.ok) throw new Error(data.error || 'Erro na API Gemini')
 
-            if (result.success && newText) {
-                justTranslatedRef.current = newText
-                setEditorContent(newText)
-                router.refresh()
-            } else if (result.success) {
-                alert('Tradução concluída, mas sem texto retornado. Recarregue a página.')
+                justTranslatedRef.current = data.translatedText
+                setEditorContent(data.translatedText)
+
+                // Saving automatically just like the other route
+                const { saveTranslationDraft } = await import('../../../../actions/workbench')
+                await saveTranslationDraft(selectedDoc.id, data.translatedText)
+
                 router.refresh()
             } else {
-                alert('Erro na tradução: ' + ((result as any).error || 'desconhecido'))
+                const { generateTranslationDraft } = await import('../../../../actions/generateTranslation')
+                const result = await generateTranslationDraft(order.id)
+                const newText = (result as any).text || (result as any).translatedText
+
+                if (result.success && newText) {
+                    justTranslatedRef.current = newText
+                    setEditorContent(newText)
+                    router.refresh()
+                } else if (result.success) {
+                    alert('Tradução concluída, mas sem texto retornado. Recarregue a página.')
+                    router.refresh()
+                } else {
+                    alert('Erro na tradução: ' + ((result as any).error || 'desconhecido'))
+                }
             }
         } catch (err: any) {
             alert('Erro ao acionar IA: ' + err.message)
@@ -511,9 +532,21 @@ export default function Workbench({ order }: { order: Order }) {
 
                     {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
-                    <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 border border-purple-200 text-purple-700 px-2 py-1.5 rounded text-[11px] font-bold hover:bg-purple-100 flex items-center gap-1 disabled:opacity-50">
-                        {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} IA
-                    </button>
+                    <div className="flex items-center gap-1 border border-gray-200 rounded p-0.5 bg-white shadow-sm ml-1">
+                        <select
+                            value={aiEngine}
+                            onChange={(e) => setAiEngine(e.target.value)}
+                            disabled={isTranslating}
+                            title="Motor de IA para Tradução"
+                            className="text-[10px] font-bold text-gray-600 bg-transparent border-none focus:ring-0 cursor-pointer pr-6 py-1 outline-none disabled:opacity-50"
+                        >
+                            <option value="azure-deepl">Layout Preciso - Azure + DeepL</option>
+                            <option value="google-gemini">Contexto Jurídico - Google Gemini</option>
+                        </select>
+                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 text-purple-700 px-2 py-1.5 rounded-sm text-[11px] font-bold hover:bg-purple-100 flex items-center gap-1 disabled:opacity-50 transition-colors">
+                            {isTranslating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} IA
+                        </button>
+                    </div>
 
                     {/* BOTÃO DE UPLOAD DE PDF EXTERNO */}
                     <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
