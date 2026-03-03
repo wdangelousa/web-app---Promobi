@@ -617,20 +617,28 @@ export default function Workbench({ order }: { order: Order }) {
 
             {/* ── MODAL PRÉ-VISUALIZAÇÃO ──────────────────────────────────────── */}
             {showPreviewModal && (
-                <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 overflow-y-auto py-8" onClick={() => setShowPreviewModal(false)}>
-                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                <div className="fixed inset-0 z-50 bg-gray-100 overflow-y-auto" onClick={() => setShowPreviewModal(false)}>
+                    {/* Barra superior */}
+                    <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-2 bg-gray-800 shadow">
+                        <span className="text-white text-sm font-semibold">Pré-visualização — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
                         <button
                             onClick={() => setShowPreviewModal(false)}
-                            className="absolute -top-9 right-0 flex items-center gap-1.5 text-white/80 hover:text-white text-sm font-medium"
+                            className="flex items-center gap-1.5 text-white/80 hover:text-white text-sm font-medium"
                         >
                             <X className="h-4 w-4" /> Fechar
                         </button>
-                        {/* Folha A4 */}
-                        <div
-                            className="bg-white shadow-2xl"
-                            style={{ width: '210mm', minHeight: '297mm', padding: '25mm 20mm', fontFamily: 'Arial, sans-serif', fontSize: '11pt', lineHeight: '1.5', color: '#000' }}
-                            dangerouslySetInnerHTML={{ __html: editorContent }}
-                        />
+                    </div>
+                    {/* Folha US Letter com classes do Quill para WYSIWYG */}
+                    <div className="py-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="quill" style={{ width: '21.59cm' }}>
+                            <div className="ql-container ql-snow" style={{ border: 'none' }}>
+                                <div
+                                    className="ql-editor"
+                                    style={{ minHeight: '27.94cm', backgroundColor: 'white', padding: '2.54cm', boxShadow: '0 0 15px rgba(0,0,0,0.15)', color: 'black' }}
+                                    dangerouslySetInnerHTML={{ __html: editorContent }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
