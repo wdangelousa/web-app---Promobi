@@ -15,6 +15,11 @@ const nextConfig = {
         return config;
     },
     serverExternalPackages: ['pdf-parse', 'pdfjs-dist', 'canvas'],
+    experimental: {
+        serverActions: {
+            bodySizeLimit: '50mb'
+        }
+    }
 };
 
 export default nextConfig;
