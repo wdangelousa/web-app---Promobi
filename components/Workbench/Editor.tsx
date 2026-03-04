@@ -104,6 +104,15 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                             width="100%"
                             style={{ 'display': 'block' }}
                             enableToolbar={true}
+                            created={() => {
+                                // Configura folha padrão para US Letter (8.5 x 11 polegadas -> 612 x 792 points)
+                                if (containerRef.current) {
+                                    const editor = containerRef.current.documentEditor;
+                                    // A4 padrão = 595.3 x 841.9 pt. Letter = 612 x 792 pt
+                                    editor.selection.sectionFormat.pageWidth = 612;
+                                    editor.selection.sectionFormat.pageHeight = 792;
+                                }
+                            }}
                         />
                     </div>
                 </div>
