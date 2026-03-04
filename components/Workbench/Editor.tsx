@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     DocumentEditorContainerComponent,
     Toolbar
@@ -17,14 +15,14 @@ import '@syncfusion/ej2-splitbuttons/styles/material.css';
 import '@syncfusion/ej2-dropdowns/styles/material.css';
 import '@syncfusion/ej2-react-documenteditor/styles/material.css';
 
-// Injeção dos módulos necessários do Syncfusion
+// Injeção dos módulos do Syncfusion
 DocumentEditorContainerComponent.Inject(Toolbar);
 
-// Registro da Chave de Licença (Válida)
+// Registro da Chave de Licença (7 Dias)
 registerLicense('Ngo9BigBOggjHTQxAR8/V1JGaF1cXmhKYVJ3WmFZfVhgdl9CYVZRRmY/P1ZhSXxVdkZjXX5adHVVRGNEVU19XEA=');
 
 interface EditorProps {
-    content: string; // Por enquanto, ainda recebendo HTML do BD
+    content: string;
     setContent: (content: string) => void;
     pdfUrl?: string;
     onSave?: () => void;
@@ -38,56 +36,76 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
 
     return (
-        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans">
+        // Contêiner principal travado na altura total (h-full)
+        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full">
 
-            {/* HEADER DE AÇÕES */}
-            <div className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 shrink-0">
-                <button
-                    onClick={() => setShowReference(!showReference)}
-                    className="text-sm bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200 transition flex items-center gap-2"
-                >
-                    {showReference ? '⬅ Ocultar Original' : '📄 Ver Original'}
-                </button>
+            {/* HEADER DE AÇÕES: Fixo e incompressível (shrink-0) */}
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-h-[60px]">
 
+                {/* Lado Esquerdo */}
                 <div className="flex items-center gap-3">
-                    <button onClick={onSave} className="text-gray-600 hover:text-blue-600 px-3 py-1.5 text-sm font-medium">💾 Salvar</button>
+                    <button
+                        onClick={() => setShowReference(!showReference)}
+                        className="text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-2"
+                    >
+                        {showReference ? '⬅ Ocultar Documento Original' : '📄 Ver Documento Original'}
+                    </button>
+                </div>
+
+                {/* Lado Direito: Nossos Botões Promobi */}
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onSave}
+                        className="text-gray-600 hover:text-blue-600 px-4 py-2 text-sm font-semibold transition border border-transparent hover:border-gray-200 rounded"
+                    >
+                        💾 Salvar
+                    </button>
 
                     <button
                         onClick={onPreviewKit}
-                        className="text-indigo-600 bg-indigo-50 border border-indigo-100 px-4 py-1.5 rounded text-sm font-semibold hover:bg-indigo-100 transition"
+                        className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-5 py-2 rounded-md text-sm font-bold hover:bg-indigo-100 transition-colors flex items-center gap-2 shadow-sm"
                     >
                         📦 Preview Kit
                     </button>
 
-                    <button onClick={onApprove} className="bg-green-600 hover:bg-green-500 text-white px-5 py-1.5 rounded text-sm font-bold shadow-sm transition transform hover:scale-105">
+                    <button
+                        onClick={onApprove}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-md text-sm font-bold shadow-md transition-transform transform hover:scale-105"
+                    >
                         ✅ Aprovar
                     </button>
                 </div>
             </div>
 
-            {/* ÁREA DE TRABALHO: SPLIT VIEW */}
-            <div className="flex-1 flex overflow-hidden">
+            {/* ÁREA DE TRABALHO: SPLIT VIEW (Ocupa o restante da tela: flex-1) */}
+            <div className="flex-1 flex overflow-hidden relative w-full bg-gray-200">
 
-                {/* PDF ORIGINAL */}
+                {/* Painel do PDF ORIGINAL */}
                 {showReference && (
-                    <div className="w-1/2 h-full border-r border-gray-300 bg-slate-800">
+                    <div className="w-1/2 h-full border-r-2 border-gray-300 bg-slate-800 flex flex-col z-10 shadow-inner">
                         {pdfUrl ? (
                             <iframe src={pdfUrl} className="w-full h-full border-none" title="Original" />
                         ) : (
-                            <div className="flex items-center justify-center h-full text-white/50">PDF não carregado</div>
+                            <div className="flex items-center justify-center h-full text-white/50 font-medium">
+                                Documento original não carregado
+                            </div>
                         )}
                     </div>
                 )}
 
-                {/* MOTOR SYNCFUSION (WORD CLONE) */}
-                <div className={`h-full ${showReference ? 'w-1/2' : 'w-full'}`}>
-                    <DocumentEditorContainerComponent
-                        id="container"
-                        ref={containerRef}
-                        style={{ 'display': 'block', 'height': '100%', 'width': '100%' }}
-                        enableToolbar={true}
-                    />
+                {/* Painel do SYNCFUSION */}
+                <div className={`h-full relative overflow-hidden bg-white ${showReference ? 'w-1/2' : 'w-full'}`}>
+                    {/* O componente precisa de um wrapper absoluto para não quebrar o flexbox */}
+                    <div className="absolute inset-0">
+                        <DocumentEditorContainerComponent
+                            id="container"
+                            ref={containerRef}
+                            style={{ 'display': 'block', 'height': '100%', 'width': '100%' }}
+                            enableToolbar={true}
+                        />
+                    </div>
                 </div>
+
             </div>
         </div>
     );
