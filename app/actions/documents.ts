@@ -1,6 +1,7 @@
 'use server'
 
 import prisma from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { createClient } from '@supabase/supabase-js'
 
 // ─── replaceOriginalDocument ──────────────────────────────────────────────────
@@ -52,7 +53,7 @@ export async function replaceOriginalDocument(formData: FormData) {
             where: { id: docId },
             data: {
                 originalFileUrl: publicUrl,
-                pageRotations: null,
+                pageRotations: Prisma.DbNull,
             },
         })
 
