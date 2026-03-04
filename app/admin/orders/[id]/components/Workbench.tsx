@@ -112,7 +112,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [sendToClient, setSendToClient] = useState(true)
     const [sendToTranslator, setSendToTranslator] = useState(false)
     const [generatingKits, setGeneratingKits] = useState(false)
-    const [isRepairingLinks, setIsRepairingLinks] = useState(false)
 
     const [selectedDocsForDelivery, setSelectedDocsForDelivery] = useState<number[]>([])
 
@@ -383,24 +382,7 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    // --- CURAR LINKS (Erros 404/500 de bucket storage expirado) ---
-    const handleRepairLinks = async () => {
-        setIsRepairingLinks(true)
-        try {
-            const { repairDocumentLinks } = await import('../../../../actions/documents')
-            const result = await repairDocumentLinks(order.id)
-            if (result.success) {
-                alert(`Links originais verificados. ${result.count} link(s) recuperado(s).`)
-                window.location.reload()
-            } else {
-                alert('Erro ao reparar: ' + result.error)
-            }
-        } catch (err: any) {
-            alert('Erro inesperado tentar reparar as URLs: ' + err.message)
-        } finally {
-            setIsRepairingLinks(false)
-        }
-    }
+    // A lógica de curar links foi removida daqui a pedido do usuário em favor de 'Substituir Original'.
 
     // --- FUNÇÃO DO MODAL DE DISPARO ---
     const confirmAndGenerateKits = async () => {
@@ -572,8 +554,9 @@ export default function Workbench({ order }: { order: Order }) {
                             {isTranslating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} IA
                         </button>
 
-                        <button onClick={handleRepairLinks} disabled={isRepairingLinks} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50" title="Restaura PDFs sumidos/quebradas do IFRAME">
-                            {isRepairingLinks ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Curar 404
+                        <input type="file" ref={replaceFileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleReplaceOriginal} />
+                        <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50" title="Substituir o arquivo do cliente corrompido ou sumido por um novo">
+                            {isReplacing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Trocar Original
                         </button>
 
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
