@@ -568,8 +568,8 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
                 </div>
 
-                {/* The New Editor Component with PDF + TinyMCE */}
-                <div className="flex-1 min-h-0">
+                {/* The New Editor Component with PDF + Syncfusion */}
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
                     <Editor
                         content={editorContent}
                         setContent={setEditorContent}
