@@ -37,10 +37,10 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
 
     return (
         // Contêiner principal travado na altura total (h-full)
-        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full">
+        <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full min-w-0">
 
             {/* HEADER DE AÇÕES: Fixo e incompressível (shrink-0) */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-h-[60px]">
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-w-0 min-h-[60px]">
 
                 {/* Lado Esquerdo */}
                 <div className="flex items-center gap-3">
@@ -94,13 +94,15 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 )}
 
                 {/* Painel do SYNCFUSION */}
-                <div className={`h-full relative overflow-hidden bg-white ${showReference ? 'w-1/2' : 'w-full'}`}>
+                <div className={`h-full relative overflow-hidden bg-white min-w-0 ${showReference ? 'w-1/2' : 'w-full'}`}>
                     {/* O componente precisa de um wrapper absoluto para não quebrar o flexbox */}
-                    <div className="absolute inset-0">
+                    <div className="absolute inset-0 min-w-0 overflow-hidden">
                         <DocumentEditorContainerComponent
                             id="container"
                             ref={containerRef}
-                            style={{ 'display': 'block', 'height': '100%', 'width': '100%' }}
+                            height="100%"
+                            width="100%"
+                            style={{ 'display': 'block' }}
                             enableToolbar={true}
                         />
                     </div>
