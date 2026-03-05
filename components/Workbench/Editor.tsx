@@ -1,24 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     DocumentEditorContainerComponent,
     Toolbar
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
-import '@syncfusion/ej2-base/styles/material.css';
-import '@syncfusion/ej2-buttons/styles/material.css';
-import '@syncfusion/ej2-inputs/styles/material.css';
-import '@syncfusion/ej2-popups/styles/material.css';
-import '@syncfusion/ej2-lists/styles/material.css';
-import '@syncfusion/ej2-navigations/styles/material.css';
-import '@syncfusion/ej2-splitbuttons/styles/material.css';
-import '@syncfusion/ej2-dropdowns/styles/material.css';
-import '@syncfusion/ej2-react-documenteditor/styles/material.css';
-
 // Injeção dos módulos do Syncfusion
 DocumentEditorContainerComponent.Inject(Toolbar);
 
-// Registro da Chave de Licença (7 Dias)
+// Registro da Chave de Licença
 registerLicense('Ngo9BigBOggjHTQxAR8/V1JGaF1cXmhKYVJ3WmFZfVhgdl9CYVZRRmY/P1ZhSXxVdkZjXX5adHVVRGNEVU19XEA=');
 
 interface EditorProps {
@@ -28,21 +18,56 @@ interface EditorProps {
     onSave?: () => void;
     onPreviewKit?: () => void;
     onApprove?: () => void;
-    isPreviewingKit?: boolean;
 }
 
-export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove, isPreviewingKit }: EditorProps) {
+export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
 
+    // Referência para evitar loop infinito ao injetar o HTML da IA
+    const lastInjectedContent = useRef("");
+
+    // Carregamento dos estilos nativos
+    useEffect(() => {
+        import('@syncfusion/ej2-base/styles/material.css');
+        import('@syncfusion/ej2-buttons/styles/material.css');
+        import('@syncfusion/ej2-inputs/styles/material.css');
+        import('@syncfusion/ej2-popups/styles/material.css');
+        import('@syncfusion/ej2-lists/styles/material.css');
+        import('@syncfusion/ej2-navigations/styles/material.css');
+        import('@syncfusion/ej2-splitbuttons/styles/material.css');
+        import('@syncfusion/ej2-dropdowns/styles/material.css');
+        import('@syncfusion/ej2-react-documenteditor/styles/material.css');
+    }, []);
+
+    // 🚀 A PONTE DA IA: Detecta a tradução e injeta no Syncfusion
+    useEffect(() => {
+        // Se a IA mandou texto novo e o editor está na tela
+        if (content && containerRef.current && content !== lastInjectedContent.current) {
+
+            // Pequeno delay para garantir que o motor do Word já foi renderizado no DOM
+            setTimeout(() => {
+                if (containerRef.current) {
+                    const docEditor = containerRef.current.documentEditor;
+                    if (docEditor) {
+                        // Seleciona a folha inteira para substituir o que estiver lá
+                        docEditor.selection.selectAll();
+                        // Injeta o HTML gerado pela Azure/Gemini
+                        docEditor.editor.insertHtml(content);
+                        // Salva o registro para não repetir a injeção
+                        lastInjectedContent.current = content;
+                    }
+                }
+            }, 600);
+        }
+    }, [content]);
+
     return (
-        // Contêiner principal travado na altura total (h-full)
-        <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full min-w-0">
+        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full">
 
-            {/* HEADER DE AÇÕES: Fixo e incompressível (shrink-0) */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-w-0 min-h-[60px]">
+            {/* HEADER DE AÇÕES */}
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-h-[60px]">
 
-                {/* Lado Esquerdo */}
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowReference(!showReference)}
@@ -52,7 +77,6 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </button>
                 </div>
 
-                {/* Lado Direito: Nossos Botões Promobi */}
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onSave}
@@ -77,10 +101,9 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 </div>
             </div>
 
-            {/* ÁREA DE TRABALHO: SPLIT VIEW (Ocupa o restante da tela: flex-1) */}
+            {/* ÁREA DE TRABALHO: SPLIT VIEW */}
             <div className="flex-1 flex overflow-hidden relative w-full bg-gray-200">
 
-                {/* Painel do PDF ORIGINAL */}
                 {showReference && (
                     <div className="w-1/2 h-full border-r-2 border-gray-300 bg-slate-800 flex flex-col z-10 shadow-inner">
                         {pdfUrl ? (
@@ -93,26 +116,18 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </div>
                 )}
 
-                {/* Painel do SYNCFUSION */}
-                <div className={`h-full relative overflow-hidden bg-white min-w-0 ${showReference ? 'w-1/2' : 'w-full'}`}>
-                    {/* O componente precisa de um wrapper absoluto para não quebrar o flexbox */}
-                    <div className="absolute inset-0 min-w-0 overflow-hidden">
+                <div className={`h-full relative overflow-hidden bg-white ${showReference ? 'w-1/2' : 'w-full'}`}>
+                    <div className="absolute inset-0">
                         <DocumentEditorContainerComponent
                             id="container"
                             ref={containerRef}
-                            height="100%"
-                            width="100%"
-                            style={{ 'display': 'block' }}
+                            style={{ 'display': 'block', 'height': '100%', 'width': '100%' }}
                             enableToolbar={true}
-                            created={() => {
-                                // Configura folha padrão para US Letter (8.5 x 11 polegadas -> 612 x 792 points)
-                                if (containerRef.current) {
-                                    const editor = containerRef.current.documentEditor;
-                                    // A4 padrão = 595.3 x 841.9 pt. Letter = 612 x 792 pt
-                                    editor.selection.sectionFormat.pageWidth = 612;
-                                    editor.selection.sectionFormat.pageHeight = 792;
-                                }
-                            }}
+                            enableWordExport={true}
+                            enableSfdtExport={true}
+                            enableEditor={true}
+                            enableSelection={true}
+                            enableOptionsPane={true}
                         />
                     </div>
                 </div>
