@@ -5,7 +5,7 @@ import {
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
-// Injeção dos módulos do Syncfusion
+// Injeção dos módulos
 DocumentEditorContainerComponent.Inject(Toolbar);
 
 // Registro da Chave de Licença
@@ -23,11 +23,8 @@ interface EditorProps {
 export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
-
-    // Referência para evitar loop infinito ao injetar o HTML da IA
     const lastInjectedContent = useRef("");
 
-    // Carregamento dos estilos nativos
     useEffect(() => {
         import('@syncfusion/ej2-base/styles/material.css');
         import('@syncfusion/ej2-buttons/styles/material.css');
@@ -40,27 +37,50 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
         import('@syncfusion/ej2-react-documenteditor/styles/material.css');
     }, []);
 
-    // 🚀 A PONTE DA IA: Detecta a tradução e injeta no Syncfusion
+    // 🚀 PONTE DA IA E DO BANCO DE DADOS (Leitura Dupla)
     useEffect(() => {
-        // Se a IA mandou texto novo e o editor está na tela
         if (content && containerRef.current && content !== lastInjectedContent.current) {
-
-            // Pequeno delay para garantir que o motor do Word já foi renderizado no DOM
             setTimeout(() => {
                 if (containerRef.current) {
                     const docEditor = containerRef.current.documentEditor;
                     if (docEditor) {
-                        // Seleciona a folha inteira para substituir o que estiver lá
-                        docEditor.selection.selectAll();
-                        // Injeta o HTML gerado pela Azure/Gemini
-                        docEditor.editor.insertHtml(content);
-                        // Salva o registro para não repetir a injeção
-                        lastInjectedContent.current = content;
+                        try {
+                            // Checa se o conteúdo é SFDT (Documento com formatação salva do banco)
+                            if (content.trim().startsWith('{') && content.includes('"sections"')) {
+                                docEditor.open(content);
+                            } else {
+                                // Se for HTML (da IA Azure/Gemini ou traduções antigas)
+                                docEditor.selection.selectAll();
+                                docEditor.editor.insertHtml(content);
+                            }
+                            lastInjectedContent.current = content;
+                        } catch (error) {
+                            console.error("Erro ao carregar conteúdo no Syncfusion:", error);
+                        }
                     }
                 }
             }, 600);
         }
     }, [content]);
+
+    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta Formatação Nativa)
+    const handleSaveClick = () => {
+        if (containerRef.current) {
+            const docEditor = containerRef.current.documentEditor;
+
+            // Extrai o documento preservando 100% da formatação como JSON (SFDT)
+            const sfdt = docEditor.serialize();
+
+            // Atualiza o estado para enviar ao banco
+            setContent(sfdt);
+            lastInjectedContent.current = sfdt; // Previne recarregamento infinito
+
+            // Executa a função do pai (onSave) após um leve delay para garantir atualização do estado
+            if (onSave) {
+                setTimeout(() => onSave(), 150);
+            }
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full">
@@ -78,8 +98,10 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 </div>
 
                 <div className="flex items-center gap-4">
+
+                    {/* BOTÃO SALVAR AGORA USA O NOSSO INTERCEPTADOR */}
                     <button
-                        onClick={onSave}
+                        onClick={handleSaveClick}
                         className="text-gray-600 hover:text-blue-600 px-4 py-2 text-sm font-semibold transition border border-transparent hover:border-gray-200 rounded"
                     >
                         💾 Salvar
