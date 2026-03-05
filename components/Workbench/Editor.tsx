@@ -41,61 +41,62 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
 
     // 🚀 PONTE DA IA E DO BANCO DE DADOS (Leitura Dupla)
     useEffect(() => {
-        if (content && containerRef.current && content !== lastInjectedContent.current) {
+        if (!content || !containerRef.current) return;
+        if (content === lastInjectedContent.current) return;
 
-            const applyContent = () => {
-                const docEditor = containerRef.current?.documentEditor;
-                if (!docEditor) return;
+        // Atraso de segurança para garantir que o Canvas do Syncfusion foi renderizado
+        const timer = setTimeout(() => {
+            const docEditor = containerRef.current?.documentEditor;
+            if (!docEditor) return;
 
-                try {
-                    // Verifica se já é um documento no formato nativo Syncfusion (SFDT salvo no banco)
-                    if (content.trim().startsWith('{') && content.includes('"sections"')) {
-                        docEditor.open(content);
+            try {
+                // Força a liberação do editor
+                docEditor.isReadOnly = false;
+
+                if (content.trim().startsWith('{') && content.includes('"sections"')) {
+                    // Já é um arquivo SFDT (formato do Syncfusion salvo no banco), abre direto
+                    docEditor.open(content);
+                    lastInjectedContent.current = content;
+                } else {
+                    // É um arquivo HTML! (Vindo da IA Gemini ou legado do TinyMCE)
+
+                    // 1. Em vez de usar open() (que é assíncrono e estava apagando o texto),
+                    // nós selecionamos o texto inteiro e apagamos (método síncrono e 100% seguro)
+                    docEditor.selection.selectAll();
+                    if (docEditor.editor) {
+                        docEditor.editor.insertText(''); // Limpa o quadro em branco
+                    }
+
+                    // 2. Garante o envelope HTML necessário para o parser não rejeitar
+                    let safeHtml = content;
+                    if (!safeHtml.toLowerCase().includes('<body')) {
+                        safeHtml = `<html><body>${safeHtml}</body></html>`;
+                    }
+
+                    // 3. Injeta o HTML e volta o cursor para o começo do texto
+                    if (docEditor.editor) {
+                        // @ts-expect-error - SDK mismatch for React vs Core
+                        docEditor.editor.insertHtml(safeHtml);
+                        docEditor.selection.moveToDocumentStart();
                         lastInjectedContent.current = content;
                     } else {
-                        // É HTML PURO (Vindo da IA Gemini ou documento antigo do TinyMCE)
-
-                        // 1. OBRIGATÓRIO: Força a abertura de um documento em branco. 
-                        // Isso limpa a formatação residual do documento anterior para não "sujar" o novo HTML.
-                        const emptySfdt = '{"sections":[{"blocks":[{"paragraphFormat":{"styleName":"Normal"},"inlines":[]}]}],"characterFormat":{"fontSize":11.0,"fontFamily":"Calibri"},"paragraphFormat":{"beforeSpacing":0.0,"afterSpacing":0.0,"lineSpacing":1.0791666507720947,"lineSpacingType":"Multiple","listFormat":{}},"defaultTabWidth":36.0,"enforceProtection":false,"hashValue":"","styles":[{"type":"Paragraph","name":"Normal","next":"Normal"}],"lists":[],"abstractLists":[]}';
-                        docEditor.open(emptySfdt);
-
-                        // 2. Espera a renderização do quadro limpo para disparar o injetor de HTML
-                        setTimeout(() => {
-                            docEditor.isReadOnly = false;
-                            docEditor.selection.selectAll();
-
-                            // TRUQUE PARA A IA: O parser de inserção do Syncfusion exige a estrutura de escopo global.
-                            let safeHtml = content;
-                            if (!safeHtml.toLowerCase().includes('<body')) {
-                                safeHtml = `<html><body>${safeHtml}</body></html>`;
-                            }
-
-                            // @ts-expect-error - O SDK de tipagem do React as vezes oculta o módulo interno "editor", mas ele existe e está injetado.
-                            docEditor.editor.insertHtml(safeHtml);
-
-                            // Libera o destaque da seleção e devolve o cursor para o topo do documento
-                            docEditor.selection.moveToDocumentStart();
-
-                            lastInjectedContent.current = content;
-                        }, 250); // Timing mais seguro que não atropela o DOM
+                        console.error("Módulo Editor do Syncfusion indisponível.");
                     }
-                } catch (error) {
-                    console.error('Erro ao injetar conteúdo no Syncfusion:', error);
                 }
-            };
+            } catch (error) {
+                console.error('Erro Crítico ao processar conteúdo no Syncfusion:', error);
+            }
+        }, 400); // 400ms para estabilização do DOM do React junto com o Syncfusion
 
-            setTimeout(applyContent, 100);
-        }
+        return () => clearTimeout(timer);
     }, [content]);
 
-    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta a tradução da IA ou nativa como SFDT rigoroso)
+    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta a tradução da IA ou nativa como SFDT)
     const handleSaveClick = () => {
         if (!containerRef.current) return;
         const docEditor = containerRef.current.documentEditor;
         if (!docEditor) return;
 
-        // O Serialize força o Syncfusion a exportar TUDO (mesmo a IA original) para SFDT puro.
         const sfdt = docEditor.serialize();
         setContent(sfdt);
         lastInjectedContent.current = sfdt;
@@ -176,6 +177,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                             width="100%"
                             style={{ display: 'block', height: '100%', width: '100%' }}
                             enableToolbar={true}
+                            restrictEditing={false}
                             // @ts-ignore
                             created={() => {
                                 // Configuração de folha A4 / US Letter e zoom ao criar
