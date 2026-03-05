@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     DocumentEditorContainerComponent,
-    Toolbar
+    Toolbar,
+    Editor as SyncfusionEditor
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
@@ -17,7 +18,7 @@ import '@syncfusion/ej2-dropdowns/styles/material.css';
 import '@syncfusion/ej2-react-documenteditor/styles/material.css';
 
 // ── Injeção dos módulos ───────────────────────────────────────────────────────
-DocumentEditorContainerComponent.Inject(Toolbar);
+DocumentEditorContainerComponent.Inject(Toolbar, SyncfusionEditor);
 
 // ── Registro da Chave de Licença ──────────────────────────────────────────────
 registerLicense('Ngo9BigBOggjHTQxAR8/V1JGaF1cXmhKYVJ3WmFZfVhgdl9CYVZRRmY/P1ZhSXxVdkZjXX5adHVVRGNEVU19XEA=');
@@ -46,21 +47,36 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 const docEditor = containerRef.current.documentEditor;
                 if (!docEditor) return;
                 try {
+                    // Espera explícita para o Syncfusion estar completamente renderizado
                     // SFDT (formato nativo salvo no banco) → open()
                     if (content.trim().startsWith('{') && content.includes('"sections"')) {
                         docEditor.open(content);
                     } else {
-                        // HTML da IA Azure/Gemini → insertHtml via module
-                        // Syncfusion precisa do módulo de edição injetado e acesso ao text
-                        docEditor.selection.selectAll();
-                        // @ts-expect-error - O SDK falha na tipagem do React, mas insertHtml existe no core
-                        docEditor.editor.insertHtml(content);
+                        // Se for HTML puro, precisamos garantir que haja um documento vazio primeiro
+                        if (!docEditor.documentName || docEditor.documentName === '') {
+                            // SFDT mínimo de um documento em branco A4
+                            const emptySfdt = '{"sections":[{"blocks":[{"paragraphFormat":{"styleName":"Normal"},"inlines":[]}]}],"characterFormat":{"fontSize":11.0,"fontFamily":"Calibri"},"paragraphFormat":{"beforeSpacing":0.0,"afterSpacing":0.0,"lineSpacing":1.0791666507720947,"lineSpacingType":"Multiple","listFormat":{}},"defaultTabWidth":36.0,"enforceProtection":false,"hashValue":"","styles":[{"type":"Paragraph","name":"Normal","next":"Normal"}],"lists":[],"abstractLists":[]}';
+                            docEditor.open(emptySfdt);
+                        }
+
+                        setTimeout(() => {
+                            // HTML da IA Azure/Gemini → paste via insertHtml
+                            docEditor.isReadOnly = false;
+                            docEditor.selection.selectAll();
+
+                            // @ts-expect-error - SDK mismatch for React vs Core
+                            docEditor.editor.insertHtml(content);
+
+                            // Move cursor pro começo pra não ficar selecionado
+                            docEditor.selection.moveToDocumentStart();
+
+                            lastInjectedContent.current = content;
+                        }, 200); // 200ms após abrir o documento vazio
                     }
-                    lastInjectedContent.current = content;
                 } catch (error) {
                     console.error('Erro ao carregar conteúdo no Syncfusion:', error);
                 }
-            }, 600);
+            }, 500);
         }
     }, [content]);
 
