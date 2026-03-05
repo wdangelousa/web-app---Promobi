@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     DocumentEditorContainerComponent,
-    Toolbar,
-    Editor as SyncfusionEditor
+    Toolbar
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
@@ -17,8 +16,8 @@ import '@syncfusion/ej2-splitbuttons/styles/material.css';
 import '@syncfusion/ej2-dropdowns/styles/material.css';
 import '@syncfusion/ej2-react-documenteditor/styles/material.css';
 
-// ── Injeção dos módulos ───────────────────────────────────────────────────────
-DocumentEditorContainerComponent.Inject(Toolbar, SyncfusionEditor);
+// ── Injeção do módulo de Toolbar (O Editor já é embutido no Container) ────────
+DocumentEditorContainerComponent.Inject(Toolbar);
 
 // ── Registro da Chave de Licença ──────────────────────────────────────────────
 registerLicense('Ngo9BigBOggjHTQxAR8/V1JGaF1cXmhKYVJ3WmFZfVhgdl9CYVZRRmY/P1ZhSXxVdkZjXX5adHVVRGNEVU19XEA=');
@@ -36,62 +35,73 @@ interface EditorProps {
 
 export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove, isPreviewingKit }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
+    const [isEditorReady, setIsEditorReady] = useState(false); // 🚀 Controle de Ciclo de Vida
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
     const lastInjectedContent = useRef('');
 
     // 🚀 PONTE DA IA E DO BANCO DE DADOS (Leitura Dupla)
     useEffect(() => {
-        if (!content || !containerRef.current) return;
+        // Bloqueia a execução se o componente Syncfusion ainda não terminou de montar
+        if (!isEditorReady || !content || !containerRef.current) return;
+
+        // Evita loops infinitos de injeção
         if (content === lastInjectedContent.current) return;
 
-        // Atraso de segurança para garantir que o Canvas do Syncfusion foi renderizado
-        const timer = setTimeout(() => {
-            const docEditor = containerRef.current?.documentEditor;
-            if (!docEditor) return;
+        const docEditor = containerRef.current.documentEditor;
+        if (!docEditor) return;
 
-            try {
-                // Força a liberação do editor
+        try {
+            // Verifica se o texto do banco é um arquivo SFDT Nativo (salvo anteriormente)
+            if (content.trim().startsWith('{') && content.includes('"sections"')) {
+                docEditor.open(content);
+                lastInjectedContent.current = content;
+            } else {
+                // É HTML PURO (Vindo da IA Gemini API ou legado do TinyMCE)
+                let safeHtml = content;
+
+                // Envelopa o HTML se necessário, para garantir que o parser do Syncfusion entenda
+                if (!safeHtml.toLowerCase().includes('<body')) {
+                    safeHtml = `<html><body>${safeHtml}</body></html>`;
+                }
+
+                // Desbloqueia a edição
                 docEditor.isReadOnly = false;
 
-                if (content.trim().startsWith('{') && content.includes('"sections"')) {
-                    // Já é um arquivo SFDT (formato do Syncfusion salvo no banco), abre direto
-                    docEditor.open(content);
+                // OBRIGATÓRIO: Força o foco no canvas virtual do Syncfusion
+                docEditor.focusIn();
+
+                // Seleciona o conteúdo atual para ser sobrescrito
+                docEditor.selection.selectAll();
+
+                if (docEditor.editor) {
+                    // Sobrescreve a seleção com o texto da Inteligência Artificial
+                    // @ts-expect-error - SDK mismatch for React vs Core
+                    docEditor.editor.insertHtml(safeHtml);
+
+                    // Retorna o cursor para o topo da página para não ficar tudo azul selecionado
+                    docEditor.selection.moveToDocumentStart();
+
                     lastInjectedContent.current = content;
+
+                    // CONVERSÃO SILENCIOSA: Após inserir a IA, converte para SFDT 
+                    // e devolve pro Workbench.tsx, substituindo o HTML em memória
+                    setTimeout(() => {
+                        const newSfdt = docEditor.serialize();
+                        if (newSfdt && newSfdt !== content) {
+                            setContent(newSfdt);
+                            lastInjectedContent.current = newSfdt;
+                        }
+                    }, 300);
                 } else {
-                    // É um arquivo HTML! (Vindo da IA Gemini ou legado do TinyMCE)
-
-                    // 1. Em vez de usar open() (que é assíncrono e estava apagando o texto),
-                    // nós selecionamos o texto inteiro e apagamos (método síncrono e 100% seguro)
-                    docEditor.selection.selectAll();
-                    if (docEditor.editor) {
-                        docEditor.editor.insertText(''); // Limpa o quadro em branco
-                    }
-
-                    // 2. Garante o envelope HTML necessário para o parser não rejeitar
-                    let safeHtml = content;
-                    if (!safeHtml.toLowerCase().includes('<body')) {
-                        safeHtml = `<html><body>${safeHtml}</body></html>`;
-                    }
-
-                    // 3. Injeta o HTML e volta o cursor para o começo do texto
-                    if (docEditor.editor) {
-                        // @ts-expect-error - SDK mismatch for React vs Core
-                        docEditor.editor.insertHtml(safeHtml);
-                        docEditor.selection.moveToDocumentStart();
-                        lastInjectedContent.current = content;
-                    } else {
-                        console.error("Módulo Editor do Syncfusion indisponível.");
-                    }
+                    console.error("Módulo Editor do Syncfusion indisponível.");
                 }
-            } catch (error) {
-                console.error('Erro Crítico ao processar conteúdo no Syncfusion:', error);
             }
-        }, 400); // 400ms para estabilização do DOM do React junto com o Syncfusion
+        } catch (error) {
+            console.error('Erro Crítico ao processar conteúdo no Syncfusion:', error);
+        }
+    }, [content, isEditorReady, setContent]);
 
-        return () => clearTimeout(timer);
-    }, [content]);
-
-    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta a tradução da IA ou nativa como SFDT)
+    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta a tradução da IA ou nativa como SFDT rigoroso)
     const handleSaveClick = () => {
         if (!containerRef.current) return;
         const docEditor = containerRef.current.documentEditor;
@@ -180,6 +190,9 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                             restrictEditing={false}
                             // @ts-ignore
                             created={() => {
+                                // 🚀 Sinaliza ao React que o Syncfusion está 100% pronto para receber textos e APIs
+                                setIsEditorReady(true);
+
                                 // Configuração de folha A4 / US Letter e zoom ao criar
                                 if (containerRef.current) {
                                     const editor = containerRef.current.documentEditor;
