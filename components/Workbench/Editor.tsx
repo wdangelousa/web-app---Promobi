@@ -5,12 +5,24 @@ import {
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
-// Injeção dos módulos
+// ── Estilos nativos do Syncfusion (imports estáticos, obrigatórios) ──────────
+import '@syncfusion/ej2-base/styles/material.css';
+import '@syncfusion/ej2-buttons/styles/material.css';
+import '@syncfusion/ej2-inputs/styles/material.css';
+import '@syncfusion/ej2-popups/styles/material.css';
+import '@syncfusion/ej2-lists/styles/material.css';
+import '@syncfusion/ej2-navigations/styles/material.css';
+import '@syncfusion/ej2-splitbuttons/styles/material.css';
+import '@syncfusion/ej2-dropdowns/styles/material.css';
+import '@syncfusion/ej2-react-documenteditor/styles/material.css';
+
+// ── Injeção dos módulos ───────────────────────────────────────────────────────
 DocumentEditorContainerComponent.Inject(Toolbar);
 
-// Registro da Chave de Licença
+// ── Registro da Chave de Licença ──────────────────────────────────────────────
 registerLicense('Ngo9BigBOggjHTQxAR8/V1JGaF1cXmhKYVJ3WmFZfVhgdl9CYVZRRmY/P1ZhSXxVdkZjXX5adHVVRGNEVU19XEA=');
 
+// ── Props ─────────────────────────────────────────────────────────────────────
 interface EditorProps {
     content: string;
     setContent: (content: string) => void;
@@ -24,63 +36,41 @@ interface EditorProps {
 export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove, isPreviewingKit }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
-    const lastInjectedContent = useRef("");
-
-    useEffect(() => {
-        import('@syncfusion/ej2-base/styles/material.css');
-        import('@syncfusion/ej2-buttons/styles/material.css');
-        import('@syncfusion/ej2-inputs/styles/material.css');
-        import('@syncfusion/ej2-popups/styles/material.css');
-        import('@syncfusion/ej2-lists/styles/material.css');
-        import('@syncfusion/ej2-navigations/styles/material.css');
-        import('@syncfusion/ej2-splitbuttons/styles/material.css');
-        import('@syncfusion/ej2-dropdowns/styles/material.css');
-        import('@syncfusion/ej2-react-documenteditor/styles/material.css');
-    }, []);
+    const lastInjectedContent = useRef('');
 
     // 🚀 PONTE DA IA E DO BANCO DE DADOS (Leitura Dupla)
     useEffect(() => {
         if (content && containerRef.current && content !== lastInjectedContent.current) {
             setTimeout(() => {
-                if (containerRef.current) {
-                    const docEditor = containerRef.current.documentEditor;
-                    if (docEditor) {
-                        try {
-                            // Checa se o conteúdo é SFDT (Documento com formatação salva do banco)
-                            if (content.trim().startsWith('{') && content.includes('"sections"')) {
-                                docEditor.open(content);
-                            } else {
-                                // Se for HTML (da IA Azure/Gemini ou traduções antigas)
-                                docEditor.selection.selectAll();
-                                docEditor.editor.insertHtml(content);
-                            }
-                            lastInjectedContent.current = content;
-                        } catch (error) {
-                            console.error("Erro ao carregar conteúdo no Syncfusion:", error);
-                        }
+                if (!containerRef.current) return;
+                const docEditor = containerRef.current.documentEditor;
+                if (!docEditor) return;
+                try {
+                    // SFDT (formato nativo salvo no banco) → open()
+                    if (content.trim().startsWith('{') && content.includes('"sections"')) {
+                        docEditor.open(content);
+                    } else {
+                        // HTML da IA Azure/Gemini → insertHtml()
+                        docEditor.selection.selectAll();
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        (docEditor.editor as any).insertHtml(content);
                     }
+                    lastInjectedContent.current = content;
+                } catch (error) {
+                    console.error('Erro ao carregar conteúdo no Syncfusion:', error);
                 }
             }, 600);
         }
     }, [content]);
 
-    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta Formatação Nativa)
+    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta formatação nativa como SFDT)
     const handleSaveClick = () => {
-        if (containerRef.current) {
-            const docEditor = containerRef.current.documentEditor;
-
-            // Extrai o documento preservando 100% da formatação como JSON (SFDT)
-            const sfdt = docEditor.serialize();
-
-            // Atualiza o estado para enviar ao banco
-            setContent(sfdt);
-            lastInjectedContent.current = sfdt; // Previne recarregamento infinito
-
-            // Executa a função do pai (onSave) após um leve delay para garantir atualização do estado
-            if (onSave) {
-                setTimeout(() => onSave(), 150);
-            }
-        }
+        if (!containerRef.current) return;
+        const docEditor = containerRef.current.documentEditor;
+        const sfdt = docEditor.serialize();
+        setContent(sfdt);
+        lastInjectedContent.current = sfdt;
+        if (onSave) setTimeout(() => onSave(), 150);
     };
 
     return (
@@ -99,8 +89,6 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 </div>
 
                 <div className="flex items-center gap-4">
-
-                    {/* BOTÃO SALVAR AGORA USA O NOSSO INTERCEPTADOR */}
                     <button
                         onClick={handleSaveClick}
                         className="text-gray-600 hover:text-blue-600 px-4 py-2 text-sm font-semibold transition border border-transparent hover:border-gray-200 rounded"
@@ -119,9 +107,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                                 Gerando...
                             </>
                         ) : (
-                            <>
-                                📦 Preview Kit
-                            </>
+                            <>📦 Preview Kit</>
                         )}
                     </button>
 
@@ -154,13 +140,8 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                         <DocumentEditorContainerComponent
                             id="container"
                             ref={containerRef}
-                            style={{ 'display': 'block', 'height': '100%', 'width': '100%' }}
+                            style={{ display: 'block', height: '100%', width: '100%' }}
                             enableToolbar={true}
-                            enableWordExport={true}
-                            enableSfdtExport={true}
-                            enableEditor={true}
-                            enableSelection={true}
-                            enableOptionsPane={true}
                         />
                     </div>
                 </div>
