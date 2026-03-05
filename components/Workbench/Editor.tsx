@@ -50,10 +50,11 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     if (content.trim().startsWith('{') && content.includes('"sections"')) {
                         docEditor.open(content);
                     } else {
-                        // HTML da IA Azure/Gemini → insertHtml()
+                        // HTML da IA Azure/Gemini → insertHtml via module
+                        // Syncfusion precisa do módulo de edição injetado e acesso ao text
                         docEditor.selection.selectAll();
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        (docEditor.editor as any).insertHtml(content);
+                        // @ts-expect-error - O SDK falha na tipagem do React, mas insertHtml existe no core
+                        docEditor.editor.insertHtml(content);
                     }
                     lastInjectedContent.current = content;
                 } catch (error) {
@@ -135,13 +136,25 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </div>
                 )}
 
-                <div className={`h-full relative overflow-hidden bg-white ${showReference ? 'w-1/2' : 'w-full'}`}>
-                    <div className="absolute inset-0">
+                <div className={`h-full relative overflow-hidden bg-white min-h-[500px] flex flex-col ${showReference ? 'w-1/2' : 'w-full'}`}>
+                    <div className="absolute inset-0 flex flex-col overflow-hidden">
                         <DocumentEditorContainerComponent
                             id="container"
                             ref={containerRef}
+                            height="100%"
+                            width="100%"
                             style={{ display: 'block', height: '100%', width: '100%' }}
                             enableToolbar={true}
+                            // @ts-ignore - Ignora o erro se o TS da versão atual estiver desatualizado sobre as props do react wrapper
+                            created={() => {
+                                // Configuração de folha A4 / US Letter e zoom ao criar
+                                if (containerRef.current) {
+                                    const editor = containerRef.current.documentEditor;
+                                    // A4 (padrão) vs Letter
+                                    editor.selection.sectionFormat.pageWidth = 612;
+                                    editor.selection.sectionFormat.pageHeight = 792;
+                                }
+                            }}
                         />
                     </div>
                 </div>
