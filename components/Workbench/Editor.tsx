@@ -18,9 +18,10 @@ interface EditorProps {
     onSave?: () => void;
     onPreviewKit?: () => void;
     onApprove?: () => void;
+    isPreviewingKit?: boolean;
 }
 
-export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove }: EditorProps) {
+export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove, isPreviewingKit }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
     const lastInjectedContent = useRef("");
@@ -109,9 +110,19 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
 
                     <button
                         onClick={onPreviewKit}
-                        className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-5 py-2 rounded-md text-sm font-bold hover:bg-indigo-100 transition-colors flex items-center gap-2 shadow-sm"
+                        disabled={isPreviewingKit}
+                        className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-5 py-2 rounded-md text-sm font-bold hover:bg-indigo-100 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
                     >
-                        📦 Preview Kit
+                        {isPreviewingKit ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-700 border-t-transparent" />
+                                Gerando...
+                            </>
+                        ) : (
+                            <>
+                                📦 Preview Kit
+                            </>
+                        )}
                     </button>
 
                     <button
