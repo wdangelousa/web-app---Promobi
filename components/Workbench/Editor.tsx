@@ -42,52 +42,67 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
     // 🚀 PONTE DA IA E DO BANCO DE DADOS (Leitura Dupla)
     useEffect(() => {
         if (content && containerRef.current && content !== lastInjectedContent.current) {
-            setTimeout(() => {
-                if (!containerRef.current) return;
-                const docEditor = containerRef.current.documentEditor;
+
+            const applyContent = () => {
+                const docEditor = containerRef.current?.documentEditor;
                 if (!docEditor) return;
+
                 try {
-                    // Espera explícita para o Syncfusion estar completamente renderizado
-                    // SFDT (formato nativo salvo no banco) → open()
+                    // Verifica se já é um documento no formato nativo Syncfusion (SFDT salvo no banco)
                     if (content.trim().startsWith('{') && content.includes('"sections"')) {
                         docEditor.open(content);
+                        lastInjectedContent.current = content;
                     } else {
-                        // Se for HTML puro, precisamos garantir que haja um documento vazio primeiro
-                        if (!docEditor.documentName || docEditor.documentName === '') {
-                            // SFDT mínimo de um documento em branco A4
-                            const emptySfdt = '{"sections":[{"blocks":[{"paragraphFormat":{"styleName":"Normal"},"inlines":[]}]}],"characterFormat":{"fontSize":11.0,"fontFamily":"Calibri"},"paragraphFormat":{"beforeSpacing":0.0,"afterSpacing":0.0,"lineSpacing":1.0791666507720947,"lineSpacingType":"Multiple","listFormat":{}},"defaultTabWidth":36.0,"enforceProtection":false,"hashValue":"","styles":[{"type":"Paragraph","name":"Normal","next":"Normal"}],"lists":[],"abstractLists":[]}';
-                            docEditor.open(emptySfdt);
-                        }
+                        // É HTML PURO (Vindo da IA Gemini ou documento antigo do TinyMCE)
 
+                        // 1. OBRIGATÓRIO: Força a abertura de um documento em branco. 
+                        // Isso limpa a formatação residual do documento anterior para não "sujar" o novo HTML.
+                        const emptySfdt = '{"sections":[{"blocks":[{"paragraphFormat":{"styleName":"Normal"},"inlines":[]}]}],"characterFormat":{"fontSize":11.0,"fontFamily":"Calibri"},"paragraphFormat":{"beforeSpacing":0.0,"afterSpacing":0.0,"lineSpacing":1.0791666507720947,"lineSpacingType":"Multiple","listFormat":{}},"defaultTabWidth":36.0,"enforceProtection":false,"hashValue":"","styles":[{"type":"Paragraph","name":"Normal","next":"Normal"}],"lists":[],"abstractLists":[]}';
+                        docEditor.open(emptySfdt);
+
+                        // 2. Espera a renderização do quadro limpo para disparar o injetor de HTML
                         setTimeout(() => {
-                            // HTML da IA Azure/Gemini → paste via insertHtml
                             docEditor.isReadOnly = false;
                             docEditor.selection.selectAll();
 
-                            // @ts-expect-error - SDK mismatch for React vs Core
-                            docEditor.editor.insertHtml(content);
+                            // TRUQUE PARA A IA: O parser de inserção do Syncfusion exige a estrutura de escopo global.
+                            let safeHtml = content;
+                            if (!safeHtml.toLowerCase().includes('<body')) {
+                                safeHtml = `<html><body>${safeHtml}</body></html>`;
+                            }
 
-                            // Move cursor pro começo pra não ficar selecionado
+                            // @ts-expect-error - O SDK de tipagem do React as vezes oculta o módulo interno "editor", mas ele existe e está injetado.
+                            docEditor.editor.insertHtml(safeHtml);
+
+                            // Libera o destaque da seleção e devolve o cursor para o topo do documento
                             docEditor.selection.moveToDocumentStart();
 
                             lastInjectedContent.current = content;
-                        }, 200); // 200ms após abrir o documento vazio
+                        }, 250); // Timing mais seguro que não atropela o DOM
                     }
                 } catch (error) {
-                    console.error('Erro ao carregar conteúdo no Syncfusion:', error);
+                    console.error('Erro ao injetar conteúdo no Syncfusion:', error);
                 }
-            }, 500);
+            };
+
+            setTimeout(applyContent, 100);
         }
     }, [content]);
 
-    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta formatação nativa como SFDT)
+    // 💾 INTERCEPTADOR DE SALVAMENTO (Exporta a tradução da IA ou nativa como SFDT rigoroso)
     const handleSaveClick = () => {
         if (!containerRef.current) return;
         const docEditor = containerRef.current.documentEditor;
+        if (!docEditor) return;
+
+        // O Serialize força o Syncfusion a exportar TUDO (mesmo a IA original) para SFDT puro.
         const sfdt = docEditor.serialize();
         setContent(sfdt);
         lastInjectedContent.current = sfdt;
-        if (onSave) setTimeout(() => onSave(), 150);
+
+        if (onSave) {
+            setTimeout(() => onSave(), 150);
+        }
     };
 
     return (
@@ -161,14 +176,15 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                             width="100%"
                             style={{ display: 'block', height: '100%', width: '100%' }}
                             enableToolbar={true}
-                            // @ts-ignore - Ignora o erro se o TS da versão atual estiver desatualizado sobre as props do react wrapper
+                            // @ts-ignore
                             created={() => {
                                 // Configuração de folha A4 / US Letter e zoom ao criar
                                 if (containerRef.current) {
                                     const editor = containerRef.current.documentEditor;
-                                    // A4 (padrão) vs Letter
-                                    editor.selection.sectionFormat.pageWidth = 612;
-                                    editor.selection.sectionFormat.pageHeight = 792;
+                                    if (editor && editor.selection && editor.selection.sectionFormat) {
+                                        editor.selection.sectionFormat.pageWidth = 612;
+                                        editor.selection.sectionFormat.pageHeight = 792;
+                                    }
                                 }
                             }}
                         />

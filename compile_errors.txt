@@ -1,0 +1,13 @@
+app/admin/orders/[id]/components/Workbench.tsx(579,25): error TS2322: Type '{ content: string; setContent: Dispatch<SetStateAction<string>>; pdfUrl: string; onSave: () => Promise<void>; onPreviewKit: () => Promise<void>; isPreviewingKit: boolean; onApprove: () => Promise<...>; }' is not assignable to type 'IntrinsicAttributes & EditorProps'.
+  Property 'isPreviewingKit' does not exist on type 'IntrinsicAttributes & EditorProps'.
+components/Workbench/Editor.tsx(31,16): error TS2307: Cannot find module '@syncfusion/ej2-base/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(32,16): error TS2307: Cannot find module '@syncfusion/ej2-buttons/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(33,16): error TS2307: Cannot find module '@syncfusion/ej2-inputs/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(34,16): error TS2307: Cannot find module '@syncfusion/ej2-popups/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(35,16): error TS2307: Cannot find module '@syncfusion/ej2-lists/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(36,16): error TS2307: Cannot find module '@syncfusion/ej2-navigations/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(37,16): error TS2307: Cannot find module '@syncfusion/ej2-splitbuttons/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(38,16): error TS2307: Cannot find module '@syncfusion/ej2-dropdowns/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(39,16): error TS2307: Cannot find module '@syncfusion/ej2-react-documenteditor/styles/material.css' or its corresponding type declarations.
+components/Workbench/Editor.tsx(92,25): error TS2322: Type '{ id: string; ref: RefObject<DocumentEditorContainerComponent>; style: { display: "block"; height: string; width: string; }; enableToolbar: true; ... 4 more ...; enableOptionsPane: boolean; }' is not assignable to type 'IntrinsicAttributes & (IntrinsicClassAttributes<DocumentEditorContainerComponent> & (Readonly<...> & Readonly<...>))'.
+  Property 'enableWordExport' does not exist on type 'IntrinsicAttributes & (IntrinsicClassAttributes<DocumentEditorContainerComponent> & (Readonly<...> & Readonly<...>))'.

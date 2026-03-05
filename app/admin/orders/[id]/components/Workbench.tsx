@@ -461,7 +461,7 @@ export default function Workbench({ order }: { order: Order }) {
 
 
     return (
-        <div className="relative h-[calc(100vh-80px)] flex overflow-hidden">
+        <div className="relative h-full w-full flex overflow-hidden">
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
             <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">

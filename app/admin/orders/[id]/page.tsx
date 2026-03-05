@@ -63,7 +63,7 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
     }
 
     return (
-        <div className="min-h-screen bg-gray-100 flex flex-col">
+        <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -84,21 +84,20 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                             🔥 {sanitizedOrder.urgency}
                         </span>
                     )}
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${
-                        sanitizedOrder.status === 'READY_FOR_REVIEW'          ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                        sanitizedOrder.status === 'TRANSLATING'               ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                        sanitizedOrder.status === 'COMPLETED'                 ? 'bg-green-50 text-green-700 border-green-200' :
-                        sanitizedOrder.status === 'PAID'                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        sanitizedOrder.status === 'MANUAL_TRANSLATION_NEEDED' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                                                                                'bg-gray-100 text-gray-600 border-gray-200'
-                    }`}>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                            sanitizedOrder.status === 'TRANSLATING' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                sanitizedOrder.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
+                                    sanitizedOrder.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        sanitizedOrder.status === 'MANUAL_TRANSLATION_NEEDED' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                            'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}>
                         {sanitizedOrder.status?.replace(/_/g, ' ')}
                     </span>
                 </div>
             </div>
 
             {/* Workbench Client Component */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden min-h-0 relative">
                 <Workbench order={sanitizedOrder as any} />
             </div>
         </div>
