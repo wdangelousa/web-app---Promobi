@@ -47,12 +47,24 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
         if (!docEditor) return;
 
         try {
-            // Detecta formato SFDT salvo — incluindo versão minificada ("sec":) e com flag optimizeSfdt
-            const isSFDT = content.trim().startsWith('{') &&
-                (content.includes('"sections"') || content.includes('"sec":') || content.includes('"optimizeSfdt"'))
+            // Detecção bulletproof: JSON.parse lida corretamente com escapes do Supabase
+            let isSFDT = false;
+            let cleanContent = content;
+            try {
+                // Se veio como string JSON-encoded (ex: '"{\\"sections\\":...}"'), desencapsular
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    cleanContent = JSON.parse(content);
+                }
+                const parsed = JSON.parse(cleanContent);
+                if (parsed && (parsed.sections || parsed.sec || parsed.optimizeSfdt)) {
+                    isSFDT = true;
+                }
+            } catch {
+                isSFDT = false;
+            }
 
             if (isSFDT) {
-                docEditor.open(content);
+                docEditor.open(cleanContent);
                 lastInjectedContent.current = content;
             } else {
                 // É o HTML vindo da IA Gemini
