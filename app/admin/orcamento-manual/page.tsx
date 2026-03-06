@@ -24,6 +24,7 @@ import {
     RotateCcw,
     Search
 } from 'lucide-react'
+import BudgetSummaryCard from '../../../components/Budget/BudgetSummaryCard'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
 import { PDFDocument } from 'pdf-lib'
@@ -372,10 +373,12 @@ export default function OrcamentoManual() {
     }, [documents, urgency, serviceType, globalSettings])
 
     // --- ORDER CREATION ---
-    const handleGenerateProposal = async () => {
+    const handleGenerateProposal = async (finalTotalOverride?: number, manualDiscountAmount?: number) => {
         const selectedDocs = documents.filter(d => d.isSelected)
         if (!clientName || !clientEmail) { toast.error('Preencha pelo menos Nome e Email do cliente.'); return }
         if (selectedDocs.length === 0) { toast.error('Selecione pelo menos um documento.'); return }
+
+        const effectiveTotal = finalTotalOverride !== undefined ? finalTotalOverride : totalPrice;
 
         setLoading(true); setUploadProgress(null)
         try {
@@ -411,8 +414,8 @@ export default function OrcamentoManual() {
                 user: { fullName: clientName, email: clientEmail, phone: clientPhone },
                 documents: orderDocuments,
                 urgency, docCategory: 'standard', notaryMode: 'none',
-                zipCode: '00000', grandTotalOverride: totalPrice,
-                breakdown: { ...breakdown, serviceType },
+                zipCode: '00000', grandTotalOverride: effectiveTotal,
+                breakdown: { ...breakdown, serviceType, manualDiscountAmount: manualDiscountAmount },
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT'
@@ -852,21 +855,13 @@ export default function OrcamentoManual() {
 
                                 {/* Summary */}
                                 {documents.length > 0 && (
-                                    <div className="bg-slate-900 text-white rounded-2xl p-6 mt-8">
-                                        <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                                            <div>
-                                                <span className="font-bold">Total Calculado</span>
-                                                <p className="text-xs text-slate-400 mt-0.5">{breakdown.totalDocs} docs · {breakdown.totalCount} págs incluídas</p>
-                                                {breakdown.volumeDiscountAmount > 0 && (
-                                                    <p className="text-sm font-bold text-green-500 mt-1">Desconto de Volume ({breakdown.volumeDiscountPercentage}%): -${breakdown.volumeDiscountAmount.toFixed(2)}</p>
-                                                )}
-                                            </div>
-                                            <span className="text-2xl font-black text-[#f58220]">${totalPrice.toFixed(2)}</span>
-                                        </div>
-                                        <button onClick={handleGenerateProposal} disabled={loading}
-                                            className="w-full bg-[#f58220] hover:bg-orange-600 disabled:opacity-50 text-white py-4 rounded-xl font-bold text-lg shadow-lg transition-all">
-                                            {loading ? uploadProgress || 'Processando...' : 'Gerar Proposta Comercial'}
-                                        </button>
+                                    <div className="mt-8">
+                                        <BudgetSummaryCard
+                                            subtotal={totalPrice}
+                                            totalDocs={breakdown.totalDocs}
+                                            totalPages={breakdown.totalCount}
+                                            onGenerateProposal={(final, disc) => handleGenerateProposal(final, disc)}
+                                        />
                                     </div>
                                 )}
                             </div>

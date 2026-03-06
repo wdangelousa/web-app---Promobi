@@ -65,7 +65,7 @@ export async function createOrder(data: CreateOrderInput) {
         if (data.grandTotalOverride) {
             totalAmount = data.grandTotalOverride;
             discountPercentage = data.breakdown?.volumeDiscountPercentage || 0;
-            discountAmount = data.breakdown?.volumeDiscountAmount || 0;
+            discountAmount = (data.breakdown?.volumeDiscountAmount || 0) + (data.breakdown?.manualDiscountAmount || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);

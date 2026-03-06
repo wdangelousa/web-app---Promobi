@@ -10,6 +10,7 @@ import {
     Eye, EyeOff, Sparkles, Zap, FileImage, FileType,
     CheckCircle2, Loader2, FolderOpen, Files, RotateCcw
 } from 'lucide-react'
+import BudgetSummaryCard from '@/components/Budget/BudgetSummaryCard'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 import {
     fastPassAnalysis,
@@ -401,9 +402,13 @@ export default function ConciergePage() {
 
     // ─── Order creation ───────────────────────────────────────────────────────
 
-    const handleCreateConciergeOrder = async () => {
+    const handleCreateConciergeOrder = async (finalTotalOverride?: number, manualDiscountAmount?: number) => {
         if (!fullName || !email || !phone) { toast.error('Preencha os dados do cliente.'); return }
         if (documents.length === 0) { toast.error('Adicione pelo menos um documento.'); return }
+
+        const effectiveTotal = finalTotalOverride !== undefined ? finalTotalOverride : totalPrice;
+        const discountToSave = manualDiscountAmount || breakdown.totalDiscountApplied || 0;
+
         setLoading(true); setUploadProgress('Enviando arquivos...')
         try {
             const uploadedDocs: any[] = []
@@ -431,8 +436,8 @@ export default function ConciergePage() {
                 user: { fullName, email, phone },
                 documents: orderDocuments as any,
                 urgency, docCategory: 'standard', notaryMode: 'none',
-                zipCode: '00000', grandTotalOverride: totalPrice,
-                breakdown: { ...breakdown, serviceType },
+                zipCode: '00000', grandTotalOverride: effectiveTotal,
+                breakdown: { ...breakdown, serviceType, manualDiscountAmount: manualDiscountAmount },
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT',
@@ -817,10 +822,12 @@ export default function ConciergePage() {
                                     className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors">Criar Outro</button>
                             </div>
                         ) : (
-                            <button onClick={handleCreateConciergeOrder} disabled={loading || totalPrice === 0 || fastProgress !== null}
-                                className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                {loading ? <><div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> {uploadProgress}</> : <><Lock className="w-5 h-5" /> Gerar Link de Cobrança</>}
-                            </button>
+                            <BudgetSummaryCard
+                                subtotal={totalPrice}
+                                totalDocs={breakdown.totalDocs}
+                                totalPages={breakdown.totalCount}
+                                onGenerateProposal={(final, disc) => handleCreateConciergeOrder(final, disc)}
+                            />
                         )}
                     </div>
                     <div className="bg-blue-50 border border-blue-100 rounded-3xl p-6 flex gap-4">
