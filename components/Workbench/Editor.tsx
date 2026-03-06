@@ -47,8 +47,11 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
         if (!docEditor) return;
 
         try {
-            // Se o conteúdo já for o formato JSON do Syncfusion salvo anteriormente
-            if (content.trim().startsWith('{') && content.includes('"sections"')) {
+            // Detecta formato SFDT salvo — incluindo versão minificada ("sec":) e com flag optimizeSfdt
+            const isSFDT = content.trim().startsWith('{') &&
+                (content.includes('"sections"') || content.includes('"sec":') || content.includes('"optimizeSfdt"'))
+
+            if (isSFDT) {
                 docEditor.open(content);
                 lastInjectedContent.current = content;
             } else {
