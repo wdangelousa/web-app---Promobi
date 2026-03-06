@@ -322,6 +322,29 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    // Adapter for Editor's File-based onUploadExternalPdf prop
+    const handleUploadExternalFile = async (file: File) => {
+        if (!selectedDoc) return
+        setIsUploadingExternal(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('documentId', selectedDoc.id.toString())
+            const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
+            const res = await uploadExternalTranslation(formData)
+            if (res.success) {
+                setOptimisticExternalUrl(res.url ?? null)
+                router.refresh()
+            } else {
+                alert('Erro no upload: ' + res.error)
+            }
+        } catch (err: any) {
+            alert('Erro inesperado: ' + err.message)
+        } finally {
+            setIsUploadingExternal(false)
+        }
+    }
+
     // --- FUNÇÕES DE UPLOAD DE PDF EXTERNO ---
     const handleExternalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -593,6 +616,9 @@ export default function Workbench({ order }: { order: Order }) {
                         onPreviewKit={handlePreviewKit}
                         isPreviewingKit={isPreviewingKit}
                         onApprove={handleApproveDoc}
+                        translatedPdfUrl={optimisticExternalUrl}
+                        onUploadExternalPdf={handleUploadExternalFile}
+                        onRemoveExternalPdf={handleRemoveExternal}
                     />
                 </div>
             </div>

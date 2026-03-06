@@ -27,19 +27,25 @@ interface EditorProps {
     content: string;
     setContent: (content: string) => void;
     pdfUrl?: string;
+    translatedPdfUrl?: string | null;
     onSave?: (translatedPageCount?: number) => void;
     onPreviewKit?: (translatedPageCount?: number) => void;
     onApprove?: () => void;
+    onUploadExternalPdf?: (file: File) => Promise<void>;
+    onRemoveExternalPdf?: () => Promise<void>;
     isPreviewingKit?: boolean;
 }
 
-export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewKit, onApprove, isPreviewingKit }: EditorProps) {
+export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, onSave, onPreviewKit, onApprove, onUploadExternalPdf, onRemoveExternalPdf, isPreviewingKit }: EditorProps) {
     const [showReference, setShowReference] = useState(false);
     const [isEditorReady, setIsEditorReady] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const lastInjectedContent = useRef('');
 
     useEffect(() => {
+        if (translatedPdfUrl) return; // External PDF active — skip Syncfusion injection
         if (!isEditorReady || !content || !containerRef.current) return;
         if (content === lastInjectedContent.current) return;
 
@@ -96,6 +102,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
     }, [content, isEditorReady, setContent]);
 
     const handleSaveClick = () => {
+        if (translatedPdfUrl) { if (onSave) onSave(1); return; }
         if (!containerRef.current) return;
         const docEditor = containerRef.current.documentEditor;
         if (!docEditor) return;
@@ -111,8 +118,27 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
     };
 
     const handlePreviewClick = () => {
+        if (translatedPdfUrl) { if (onPreviewKit) onPreviewKit(1); return; }
         const pages = containerRef.current?.documentEditor?.pageCount;
         if (onPreviewKit) onPreviewKit(pages);
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && onUploadExternalPdf) {
+            setIsUploading(true);
+            await onUploadExternalPdf(file);
+            setIsUploading(false);
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleRemoveFile = async () => {
+        if (onRemoveExternalPdf) {
+            setIsUploading(true);
+            await onRemoveExternalPdf();
+            setIsUploading(false);
+        }
     };
 
     return (
@@ -127,6 +153,19 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     >
                         {showReference ? '⬅ Ocultar Documento Original' : '📄 Ver Documento Original'}
                     </button>
+
+                    {!translatedPdfUrl && onUploadExternalPdf && (
+                        <>
+                            <input type="file" accept="application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploading}
+                                className="text-sm font-bold text-amber-900 bg-amber-100 border border-amber-400 px-4 py-2 rounded-md hover:bg-amber-200 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isUploading ? '⏳ Enviando...' : '📎 Anexar PDF (Plano B)'}
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -176,29 +215,43 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                 )}
 
                 <div className={`h-full relative overflow-hidden bg-white min-h-[500px] flex flex-col ${showReference ? 'w-1/2' : 'w-full'}`}>
-                    <div className="absolute inset-0 flex flex-col overflow-hidden">
-                        <DocumentEditorContainerComponent
-                            id="container"
-                            ref={containerRef}
-                            height="100%"
-                            width="100%"
-                            style={{ display: 'block', height: '100%', width: '100%' }}
-                            enableToolbar={true}
-                            restrictEditing={false}
-                            // @ts-ignore
-                            created={() => {
-                                setIsEditorReady(true);
+                    {translatedPdfUrl ? (
+                        <div className="flex flex-col h-full w-full">
+                            <div className="bg-amber-100 text-amber-900 px-6 py-2 text-sm flex justify-between items-center border-b border-amber-300 shrink-0">
+                                <span className="font-medium">⚠️ PDF externo ativo — editor de texto desabilitado.</span>
+                                {onRemoveExternalPdf && (
+                                    <button onClick={handleRemoveFile} disabled={isUploading} className="underline font-bold hover:text-amber-950 disabled:opacity-50">
+                                        {isUploading ? 'Removendo...' : '🗑️ Remover e voltar ao editor'}
+                                    </button>
+                                )}
+                            </div>
+                            <iframe src={translatedPdfUrl} className="w-full flex-1 border-none" title="Tradução Externa" />
+                        </div>
+                    ) : (
+                        <div className="absolute inset-0 flex flex-col overflow-hidden">
+                            <DocumentEditorContainerComponent
+                                id="container"
+                                ref={containerRef}
+                                height="100%"
+                                width="100%"
+                                style={{ display: 'block', height: '100%', width: '100%' }}
+                                enableToolbar={true}
+                                restrictEditing={false}
+                                // @ts-ignore
+                                created={() => {
+                                    setIsEditorReady(true);
 
-                                if (containerRef.current) {
-                                    const editor = containerRef.current.documentEditor;
-                                    if (editor && editor.selection && editor.selection.sectionFormat) {
-                                        editor.selection.sectionFormat.pageWidth = 612;
-                                        editor.selection.sectionFormat.pageHeight = 792;
+                                    if (containerRef.current) {
+                                        const editor = containerRef.current.documentEditor;
+                                        if (editor && editor.selection && editor.selection.sectionFormat) {
+                                            editor.selection.sectionFormat.pageWidth = 612;
+                                            editor.selection.sectionFormat.pageHeight = 792;
+                                        }
                                     }
-                                }
-                            }}
-                        />
-                    </div>
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
 
             </div>
