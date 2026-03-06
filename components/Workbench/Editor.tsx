@@ -47,24 +47,12 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
         if (!docEditor) return;
 
         try {
-            // Detecção bulletproof: JSON.parse lida corretamente com escapes do Supabase
-            let isSFDT = false;
-            let cleanContent = content;
-            try {
-                // Se veio como string JSON-encoded (ex: '"{\\"sections\\":...}"'), desencapsular
-                if (content.startsWith('"') && content.endsWith('"')) {
-                    cleanContent = JSON.parse(content);
-                }
-                const parsed = JSON.parse(cleanContent);
-                if (parsed && (parsed.sections || parsed.sec || parsed.optimizeSfdt)) {
-                    isSFDT = true;
-                }
-            } catch {
-                isSFDT = false;
-            }
+            // Normaliza: Supabase pode retornar um objeto JS em vez de string
+            const textContent = typeof content === 'object' ? JSON.stringify(content) : String(content);
+            const isSFDT = textContent.includes('"optimizeSfdt"') || textContent.includes('"sections"') || textContent.includes('"sec":');
 
             if (isSFDT) {
-                docEditor.open(cleanContent);
+                docEditor.open(textContent);
                 lastInjectedContent.current = content;
             } else {
                 // É o HTML vindo da IA Gemini
