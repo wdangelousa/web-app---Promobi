@@ -92,7 +92,7 @@ async function _buildCoverPageInDoc(
 
 // ── Main server action ────────────────────────────────────────────────────────
 
-export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
+export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean; translatedPageCount?: number }) {
     const isPreview = options?.preview ?? false
     // AJUSTE DE ID: Se o orderId for > 1000, provavelmente é o ID de exibição.
     const dbOrderId = orderId > 1000 ? orderId - 1000 : orderId
@@ -292,11 +292,11 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         }
 
         // ── 6. BUILD AND INSERT COVER PAGE ────────────────────────────────────────
-        const contentPageCount = finalPdf.getPageCount()
-        const totalPdfPages = contentPageCount + 1
+        // Use the Syncfusion-reported page count when available (accurate); fall back to server-computed count
+        const coverPageCount = options?.translatedPageCount ?? translationPageCount
 
         const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: totalPdfPages, dateStr })
+        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: coverPageCount, dateStr })
         finalPdf.insertPage(0, capaPage)
 
         // ── 7. SAVE AND UPLOAD ────────────────────────────────────────────────────

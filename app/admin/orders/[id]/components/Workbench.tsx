@@ -175,7 +175,7 @@ export default function Workbench({ order }: { order: Order }) {
     const someSelected = selectedDocsForDelivery.length > 0
     // const { toast, dialog } = useUIFeedback()
 
-    const handleSave = async () => {
+    const handleSave = async (translatedPageCount?: number) => {
         if (!selectedDoc) return
         setIsSavingDraft(true)
         try {
@@ -190,7 +190,7 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    const handlePreviewKit = async () => {
+    const handlePreviewKit = async (translatedPageCount?: number) => {
         if (!selectedDoc) return
         setIsPreviewingKit(true)
         try {
@@ -200,7 +200,7 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true })
+            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true, translatedPageCount })
             if (result.success && result.deliveryUrl) {
                 setKitPreviewUrl(result.deliveryUrl)
                 setShowPreviewModal(true)

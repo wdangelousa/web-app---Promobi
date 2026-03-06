@@ -27,8 +27,8 @@ interface EditorProps {
     content: string;
     setContent: (content: string) => void;
     pdfUrl?: string;
-    onSave?: () => void;
-    onPreviewKit?: () => void;
+    onSave?: (translatedPageCount?: number) => void;
+    onPreviewKit?: (translatedPageCount?: number) => void;
     onApprove?: () => void;
     isPreviewingKit?: boolean;
 }
@@ -98,12 +98,18 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
         if (!docEditor) return;
 
         const sfdt = docEditor.serialize();
+        const pages = docEditor.pageCount;
         setContent(sfdt);
         lastInjectedContent.current = sfdt;
 
         if (onSave) {
-            setTimeout(() => onSave(), 150);
+            setTimeout(() => onSave(pages), 150);
         }
+    };
+
+    const handlePreviewClick = () => {
+        const pages = containerRef.current?.documentEditor?.pageCount;
+        if (onPreviewKit) onPreviewKit(pages);
     };
 
     return (
@@ -129,7 +135,7 @@ export default function Editor({ content, setContent, pdfUrl, onSave, onPreviewK
                     </button>
 
                     <button
-                        onClick={onPreviewKit}
+                        onClick={handlePreviewClick}
                         disabled={isPreviewingKit}
                         className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-5 py-2 rounded-md text-sm font-bold hover:bg-indigo-100 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
                     >
