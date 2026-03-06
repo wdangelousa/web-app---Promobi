@@ -59,6 +59,19 @@ function wrapLines(
     return lines
 }
 
+function sanitizeForWinAnsi(text: string): string {
+    if (!text) return ''
+    return text
+        .replace(/→/g, '->')
+        .replace(/←/g, '<-')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2013\u2014]/g, '-')
+        .replace(/…/g, '...')
+        .replace(/•/g, '-')
+        .replace(/[^\x00-\xFF]/g, '')
+}
+
 function isImageUrl(url: string): boolean {
     const lower = url.toLowerCase().split('?')[0]
     return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')
@@ -80,7 +93,7 @@ async function _buildCoverPageInDoc(
 
     // Preenchemos os dados no novo template "limpo", alinhados à direita do texto base (X: 210)
     const displayOrderNumber = String(orderId + 1000).padStart(4, '0') + '-USA'
-    capaPage.drawText(docType.toUpperCase(), { x: 210, y: 618, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(sanitizeForWinAnsi(docType).toUpperCase(), { x: 210, y: 618, size: 11, font: fontHelv, color: black })
     capaPage.drawText(totalPages.toString().padStart(2, '0'), { x: 210, y: 570, size: 11, font: fontHelv, color: black })
     capaPage.drawText(displayOrderNumber, { x: 210, y: 554, size: 11, font: fontHelv, color: black })
 
@@ -200,7 +213,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         }
         // FLUXO NORMAL DA IA (CAIXINHA DE TEXTO)
         else if (doc.translatedText) {
-            const plainText = stripHtml(doc.translatedText)
+            const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
             const allLines = wrapLines(plainText, fontNormal, FONT_SIZE, CONTENT_WIDTH)
             const linesPerPage = Math.floor((TEXT_TOP - TEXT_BOTTOM) / LINE_HEIGHT)
             const totalTranslationPages = Math.max(1, Math.ceil(allLines.length / linesPerPage))
@@ -217,7 +230,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                     currentY -= LINE_HEIGHT
                 }
 
-                const footerText = `Translation of ${docName}  \u2014  Page ${pageIndex + 1} of ${totalTranslationPages}`
+                const footerText = `Translation of ${sanitizeForWinAnsi(docName)}  --  Page ${pageIndex + 1} of ${totalTranslationPages}`
                 const footerW = fontNormal.widthOfTextAtSize(footerText, FOOTER_SIZE)
                 bgPage.drawText(footerText, { x: (PAGE_WIDTH - footerW) / 2, y: TEXT_BOTTOM - 20, size: FOOTER_SIZE, font: fontNormal, color: rgb(0.5, 0.5, 0.5) })
             }
