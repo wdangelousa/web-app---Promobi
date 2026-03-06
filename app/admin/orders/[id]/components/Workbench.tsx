@@ -704,6 +704,22 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
                 </div>
             )}
+
+            <FinancialAdjustmentModal
+                isOpen={showFinancialModal}
+                orderId={order.id}
+                currentTotal={order.totalAmount}
+                onClose={() => setShowFinancialModal(false)}
+                onConfirm={async (disc) => {
+                    const res = await applyFinancialAdjustment(order.id, disc);
+                    if (res.success) {
+                        alert(`Ajuste aplicado! Novo total: $${res.finalPaidAmount?.toFixed(2)}`);
+                        window.location.reload();
+                    } else {
+                        alert('Erro: ' + res.error);
+                    }
+                }}
+            />
         </div>
     )
 }
