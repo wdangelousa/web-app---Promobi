@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
+import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
+import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -52,6 +54,9 @@ type Document = {
 type Order = {
     id: number
     status: string
+    totalAmount: number
+    extraDiscount?: number | null
+    finalPaidAmount?: number | null
     documents: Document[]
     user: {
         fullName: string
@@ -129,6 +134,8 @@ export default function Workbench({ order }: { order: Order }) {
     const [kitPreviewUrl, setKitPreviewUrl] = useState<string | null>(null)
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
+
+    const [showFinancialModal, setShowFinancialModal] = useState(false)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -565,6 +572,14 @@ export default function Workbench({ order }: { order: Order }) {
                         </button>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
+
+                        <button
+                            onClick={() => setShowFinancialModal(true)}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-emerald-200"
+                            title="Ajustar valor final (Desconto Extra)"
+                        >
+                            <DollarSign className="h-3.5 w-3.5" /> Ajuste Financeiro
+                        </button>
                     </div>
                 </div>
 

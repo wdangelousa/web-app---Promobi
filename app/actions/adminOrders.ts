@@ -40,3 +40,34 @@ export async function updateOrderStatus(orderId: number, status: string, deliver
         return { success: false, error: 'Failed to update order' }
     }
 }
+
+export async function applyFinancialAdjustment(orderId: number, extraDiscount: number) {
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId }
+        })
+
+        if (!order) {
+            return { success: false, error: 'Order not found' }
+        }
+
+        const finalPaidAmount = Math.max(0, order.totalAmount - extraDiscount)
+
+        await prisma.order.update({
+            where: { id: orderId },
+            data: {
+                extraDiscount: extraDiscount,
+                finalPaidAmount: finalPaidAmount
+            }
+        })
+
+        revalidatePath(`/admin/orders/${orderId}`)
+        revalidatePath('/admin/orders')
+        revalidatePath('/admin/finance')
+
+        return { success: true, finalPaidAmount }
+    } catch (error) {
+        console.error('Failed to apply financial adjustment:', error)
+        return { success: false, error: 'Failed to apply financial adjustment' }
+    }
+}

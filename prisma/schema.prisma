@@ -38,6 +38,8 @@ model Order {
   sentAt               DateTime?
   discountPercentage   Float?          @default(0)
   discountAmount       Float?          @default(0)
+  extraDiscount        Float?          @default(0)
+  finalPaidAmount      Float?
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }
