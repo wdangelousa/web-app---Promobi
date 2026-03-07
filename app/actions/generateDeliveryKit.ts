@@ -110,10 +110,8 @@ async function _buildCoverPageInDoc(
 
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean; translatedPageCount?: number }) {
     const isPreview = options?.preview ?? false
-    // AJUSTE DE ID: Se o orderId for > 1000, provavelmente é o ID de exibição.
-    const dbOrderId = orderId > 1000 ? orderId - 1000 : orderId
 
-    console.log(`[generateDeliveryKit] 🔍 Iniciando geração: OrderID=${orderId} (DB: ${dbOrderId}), DocID=${documentId}, Preview=${isPreview}`)
+    console.log(`[generateDeliveryKit] 🔍 Iniciando geração: OrderID=${orderId}, DocID=${documentId}, Preview=${isPreview}`)
 
     try {
         let doc: any = null
@@ -149,8 +147,8 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             return { success: false, error: 'Documento não encontrado no banco de dados.' }
         }
 
-        if (doc.orderId !== dbOrderId) {
-            console.error(`[generateDeliveryKit] 🛑 Conflito de ID: Doc.orderId(${doc.orderId}) !== dbOrderId(${dbOrderId})`)
+        if (doc.orderId !== orderId) {
+            console.error(`[generateDeliveryKit] 🛑 Conflito de ID: Doc.orderId(${doc.orderId}) !== orderId(${orderId})`)
             return { success: false, error: 'Documento não pertence a este pedido.' }
         }
 
