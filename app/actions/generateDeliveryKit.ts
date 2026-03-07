@@ -91,11 +91,15 @@ async function _buildCoverPageInDoc(
     const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
     const black = rgb(0, 0, 0)
 
-    // Preenchemos os dados no novo template "limpo", alinhados à direita do texto base (X: 210)
+    // Alinhamento em tabela: todos os valores partem do mesmo X, espaçamento vertical fixo
+    const valueX = 230
+    const LINE = 16 // 16pt = 1 line spacing
     const displayOrderNumber = String(orderId + 1000).padStart(4, '0') + '-USA'
-    capaPage.drawText(sanitizeForWinAnsi(docType).toUpperCase(), { x: 210, y: 618, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(totalPages.toString().padStart(2, '0'), { x: 210, y: 570, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(displayOrderNumber, { x: 210, y: 554, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(sanitizeForWinAnsi(docType).toUpperCase(), { x: valueX, y: 618,           size: 11, font: fontHelv, color: black })
+    capaPage.drawText('Portuguese',                               { x: valueX, y: 618 - LINE,    size: 11, font: fontHelv, color: black })
+    capaPage.drawText('English',                                  { x: valueX, y: 618 - LINE * 2, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(totalPages.toString().padStart(2, '0'),     { x: valueX, y: 618 - LINE * 3, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(displayOrderNumber,                         { x: valueX, y: 618 - LINE * 4, size: 11, font: fontHelv, color: black })
 
     // Data cravada no canto inferior esquerdo
     capaPage.drawText(`Dated: ${dateStr}`, { x: 70, y: 110, size: 11, font: fontHelv, color: black })
