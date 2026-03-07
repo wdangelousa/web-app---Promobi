@@ -97,8 +97,8 @@ async function _buildCoverPageInDoc(
     const displayOrderNumber = String(orderId + 1000).padStart(4, '0') + '-USA'
     const formattedPages = totalPages ? String(totalPages).padStart(2, '0') : '01'
     capaPage.drawText(sanitizeForWinAnsi(docType).toUpperCase(), { x: valueX, y: 618, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(formattedPages,                            { x: valueX, y: 570, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(displayOrderNumber,                        { x: valueX, y: 554, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(formattedPages, { x: valueX, y: 570, size: 11, font: fontHelv, color: black })
+    capaPage.drawText(displayOrderNumber, { x: valueX, y: 554, size: 11, font: fontHelv, color: black })
 
     // Data cravada no canto inferior esquerdo
     capaPage.drawText(`Dated: ${dateStr}`, { x: 70, y: 110, size: 11, font: fontHelv, color: black })
@@ -179,8 +179,9 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const docName = doc.exactNameOnDoc || doc.docType
         const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
 
-        // ── 4. TRANSLATION PAGES ──────────────────────────────────────────────────
-        let translationPageCount = 0
+        // ── 4. TRANSLATION PAGES (DYNAMICALY COUNTED) ─────────────────────────────
+        const translationPdf = await PDFDocument.create()
+        let actualTranslationPageCount = 0
 
         // VERIFICA SE HÁ TRADUÇÃO EXTERNA (UPLOAD MANUAL)
         // @ts-ignore - externalTranslationUrl exists in DB; Prisma client cache may be stale
@@ -192,14 +193,14 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                 const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true })
 
                 // Embed pages so we can draw them ON TOP of the timbrado background
-                const embeddedPages = await finalPdf.embedPages(extPdf.getPages())
+                const embeddedPages = await translationPdf.embedPages(extPdf.getPages())
 
                 for (const embeddedPage of embeddedPages) {
-                    translationPageCount++
+                    actualTranslationPageCount++
 
                     // Lay down the branded letterhead as the base layer
-                    const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
-                    finalPdf.addPage(bgPage)
+                    const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
+                    translationPdf.addPage(bgPage)
 
                     // Scale 1.0 — external PDFs have their own margins, no reduction needed
                     const scaledWidth = embeddedPage.width
@@ -222,10 +223,10 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             const totalTranslationPages = Math.max(1, Math.ceil(allLines.length / linesPerPage))
 
             for (let pageIndex = 0; pageIndex < totalTranslationPages; pageIndex++) {
-                translationPageCount++
+                actualTranslationPageCount++
                 const pageLines = allLines.slice(pageIndex * linesPerPage, (pageIndex + 1) * linesPerPage)
-                const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
-                finalPdf.addPage(bgPage)
+                const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
+                translationPdf.addPage(bgPage)
 
                 let currentY = TEXT_TOP
                 for (const line of pageLines) {
@@ -238,12 +239,13 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
                 bgPage.drawText(footerText, { x: (PAGE_WIDTH - footerW) / 2, y: TEXT_BOTTOM - 20, size: FOOTER_SIZE, font: fontNormal, color: rgb(0.5, 0.5, 0.5) })
             }
         } else {
-            const [bgPage] = await finalPdf.copyPages(timbradoPdf, [0])
-            finalPdf.addPage(bgPage)
-            translationPageCount = 1
+            const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
+            translationPdf.addPage(bgPage)
+            actualTranslationPageCount = 1
         }
 
         // ── 5. ORIGINAL DOCUMENT PAGES ────────────────────────────────────────────
+        // We add them directly to finalPdf AFTER translation pages
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             try {
                 const originalRes = await fetch(doc.originalFileUrl)
@@ -308,12 +310,20 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         }
 
         // ── 6. BUILD AND INSERT COVER PAGE ────────────────────────────────────────
-        // Use the Syncfusion-reported page count when available (accurate); fall back to server-computed count
-        const coverPageCount = options?.translatedPageCount ?? translationPageCount
-
+        // Use the actual count from our translationPdf
+        const finalPageCount = translationPdf.getPageCount()
         const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: coverPageCount, dateStr })
+        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: finalPageCount, dateStr })
+
+        // Final Document Assembly: Cover -> Translation -> Original
         finalPdf.insertPage(0, capaPage)
+
+        // Copy translation pages into the final document
+        const translationPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
+        translationPages.forEach((p, i) => {
+            // Insert after cover (index 0), so starting at index 1 + i
+            finalPdf.insertPage(1 + i, p)
+        })
 
         // ── 7. SAVE AND UPLOAD ────────────────────────────────────────────────────
         const pdfBytes = await finalPdf.save()
