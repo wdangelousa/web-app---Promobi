@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign
+    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
@@ -137,7 +137,14 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [showFinancialModal, setShowFinancialModal] = useState(false)
 
+    const [isAddingDoc, setIsAddingDoc] = useState(false)
+    const [isDeletingDocId, setIsDeletingDocId] = useState<number | null>(null)
+    const addDocInputRef = useRef<HTMLInputElement>(null)
+
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
+
+    // Scope is locked once payment has been confirmed
+    const isPaid = !['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
     const justTranslatedRef = useRef<string | null>(null)
@@ -462,6 +469,51 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    const handleAddDocument = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setIsAddingDoc(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('orderId', order.id.toString())
+            const { addDocumentToOrder } = await import('../../../../actions/documents')
+            const res = await addDocumentToOrder(formData)
+            if (res.success) {
+                router.refresh()
+            } else {
+                alert('Erro ao adicionar documento: ' + res.error)
+            }
+        } catch (err: any) {
+            alert('Erro inesperado: ' + err.message)
+        } finally {
+            setIsAddingDoc(false)
+            e.target.value = ''
+        }
+    }
+
+    const handleDeleteDocument = async (docId: number, docName: string) => {
+        if (!confirm(`Tem certeza que deseja remover "${docName}" do pedido? Esta ação não pode ser desfeita.`)) return
+        setIsDeletingDocId(docId)
+        try {
+            const { deleteDocumentFromOrder } = await import('../../../../actions/documents')
+            const res = await deleteDocumentFromOrder(docId)
+            if (res.success) {
+                if (selectedDocId === docId) {
+                    const remaining = order.documents.filter((d) => d.id !== docId)
+                    setSelectedDocId(remaining[0]?.id ?? null)
+                }
+                router.refresh()
+            } else {
+                alert('Erro ao remover documento: ' + res.error)
+            }
+        } catch (err: any) {
+            alert('Erro inesperado: ' + err.message)
+        } finally {
+            setIsDeletingDocId(null)
+        }
+    }
+
     const handleResendEmail = async () => {
         if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
         setIsResending(true)
@@ -539,10 +591,40 @@ export default function Workbench({ order }: { order: Order }) {
                                         {statusLabel}
                                     </span>
                                 </button>
+                                {!isPaid && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc.id, doc.exactNameOnDoc || doc.docType) }}
+                                        disabled={isDeletingDocId === doc.id}
+                                        className="mt-0.5 shrink-0 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                                        title="Remover documento"
+                                    >
+                                        {isDeletingDocId === doc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                    </button>
+                                )}
                             </div>
                         )
                     })}
                 </div>
+
+                {!isPaid && (
+                    <div className="px-2 py-2 border-t border-gray-800 shrink-0">
+                        <input
+                            type="file"
+                            ref={addDocInputRef}
+                            className="hidden"
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            onChange={handleAddDocument}
+                        />
+                        <button
+                            onClick={() => addDocInputRef.current?.click()}
+                            disabled={isAddingDoc}
+                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-gray-800 hover:bg-gray-700 border border-dashed border-gray-600 rounded text-[10px] font-bold text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+                        >
+                            {isAddingDoc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                            Adicionar Documento
+                        </button>
+                    </div>
+                )}
 
                 {someSelected && (
                     <div className="px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">

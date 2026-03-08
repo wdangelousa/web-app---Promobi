@@ -65,6 +65,77 @@ export async function replaceOriginalDocument(formData: FormData) {
     }
 }
 
+// ─── addDocumentToOrder ───────────────────────────────────────────────────────
+// Uploads a new document file and links it to an existing order.
+// Must only be called for orders that have NOT yet been paid.
+export async function addDocumentToOrder(formData: FormData) {
+    const file = formData.get('file') as File
+    const orderId = Number(formData.get('orderId'))
+
+    if (!file || !orderId) {
+        return { success: false, error: 'Arquivo inválido ou ID do pedido em falta.' }
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    try {
+        const bytes = await file.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+        const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf'
+        const safeName = `original_order${orderId}_${Date.now()}.${ext}`
+
+        const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(`orders/originals/${safeName}`, buffer, {
+                contentType: file.type || 'application/octet-stream',
+                upsert: false,
+            })
+
+        if (uploadError) {
+            return { success: false, error: `Falha no upload: ${uploadError.message}` }
+        }
+
+        const { data } = supabase.storage
+            .from('documents')
+            .getPublicUrl(`orders/originals/${safeName}`)
+
+        const docType = file.name.replace(/\.[^/.]+$/, '')
+
+        const document = await prisma.document.create({
+            data: {
+                orderId,
+                docType,
+                originalFileUrl: data.publicUrl,
+                translation_status: 'pending',
+            },
+        })
+
+        return { success: true, documentId: document.id }
+    } catch (err: any) {
+        console.error('[addDocumentToOrder] Erro:', err)
+        return { success: false, error: err.message || 'Erro interno ao processar o arquivo.' }
+    }
+}
+
+// ─── deleteDocumentFromOrder ──────────────────────────────────────────────────
+// Removes a document record from the database.
+// Must only be called for orders that have NOT yet been paid.
+export async function deleteDocumentFromOrder(documentId: number) {
+    if (!documentId) {
+        return { success: false, error: 'ID do documento inválido.' }
+    }
+
+    try {
+        await prisma.document.delete({ where: { id: documentId } })
+        return { success: true }
+    } catch (err: any) {
+        console.error('[deleteDocumentFromOrder] Erro:', err)
+        return { success: false, error: err.message || 'Erro interno ao remover o documento.' }
+    }
+}
+
 // ─── repairDocumentLinks ──────────────────────────────────────────────────────
 // Cura as URLs de documentos 404 refazendo o getPublicUrl com o Supabase.
 // Especialmente util para IFrames que perderam contexto de URL ou de bucket.
