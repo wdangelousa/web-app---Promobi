@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
 import { Role, OrderStatus } from '@prisma/client';
 import { normalizeOrder } from '@/lib/orderAdapter';
+import ReopenOrderButton from './components/ReopenOrderButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -217,13 +218,16 @@ export default async function AdminOrdersPage({
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <Link
-                                            href={`/admin/orders/${order.id}`}
-                                            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                                        >
-                                            <Eye className="w-3.5 h-3.5" />
-                                            Workbench
-                                        </Link>
+                                        <div className="flex items-center justify-end gap-2">
+                                            <ReopenOrderButton orderId={order.id} status={order.status} />
+                                            <Link
+                                                href={`/admin/orders/${order.id}`}
+                                                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                            >
+                                                <Eye className="w-3.5 h-3.5" />
+                                                Workbench
+                                            </Link>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

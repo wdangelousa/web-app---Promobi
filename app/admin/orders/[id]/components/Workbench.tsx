@@ -703,16 +703,6 @@ export default function Workbench({ order }: { order: Order }) {
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
-                        {isPaid && (
-                            <button
-                                onClick={handleReopenBudget}
-                                className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-amber-200"
-                                title="Voltar pedido para fase de orçamento"
-                            >
-                                <RotateCcw className="h-3.5 w-3.5" /> Reabrir Orçamento
-                            </button>
-                        )}
-
                         <button
                             onClick={() => setShowFinancialModal(true)}
                             className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-emerald-200"
