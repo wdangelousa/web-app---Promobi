@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Award, CheckCircle, Clock, AlertCircle, Search, Filter, MoreHorizontal, X, Upload, Send, ChevronRight, Eye } from 'lucide-react'
+import { FileText, Award, CheckCircle, Clock, AlertCircle, Search, Filter, MoreHorizontal, X, Upload, Send, ChevronRight, Eye, Copy } from 'lucide-react'
 import { updateOrderStatus } from '@/app/actions/adminOrders'
 import Link from 'next/link'
+import { useUIFeedback } from '@/components/UIFeedbackProvider'
 
 // Helper to format currency
 const formatCurrency = (value: number) => {
@@ -21,6 +22,7 @@ const formatDate = (dateString: Date | string) => {
 }
 
 export default function AdminOrderList({ initialOrders }: { initialOrders: any[] }) {
+    const { toast } = useUIFeedback();
     const [orders, setOrders] = useState(initialOrders)
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState('ALL')
@@ -170,12 +172,28 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                     {formatDate(order?.createdAt)}
                                 </td>
                                 <td className="p-4 text-right">
-                                    <button
-                                        onClick={() => handleOpenModal(order)}
-                                        className="bg-slate-900 border border-slate-700 hover:border-[#f58220] hover:text-[#f58220] text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                                    >
-                                        Gerenciar
-                                    </button>
+                                    <div className="flex justify-end gap-2 text-right">
+                                        {order.status === 'PENDING_PAYMENT' && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const link = `${window.location.origin}/proposta/${order.id}`;
+                                                    navigator.clipboard.writeText(link);
+                                                    toast.success('Link da proposta copiado!');
+                                                }}
+                                                className="bg-slate-900 border border-slate-700 hover:border-[#f58220] hover:text-[#f58220] text-slate-300 p-1.5 rounded-lg transition-all"
+                                                title="Copiar link da proposta"
+                                            >
+                                                <Copy className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => handleOpenModal(order)}
+                                            className="bg-slate-900 border border-slate-700 hover:border-[#f58220] hover:text-[#f58220] text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                                        >
+                                            Gerenciar
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
