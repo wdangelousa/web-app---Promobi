@@ -36,7 +36,7 @@ export const Header = () => {
 
                 <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
                     <Link
-                        href="/admin"
+                        href="/admin/dashboard"
                         className="flex items-center gap-1.5 text-slate-500 hover:text-[#B8763E] transition-colors font-bold text-xs"
                     >
                         <Lock className="h-3.5 w-3.5" />
@@ -87,7 +87,7 @@ export const Header = () => {
                     >
                         <nav className="flex flex-col p-4 space-y-3 text-center">
                             <Link
-                                href="/admin"
+                                href="/admin/dashboard"
                                 onClick={toggleMenu}
                                 className="flex items-center justify-center gap-2 text-slate-600 hover:text-[#B8763E] font-bold py-2 transition-colors"
                             >
