@@ -127,56 +127,39 @@ export default function OrcamentoManual() {
             setIsHydrating(true)
             try {
                 const res = await getOrderForConcierge(orderId)
-                console.log('FETCHED ORDER DATA:', res)
                 if (res.success && res.order) {
                     const order = res.order
+
+                    // 1. Map Client Info
                     setClientName(order.user?.fullName || '')
                     setClientEmail(order.user?.email || '')
                     setClientPhone(order.user?.phone || '')
                     setUrgency(order.urgency || 'standard')
 
+                    // 2. Map Service Type & Documents from Metadata
                     let meta: any = {}
                     try {
-                        meta = order.metadata ? JSON.parse(order.metadata as string) : {}
+                        meta = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : (order.metadata || {})
                     } catch (e) {
                         console.error('Error parsing order metadata', e)
                     }
 
-                    if (meta.serviceType) {
-                        setServiceType(meta.serviceType)
-                    } else {
-                        setServiceType(order.hasTranslation ? 'translation' : 'notarization')
-                    }
+                    setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
 
-                    if (meta.documents && Array.isArray(meta.documents) && meta.documents.length > 0) {
-                        setDocuments(meta.documents.map((doc: any) => ({
+                    if (meta.documents && Array.isArray(meta.documents)) {
+                        // Map the documents back to the DocumentItem state
+                        const mappedDocs = meta.documents.map((doc: any) => ({
                             ...doc,
                             isSelected: true,
-                        })))
-                    } else if (order.documents && order.documents.length > 0) {
-                        // Fallback: map Document DB records (orders not created via concierge)
-                        setDocuments(order.documents.map((d) => {
-                            const urlParts = (d.originalFileUrl || '').split('/')
-                            const rawName = urlParts[urlParts.length - 1] || ''
-                            const fileName = decodeURIComponent(rawName) || d.docType || `Documento #${d.id}`
-                            return {
-                                id: String(d.id),
-                                fileName,
-                                count: 1,
-                                notarized: order.hasNotary,
-                                isSelected: true,
-                                handwritten: false,
-                            }
                         }))
+                        setDocuments(mappedDocs)
                     }
-                } else {
-                    toast.error(res.error || 'Pedido não encontrado.')
+                    console.log("SUCCESSFULLY HYDRATED ORDER:", order)
                 }
             } catch (err) {
                 console.error('Hydration error:', err)
-                toast.error('Erro ao carregar dados do pedido.')
             } finally {
-                setIsHydrating(false)
+                setIsHydrating(false) // Unblock the UI
             }
         }
 
