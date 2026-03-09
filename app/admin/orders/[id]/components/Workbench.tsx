@@ -140,6 +140,7 @@ export default function Workbench({ order }: { order: Order }) {
     const [isAddingDoc, setIsAddingDoc] = useState(false)
     const [isDeletingDocId, setIsDeletingDocId] = useState<number | null>(null)
     const [showReopenedBanner, setShowReopenedBanner] = useState(false)
+    const [isReopening, setIsReopening] = useState(false)
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
@@ -518,17 +519,24 @@ export default function Workbench({ order }: { order: Order }) {
 
     const handleReopenBudget = async () => {
         if (!confirm('Deseja reabrir este orçamento? O pedido voltará para a fase de rascunho interno (Draft). Você poderá ajustar documentos e valores com segurança. O cliente NÃO será notificado até que você reenvie a proposta oficial.')) return
-        try {
-            const result = await reopenOrder(order.id)
-            if (result.success) {
-                alert('✅ Orçamento reaberto internamente. Ajuste o pedido e reenvie a proposta ao cliente.')
-                router.refresh()
-            } else {
-                alert('❌ Erro: ' + result.error)
+        setIsReopening(true)
+
+        // Yield to main thread to ensure loading state renders (INP)
+        setTimeout(async () => {
+            try {
+                const result = await reopenOrder(order.id)
+                if (result.success) {
+                    alert('✅ Orçamento reaberto internamente. Ajuste o pedido e reenvie a proposta ao cliente.')
+                    router.refresh()
+                } else {
+                    alert('❌ Erro: ' + result.error)
+                }
+            } catch (err: any) {
+                alert('❌ Erro fatal: ' + err.message)
+            } finally {
+                setIsReopening(false)
             }
-        } catch (err: any) {
-            alert('❌ Erro fatal: ' + err.message)
-        }
+        }, 0)
     }
 
     const handleResendEmail = async () => {
@@ -702,6 +710,26 @@ export default function Workbench({ order }: { order: Order }) {
                         </button>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
+
+                        {!['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
+                            <button
+                                onClick={handleReopenBudget}
+                                disabled={isReopening}
+                                className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-amber-200 disabled:opacity-50"
+                                title="Voltar pedido para fase de orçamento"
+                            >
+                                {isReopening ? (
+                                    <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        Processando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <RotateCcw className="h-3.5 w-3.5" /> Reabrir Orçamento
+                                    </>
+                                )}
+                            </button>
+                        )}
 
                         <button
                             onClick={() => setShowFinancialModal(true)}

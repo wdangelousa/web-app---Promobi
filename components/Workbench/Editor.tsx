@@ -127,8 +127,14 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
         const file = e.target.files?.[0];
         if (file && onUploadExternalPdf) {
             setIsUploading(true);
-            await onUploadExternalPdf(file);
-            setIsUploading(false);
+            // Yield to main thread (INP) to show loading state before heavy work
+            setTimeout(async () => {
+                try {
+                    await onUploadExternalPdf(file);
+                } finally {
+                    setIsUploading(false);
+                }
+            }, 0);
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };

@@ -16,19 +16,22 @@ export default function ReopenOrderButton({ orderId, status }: { orderId: number
     const handleConfirm = async () => {
         setLoading(true)
         setError('')
-        try {
-            const res = await reopenOrder(orderId)
-            if (res.success) {
-                setOpen(false)
-                router.push(`/admin/orders/${orderId}`)
-            } else {
-                setError(res.error || 'Erro ao reabrir orçamento.')
+        // Yield to main thread (INP)
+        setTimeout(async () => {
+            try {
+                const res = await reopenOrder(orderId)
+                if (res.success) {
+                    setOpen(false)
+                    router.push(`/admin/orders/${orderId}`)
+                } else {
+                    setError(res.error || 'Erro ao reabrir orçamento.')
+                    setLoading(false)
+                }
+            } catch (err: any) {
+                setError(err.message || 'Erro inesperado.')
                 setLoading(false)
             }
-        } catch (err: any) {
-            setError(err.message || 'Erro inesperado.')
-            setLoading(false)
-        }
+        }, 0)
     }
 
     return (
