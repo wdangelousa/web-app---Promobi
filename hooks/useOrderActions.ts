@@ -26,8 +26,8 @@ export function useOrderActions() {
                 throw new Error(error.message || 'Erro ao reabrir orçamento.');
             }
 
-            // Success feedback and refresh
-            router.refresh();
+            // Success feedback and redirect
+            router.push(`/admin/concierge?orderId=${orderId}`);
             return { success: true };
 
         } catch (err: any) {

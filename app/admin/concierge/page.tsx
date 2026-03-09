@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from '@/app/actions/create-order'
 import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
+import { useSearchParams } from 'next/navigation'
+import { getOrderForConcierge } from '@/app/actions/adminOrders'
 import {
     ArrowRight, Upload, FileText, ShieldCheck, Trash2,
     ChevronDown, Lock, Globe, FilePlus, Copy, ExternalLink,
@@ -104,6 +106,8 @@ function FileTypeIcon({ fileName }: { fileName: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ConciergePage() {
+    const searchParams = useSearchParams()
+    const orderId = searchParams.get('orderId')
     const [serviceType, setServiceType] = useState<'translation' | 'notarization' | null>(null)
     const [documents, setDocuments] = useState<DocumentItem[]>([])
     const [urgency, setUrgency] = useState('standard')
@@ -132,8 +136,38 @@ export default function ConciergePage() {
 
     useEffect(() => {
         getGlobalSettings().then(setGlobalSettings)
+
+        // 🟢 Hydration logic
+        if (orderId) {
+            getOrderForConcierge(Number(orderId)).then(res => {
+                if (res.success && res.order) {
+                    const order = res.order
+                    setFullName(order.user?.fullName || '')
+                    setEmail(order.user?.email || '')
+                    setPhone(order.user?.phone || '')
+                    setUrgency(order.urgency || 'standard')
+
+                    try {
+                        const meta = JSON.parse(order.metadata || '{}')
+                        setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
+                        if (meta.documents) {
+                            // Rehydrate documents from metadata
+                            // Note: These docs won't have the File object, but they have URLs in 'uploadedFile'
+                            setDocuments(meta.documents.map((d: any) => ({
+                                ...d,
+                                isSelected: true,
+                                analysisStatus: d.analysisStatus || 'deep'
+                            })))
+                        }
+                    } catch (e) {
+                        console.error('Error parsing order metadata:', e)
+                    }
+                }
+            })
+        }
+
         return () => { deepCancelRef.current = true }
-    }, [])
+    }, [orderId])
 
     const BASE = globalSettings?.basePrice || 9.00
     const NOTARY_FEE = globalSettings?.notaryFee || 25.00

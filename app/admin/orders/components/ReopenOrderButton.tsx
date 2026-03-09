@@ -22,7 +22,7 @@ export default function ReopenOrderButton({ orderId, status }: { orderId: number
                 const res = await reopenOrder(orderId)
                 if (res.success) {
                     setOpen(false)
-                    router.push(`/admin/orders/${orderId}`)
+                    router.push(`/admin/concierge?orderId=${orderId}`)
                 } else {
                     setError(res.error || 'Erro ao reabrir orçamento.')
                     setLoading(false)

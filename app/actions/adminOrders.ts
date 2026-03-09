@@ -165,3 +165,21 @@ export async function reopenOrder(orderId: number) {
         return { success: false, error: 'Falha ao reabrir orçamento.' }
     }
 }
+
+export async function getOrderForConcierge(orderId: number) {
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { user: true }
+        })
+
+        if (!order) {
+            return { success: false, error: 'Pedido não encontrado.' }
+        }
+
+        return { success: true, order }
+    } catch (error) {
+        console.error('Failed to fetch order for concierge:', error)
+        return { success: false, error: 'Falha ao buscar dados do pedido.' }
+    }
+}
