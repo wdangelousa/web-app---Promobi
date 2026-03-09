@@ -179,12 +179,13 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                                     e.stopPropagation();
                                                     const link = `${window.location.origin}/proposta/${order.id}`;
                                                     navigator.clipboard.writeText(link);
-                                                    toast.success('Link da proposta copiado!');
+                                                    toast.success('Link copiado!');
                                                 }}
-                                                className="bg-slate-900 border border-slate-700 hover:border-[#f58220] hover:text-[#f58220] text-slate-300 p-1.5 rounded-lg transition-all"
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#f58220] bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200"
                                                 title="Copiar link da proposta"
                                             >
-                                                <Copy className="w-4 h-4" />
+                                                <Copy className="w-3.5 h-3.5" />
+                                                Copiar Link
                                             </button>
                                         )}
                                         <button

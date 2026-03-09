@@ -19,7 +19,7 @@ export default function OrderCard({ order, onClick }: Props) {
         e.stopPropagation();
         const link = `${window.location.origin}/proposta/${order.id}`;
         navigator.clipboard.writeText(link);
-        toast.success('Link da proposta copiado!');
+        toast.success('Link copiado!');
     };
 
     return (
@@ -28,19 +28,7 @@ export default function OrderCard({ order, onClick }: Props) {
             className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
         >
             <div className="flex justify-between items-start mb-2">
-                <div className="flex flex-col gap-1">
-                    <span className="text-xs text-gray-400 font-mono">#{order.id?.toString().padStart(6, '0') || '000000'}</span>
-                    {order.status === 'PENDING_PAYMENT' && (
-                        <button
-                            onClick={handleCopyLink}
-                            className="flex items-center gap-1 text-[10px] font-medium text-[#f58220] hover:text-[#d46d1a] transition-colors"
-                            title="Copiar link da proposta"
-                        >
-                            <Copy className="h-3 w-3" />
-                            Copiar Link
-                        </button>
-                    )}
-                </div>
+                <span className="text-xs text-gray-400 font-mono">#{order.id?.toString().padStart(6, '0') || '000000'}</span>
                 <div className="flex gap-1 flex-col items-end">
                     {order.urgency !== 'normal' && (
                         <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -62,6 +50,17 @@ export default function OrderCard({ order, onClick }: Props) {
                 </div>
                 <span className="font-bold text-gray-900">${(typeof order.totalAmount === 'number' ? order.totalAmount : 0).toFixed(2)}</span>
             </div>
+
+            {order.status === 'PENDING_PAYMENT' && (
+                <button
+                    onClick={handleCopyLink}
+                    className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-orange-50 text-[#f58220] hover:bg-[#f58220] hover:text-white border border-orange-200 hover:border-[#f58220] rounded-lg text-xs font-bold transition-colors"
+                    title="Copiar link da proposta"
+                >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copiar Link
+                </button>
+            )}
         </div>
     );
 }
