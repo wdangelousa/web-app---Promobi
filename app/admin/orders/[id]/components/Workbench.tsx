@@ -9,6 +9,7 @@ import {
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment, reopenOrder } from '@/app/actions/adminOrders'
+import ReopenQuoteModal from '@/components/ReopenQuoteModal'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -711,24 +712,8 @@ export default function Workbench({ order }: { order: Order }) {
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
-                        {!['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
-                            <button
-                                onClick={handleReopenBudget}
-                                disabled={isReopening}
-                                className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-amber-200 disabled:opacity-50"
-                                title="Voltar pedido para fase de orçamento"
-                            >
-                                {isReopening ? (
-                                    <>
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        Processando...
-                                    </>
-                                ) : (
-                                    <>
-                                        <RotateCcw className="h-3.5 w-3.5" /> Reabrir Orçamento
-                                    </>
-                                )}
-                            </button>
+                        {(order.status === 'PENDING_PAYMENT' || order.status === 'READY_FOR_REVIEW' || order.status === 'TRANSLATING' || order.status === 'CANCELLED') && (
+                            <ReopenQuoteModal orderId={order.id} />
                         )}
 
                         <button
