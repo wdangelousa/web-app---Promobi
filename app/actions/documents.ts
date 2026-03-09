@@ -112,7 +112,13 @@ export async function addDocumentToOrder(formData: FormData) {
             },
         })
 
-        return { success: true, documentId: document.id }
+        // Reopen the budget: revert order to PENDING so a new proposal can be generated
+        await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'PENDING' as any },
+        })
+
+        return { success: true, documentId: document.id, orderReopened: true }
     } catch (err: any) {
         console.error('[addDocumentToOrder] Erro:', err)
         return { success: false, error: err.message || 'Erro interno ao processar o arquivo.' }

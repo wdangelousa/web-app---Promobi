@@ -139,6 +139,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [isAddingDoc, setIsAddingDoc] = useState(false)
     const [isDeletingDocId, setIsDeletingDocId] = useState<number | null>(null)
+    const [showReopenedBanner, setShowReopenedBanner] = useState(false)
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
@@ -480,6 +481,7 @@ export default function Workbench({ order }: { order: Order }) {
             const { addDocumentToOrder } = await import('../../../../actions/documents')
             const res = await addDocumentToOrder(formData)
             if (res.success) {
+                if (res.orderReopened) setShowReopenedBanner(true)
                 router.refresh()
             } else {
                 alert('Erro ao adicionar documento: ' + res.error)
@@ -605,6 +607,14 @@ export default function Workbench({ order }: { order: Order }) {
                         )
                     })}
                 </div>
+
+                {showReopenedBanner && (
+                    <div className="mx-2 mb-1 px-2 py-2 bg-amber-900/60 border border-amber-600 rounded text-[10px] text-amber-200 leading-snug">
+                        <p className="font-bold text-amber-300 mb-0.5">Orçamento reaberto</p>
+                        <p>Documento adicionado. Gere uma nova proposta para o cliente.</p>
+                        <button onClick={() => setShowReopenedBanner(false)} className="mt-1 text-amber-400 underline">Fechar</button>
+                    </div>
+                )}
 
                 {!isPaid && (
                     <div className="px-2 py-2 border-t border-gray-800 shrink-0">

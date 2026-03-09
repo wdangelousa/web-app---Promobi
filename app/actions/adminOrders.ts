@@ -94,6 +94,27 @@ export async function deleteOrder(orderId: number) {
     }
 }
 
+export async function cancelOrder(orderId: number, reason: string) {
+    if (!reason?.trim()) {
+        return { success: false, error: 'Justificativa obrigatória.' }
+    }
+    try {
+        await prisma.order.update({
+            where: { id: orderId },
+            data: {
+                status: 'CANCELLED' as any,
+                cancellation_reason: reason.trim(),
+            } as any
+        })
+        revalidatePath('/admin/orders')
+        revalidatePath(`/admin/orders/${orderId}`)
+        return { success: true }
+    } catch (error) {
+        console.error('Failed to cancel order:', error)
+        return { success: false, error: 'Falha ao cancelar pedido.' }
+    }
+}
+
 export async function updateCustomerDetails(userId: number, data: { fullName?: string, phone?: string, address?: string }) {
     try {
         await prisma.user.update({

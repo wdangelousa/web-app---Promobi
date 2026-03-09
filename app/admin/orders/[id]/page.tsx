@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma'
 import Workbench from './components/Workbench'
+import CancelOrderButton from './components/CancelOrderModal'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
@@ -78,6 +79,10 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <CancelOrderButton
+                        orderId={sanitizedOrder.id}
+                        isCancelled={sanitizedOrder.status === 'CANCELLED'}
+                    />
                     {/* P7 — Urgency badge: only shown for non-standard orders */}
                     {sanitizedOrder.urgency && sanitizedOrder.urgency !== 'standard' && (
                         <span className="px-3 py-1 rounded-full text-xs font-black border uppercase tracking-wider bg-red-50 text-red-700 border-red-200 animate-pulse">
