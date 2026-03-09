@@ -93,6 +93,7 @@ export default function OrcamentoManual() {
     const [showDropdown, setShowDropdown] = useState(false)
 
     const [loading, setLoading] = useState(false)
+    const [isHydrating, setIsHydrating] = useState(!!orderIdParam)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [uploadProgress, setUploadProgress] = useState<string | null>(null)
     const [generatedLink, setGeneratedLink] = useState<string | null>(null)
@@ -123,9 +124,10 @@ export default function OrcamentoManual() {
         if (!orderId) return
 
         const hydrate = async () => {
-            setLoading(true)
+            setIsHydrating(true)
             try {
                 const res = await getOrderForConcierge(orderId)
+                console.log('FETCHED ORDER DATA:', res)
                 if (res.success && res.order) {
                     const order = res.order
                     setClientName(order.user?.fullName || '')
@@ -146,18 +148,35 @@ export default function OrcamentoManual() {
                         setServiceType(order.hasTranslation ? 'translation' : 'notarization')
                     }
 
-                    if (meta.documents && Array.isArray(meta.documents)) {
+                    if (meta.documents && Array.isArray(meta.documents) && meta.documents.length > 0) {
                         setDocuments(meta.documents.map((doc: any) => ({
                             ...doc,
                             isSelected: true,
                         })))
+                    } else if (order.documents && order.documents.length > 0) {
+                        // Fallback: map Document DB records (orders not created via concierge)
+                        setDocuments(order.documents.map((d) => {
+                            const urlParts = (d.originalFileUrl || '').split('/')
+                            const rawName = urlParts[urlParts.length - 1] || ''
+                            const fileName = decodeURIComponent(rawName) || d.docType || `Documento #${d.id}`
+                            return {
+                                id: String(d.id),
+                                fileName,
+                                count: 1,
+                                notarized: order.hasNotary,
+                                isSelected: true,
+                                handwritten: false,
+                            }
+                        }))
                     }
+                } else {
+                    toast.error(res.error || 'Pedido não encontrado.')
                 }
             } catch (err) {
                 console.error('Hydration error:', err)
                 toast.error('Erro ao carregar dados do pedido.')
             } finally {
-                setLoading(false)
+                setIsHydrating(false)
             }
         }
 
@@ -506,6 +525,18 @@ export default function OrcamentoManual() {
     }
 
     // ─── RENDER ───────────────────────────────────────────────────────────────
+    if (isHydrating) {
+        return (
+            <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-10 h-10 border-4 border-slate-200 border-t-[#f58220] rounded-full animate-spin" />
+                    <p className="text-slate-600 font-semibold">Carregando dados da proposta original...</p>
+                    <p className="text-slate-400 text-sm">Recuperando informações do pedido #{orderId}</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 md:p-12">
             <div className="max-w-4xl mx-auto">
