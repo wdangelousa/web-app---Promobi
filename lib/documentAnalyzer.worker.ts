@@ -154,14 +154,16 @@ async function loadPdfjs(): Promise<any> {
         // Import pdfjs-dist
         const pdfjs = await import('pdfjs-dist')
 
-        // Define the exact worker version that matches the installed pdfjs-dist package
-        // Using unpkg ensures it loads reliably without fighting the Next.js bundler
-        pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`
+        // Use cdnjs which is more resilient to CORS issues in many environments
+        // For pdfjs-dist 5.x, the worker file extension is typically .mjs
+        const workerUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
+
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
         pdfjsLib = pdfjs
         return pdfjsLib
     } catch (e) {
-        console.warn('[Worker] Falha ao carregar pdfjs-dist. Usando heurística de fallback.', e)
+        console.warn('[Worker] Falha ao carregar pdfjs-dist do CDN. Tentando fallback local ou heurística.', e)
         return null
     }
 }

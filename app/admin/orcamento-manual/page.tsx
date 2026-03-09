@@ -461,11 +461,18 @@ export default function OrcamentoManual() {
             for (let i = 0; i < docsWithFiles.length; i++) {
                 const doc = docsWithFiles[i]
                 setUploadProgress(`Enviando documentos... (${i + 1}/${docsWithFiles.length})`)
+                console.log(`[GenerateProposal] Uploading doc ${i + 1}: ${doc.fileName}`)
                 const form = new FormData(); form.append('file', doc.file as File)
                 const res = await fetch('/api/upload', { method: 'POST', body: form })
                 if (res.ok) {
                     const data = await res.json()
                     uploadedDocs.push({ docIndex: selectedDocs.indexOf(doc), url: data.url, fileName: data.fileName, contentType: data.contentType })
+                    console.log(`[GenerateProposal] Success: ${doc.fileName} -> ${data.url}`)
+                } else {
+                    const errorData = await res.json().catch(() => ({}));
+                    console.error(`[GenerateProposal] Failed to upload ${doc.fileName}:`, errorData)
+                    toast.error(`Falha ao enviar arquivo: ${doc.fileName}`)
+                    throw new Error(`Upload failed for ${doc.fileName}`)
                 }
             }
 
@@ -502,9 +509,12 @@ export default function OrcamentoManual() {
             }
 
             if (!orderResult.success || !orderResult.orderId) {
+                console.error('[GenerateProposal] Server action failed:', orderResult.error)
                 toast.error(orderResult.error || 'Erro ao processar proposta.')
                 return
             }
+
+            console.log('[GenerateProposal] Proposal generated successfully:', orderResult.orderId)
 
             setGeneratedLink(`${window.location.origin}/proposta/${orderResult.orderId}`)
             toast.success('Proposta gerada! Envie o link ao cliente.')
