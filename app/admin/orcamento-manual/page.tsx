@@ -137,7 +137,7 @@ export default function OrcamentoManual() {
                     setUrgency(order.urgency || 'standard')
 
                     // 2. Map Service Type
-                    setServiceType(order.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
+                    setServiceType(order.hasTranslation ? 'translation' : 'notarization')
 
                     // 3. Map Documents (From Prisma 'documents' relation)
                     if (order.documents && Array.isArray(order.documents)) {
