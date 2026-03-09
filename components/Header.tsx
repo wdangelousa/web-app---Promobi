@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Globe } from 'lucide-react';
+import { Menu, X, Globe, Lock } from 'lucide-react';
 import { useLocale } from '../lib/i18n';
 
 export const Header = () => {
@@ -35,6 +35,14 @@ export const Header = () => {
                 </div>
 
                 <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+                    <Link
+                        href="/admin"
+                        className="flex items-center gap-1.5 text-slate-500 hover:text-[#B8763E] transition-colors font-bold text-xs"
+                    >
+                        <Lock className="h-3.5 w-3.5" />
+                        Admin
+                    </Link>
+
                     <button
                         onClick={toggleLocale}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 hover:border-[#B8763E] hover:text-[#B8763E] transition-all text-xs font-bold"
@@ -78,6 +86,15 @@ export const Header = () => {
                         className="md:hidden bg-white border-b border-gray-100 overflow-hidden"
                     >
                         <nav className="flex flex-col p-4 space-y-3 text-center">
+                            <Link
+                                href="/admin"
+                                onClick={toggleMenu}
+                                className="flex items-center justify-center gap-2 text-slate-600 hover:text-[#B8763E] font-bold py-2 transition-colors"
+                            >
+                                <Lock className="h-4 w-4" />
+                                Área Admin
+                            </Link>
+
                             <Link
                                 href="#calculator"
                                 onClick={toggleMenu}
