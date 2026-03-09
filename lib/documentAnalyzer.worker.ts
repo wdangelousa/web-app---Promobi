@@ -59,9 +59,9 @@ function build(pages: PageResult[], isImage: boolean, fileType: AnalysisResult['
 // Thresholds conservadores: nunca cobrar a mais do cliente.
 
 function classifyWC(n: number): DensityType {
-    if (n === 0)    return 'blank'
-    if (n < 80)     return 'low'
-    if (n < 250)    return 'medium'
+    if (n === 0) return 'blank'
+    if (n < 80) return 'low'
+    if (n < 250) return 'medium'
     return 'high'
 }
 
@@ -74,11 +74,11 @@ function classifyWC(n: number): DensityType {
 // Esta heurística é usada em fastPass e como fallback de deepPass.
 
 function bytesPerPageToDensity(bytesPerPage: number): { density: DensityType; fraction: number; wordCount: number } {
-    if (bytesPerPage > 350_000) return { density: 'scanned', fraction: 1.0,  wordCount: 0   }
-    if (bytesPerPage > 50_000)  return { density: 'high',    fraction: 1.0,  wordCount: 260 }
-    if (bytesPerPage > 12_000)  return { density: 'medium',  fraction: 0.5,  wordCount: 130 }
-    if (bytesPerPage > 2_500)   return { density: 'low',     fraction: 0.25, wordCount: 40  }
-    return                       { density: 'blank',   fraction: 0,    wordCount: 0   }
+    if (bytesPerPage > 350_000) return { density: 'scanned', fraction: 1.0, wordCount: 0 }
+    if (bytesPerPage > 50_000) return { density: 'high', fraction: 1.0, wordCount: 260 }
+    if (bytesPerPage > 12_000) return { density: 'medium', fraction: 0.5, wordCount: 130 }
+    if (bytesPerPage > 2_500) return { density: 'low', fraction: 0.25, wordCount: 40 }
+    return { density: 'blank', fraction: 0, wordCount: 0 }
 }
 
 // ─── Accurate page count via pdf-lib ─────────────────────────────────────────
@@ -151,14 +151,17 @@ let pdfjsLib: any = null
 async function loadPdfjs(): Promise<any> {
     if (pdfjsLib) return pdfjsLib
     try {
-        // Import dinâmico — funciona em module workers (Next.js)
+        // Import pdfjs-dist
         const pdfjs = await import('pdfjs-dist')
-        // Desabilita o worker interno do pdfjs (já estamos dentro de um worker)
-        pdfjs.GlobalWorkerOptions.workerSrc = ''
+
+        // Define the exact worker version that matches the installed pdfjs-dist package
+        // Using unpkg ensures it loads reliably without fighting the Next.js bundler
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`
+
         pdfjsLib = pdfjs
         return pdfjsLib
     } catch (e) {
-        console.warn('[Worker] pdfjs-dist não disponível, usando heurística de bytes.', e)
+        console.warn('[Worker] Falha ao carregar pdfjs-dist. Usando heurística de fallback.', e)
         return null
     }
 }
@@ -227,22 +230,22 @@ self.onmessage = async (e: MessageEvent<WorkerMsg>) => {
     const { type, id, buffer, fileName, base } = e.data
 
     try {
-        const isImg  = /\.(jpe?g|png|gif|webp|tiff?)$/i.test(fileName)
+        const isImg = /\.(jpe?g|png|gif|webp|tiff?)$/i.test(fileName)
         const isDocx = /\.docx$/i.test(fileName)
 
         if (type === 'fastPass') {
             let result: AnalysisResult
-            if (isImg)       result = analyzeImage(base)
+            if (isImg) result = analyzeImage(base)
             else if (isDocx) result = analyzeDocx(buffer, base)
-            else             result = await fastPdf(buffer, base)
+            else result = await fastPdf(buffer, base)
             self.postMessage({ type: 'fastPassDone', id, result } as WorkerResponse)
         }
 
         if (type === 'deepPass') {
             let result: AnalysisResult
-            if (isImg)       result = analyzeImage(base)
+            if (isImg) result = analyzeImage(base)
             else if (isDocx) result = analyzeDocx(buffer, base)
-            else             result = await deepPdf(buffer, base)
+            else result = await deepPdf(buffer, base)
             self.postMessage({ type: 'deepPassDone', id, result } as WorkerResponse)
         }
     } catch (err: any) {
