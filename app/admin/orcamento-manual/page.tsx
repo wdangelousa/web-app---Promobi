@@ -130,34 +130,42 @@ export default function OrcamentoManual() {
                 if (res.success && res.order) {
                     const order = res.order
 
-                    // 1. Map Client Info
+                    // 1. Map Client Info (From Prisma 'user' relation)
                     setClientName(order.user?.fullName || '')
                     setClientEmail(order.user?.email || '')
                     setClientPhone(order.user?.phone || '')
                     setUrgency(order.urgency || 'standard')
 
-                    // 2. Map Service Type & Documents from Metadata
-                    let meta: any = {}
-                    try {
-                        meta = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : (order.metadata || {})
-                    } catch (e) {
-                        console.error('Error parsing order metadata', e)
-                    }
+                    // 2. Map Service Type
+                    setServiceType(order.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
 
-                    setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
+                    // 3. Map Documents (From Prisma 'documents' relation)
+                    if (order.documents && Array.isArray(order.documents)) {
+                        const mappedDocs = order.documents.map((doc: any) => {
+                            // Handle analysis parsing if it was saved as JSON
+                            let parsedAnalysis = undefined;
+                            try {
+                                if (doc.analysis) {
+                                    parsedAnalysis = typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis;
+                                }
+                            } catch (e) { console.error('Error parsing doc analysis', e) }
 
-                    if (meta.documents && Array.isArray(meta.documents)) {
-                        // Map the documents back to the DocumentItem state
-                        const mappedDocs = meta.documents.map((doc: any) => ({
-                            ...doc,
-                            isSelected: true,
-                        }))
+                            return {
+                                id: doc.id.toString(), // Ensure string ID for UI state
+                                fileName: doc.fileName || doc.name || 'Documento Restaurado',
+                                count: doc.count || doc.pages || 1,
+                                notarized: doc.notarized || false,
+                                handwritten: doc.handwritten || false,
+                                isSelected: true,
+                                analysis: parsedAnalysis
+                            }
+                        })
                         setDocuments(mappedDocs)
                     }
-                    console.log("SUCCESSFULLY HYDRATED ORDER:", order)
                 }
             } catch (err) {
                 console.error('Hydration error:', err)
+                toast.error('Erro ao carregar dados do pedido.')
             } finally {
                 setIsHydrating(false) // Unblock the UI
             }
