@@ -42,7 +42,6 @@ model Order {
   extraDiscount        Float?          @default(0)
   finalPaidAmount      Float?
   sourceLanguage       SourceLanguage  @default(PT_BR)
-  cancellation_reason  String?
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }

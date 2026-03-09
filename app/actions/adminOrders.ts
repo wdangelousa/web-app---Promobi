@@ -99,13 +99,22 @@ export async function cancelOrder(orderId: number, reason: string) {
         return { success: false, error: 'Justificativa obrigatória.' }
     }
     try {
+        // Update status via Prisma (always works)
         await prisma.order.update({
             where: { id: orderId },
-            data: {
-                status: 'CANCELLED' as any,
-                cancellation_reason: reason.trim(),
-            } as any
+            data: { status: 'CANCELLED' as any },
         })
+
+        // Save cancellation reason via raw SQL.
+        // This will succeed once you add the column in Supabase:
+        //   ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+        try {
+            await prisma.$executeRaw`UPDATE "Order" SET cancellation_reason = ${reason.trim()} WHERE id = ${orderId}`
+        } catch {
+            // Column not yet added to DB — status is still saved correctly above
+            console.warn('[cancelOrder] cancellation_reason column not found — add it via Supabase SQL editor')
+        }
+
         revalidatePath('/admin/orders')
         revalidatePath(`/admin/orders/${orderId}`)
         return { success: true }
