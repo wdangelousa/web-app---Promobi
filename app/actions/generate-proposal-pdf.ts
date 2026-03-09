@@ -24,7 +24,7 @@ export async function generatePremiumProposalPDF(order: any, globalSettings: any
         return {
             success: true,
             base64: buffer.toString('base64'),
-            fileName: `Proposta-Promobi-${order.id}.pdf`
+            fileName: `Proposta-Promobidocs-${order.id}.pdf`
         };
     } catch (error: any) {
         console.error("Error generating PDF server-side:", error);

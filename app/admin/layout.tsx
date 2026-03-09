@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { logout } from '@/app/actions/auth'
 
 export const metadata: Metadata = {
-    title: 'Promobi Admin',
+    title: 'Promobidocs Admin',
     description: 'Gestão de Pedidos',
 }
 

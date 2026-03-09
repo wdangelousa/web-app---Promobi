@@ -1,0 +1,141 @@
+{
+  "meta": {
+    "locale": "pt",
+    "label": "Português",
+    "flag": "🇧🇷"
+  },
+  "header": {
+    "startOrder": "Comece seu Pedido",
+    "restrictedArea": "Área Restrita",
+    "languageSwitch": "ES"
+  },
+  "hero": {
+    "badge": "Certificado por Notário Público da Flórida",
+    "titleStart": "Traduções Certificadas com a ",
+    "titleHighlight": "Velocidade da Tecnologia.",
+    "subtitle": "Unimos a precisão técnica de alto nível com a conveniência da notarização oficial imediata. Documentos prontos para imigração (USCIS) e negócios em tempo recorde.",
+    "cta": "Comece seu Pedido"
+  },
+  "serviceSelect": {
+    "title": "Comece seu Pedido",
+    "subtitle": "Qual serviço você precisa hoje?",
+    "translationTitle": "Preciso Traduzir e Certificar",
+    "translationDesc": "Quero o serviço completo. Envio o documento original e vocês traduzem e certificam (USCIS).",
+    "notaryTitle": "Já tenho a tradução, quero apenas Notarizar",
+    "notaryDesc": "Já possuo a tradução pronta. Preciso apenas da Notarização (reconhecimento de firma) pela Notária Pública.",
+    "back": "Voltar",
+    "changeService": "Alterar Serviço"
+  },
+  "upload": {
+    "title": "Orçamento de Tradução",
+    "titleNotary": "Orçamento de Notarização",
+    "subtitle": "Configure seu pedido em segundos.",
+    "subtitleNotary": "Upload dos pares de documentos.",
+    "dragDrop": "PDF, JPG ou PNG (Detecção automática)",
+    "dragDropNotary": "Inicie com o Documento Original (PDF)",
+    "addAnother": "Adicionar outro documento",
+    "addAnotherNotary": "Adicionar Novo Par",
+    "analyzing": "Analisando...",
+    "analyzingDensity": "Analisando densidade do documento...",
+    "analyzingNotary": "Preparando slots...",
+    "docLanguageLabel": "Idioma do documento original",
+    "docLanguagePT": "Português",
+    "docLanguageES": "Español",
+    "removeDoc": "Remover Documento",
+    "removeConfirm": "Tem certeza que deseja remover este documento do orçamento?",
+    "clearAll": "Limpar Orçamento"
+  },
+  "pricing": {
+    "urgencyLabel": "Prazo de Entrega",
+    "standard": "Standard",
+    "standardDays": "3-5 dias úteis",
+    "urgent": "Express 24h",
+    "urgentDays": "1 dia útil",
+    "flash": "Ultra Express 12h",
+    "flashDays": "12 horas",
+    "notarizeAdd": "Adicionar Notarização",
+    "notarizeDesc": "Reconhecimento de firma por Notário Público da Flórida",
+    "subtotal": "Subtotal",
+    "urgencyFee": "Taxa de Urgência",
+    "notaryFee": "Taxa de Notarização",
+    "discount": "Desconto",
+    "total": "Total",
+    "perPage": "por página",
+    "priceLock": "Valor Travado (Price Lock)",
+    "priceLockDesc": "O orçamento gerado é definitivo. Ao confirmar o pagamento agora, garantimos que não haverá cobranças extras de tradução, mesmo após a revisão da nossa equipe."
+  },
+  "checkout": {
+    "title": "Seus Dados",
+    "fullName": "Nome Completo",
+    "email": "E-mail",
+    "phone": "Telefone / WhatsApp",
+    "paymentMethod": "Forma de Pagamento",
+    "creditCard": "Cartão de Crédito (USD)",
+    "pix": "Pix / Parcelado (BRL)",
+    "terms": "Li e aceito os termos de serviço e a política de privacidade.",
+    "termsError": "Você precisa aceitar os termos para continuar.",
+    "submit": "Confirmar e Pagar",
+    "processing": "Processando..."
+  },
+  "trust": {
+    "title": "Equipe Técnica Promobidocs",
+    "description": "Nossos processos são conduzidos por especialistas técnicos membros da ATA e validados por Notários Públicos comissionados na Flórida. Garantimos aceitação total nos principais órgãos americanos (USCIS, DMV, Universidades e Bancos).",
+    "uscisTitle": "Imigração (USCIS)",
+    "uscisDesc": "Traduções certificadas aceitas em 100% dos processos migratórios americanos.",
+    "dmvTitle": "DMV (Carteira de Motorista)",
+    "dmvDesc": "Tradução oficial de CNH brasileira para emissão da carteira de motorista na Flórida.",
+    "eduTitle": "Universidades",
+    "eduDesc": "Históricos escolares, diplomas e documentos acadêmicos traduzidos com precisão.",
+    "legalTitle": "Tribunais e Bancos",
+    "legalDesc": "Documentos com notarização oficial aceitos em qualquer instância."
+  },
+  "faq": {
+    "title": "Perguntas Frequentes",
+    "items": [
+      {
+        "q": "O que é uma Tradução Certificada nos EUA?",
+        "a": "É uma tradução acompanhada de um 'Certificate of Accuracy' (Certificado de Precisão), assinado pelo tradutor ou empresa de tradução, atestando que o documento é uma representação fiel e precisa do original. É a exigência padrão do USCIS e outros órgãos americanos."
+      },
+      {
+        "q": "Qual a diferença entre a 'Tradução Juramentada' do Brasil e a Certificada nos EUA?",
+        "a": "Nos EUA não existe a figura do tradutor concursado (juramentado) como no Brasil. O sistema americano exige uma Tradução Certificada e, para maior segurança jurídica (como exigido por tribunais, DMV e universidades), a assinatura do tradutor deve ser Notarizada por um Notary Public oficial."
+      },
+      {
+        "q": "Eu mesmo posso traduzir meus documentos para o USCIS?",
+        "a": "Não. O USCIS proíbe expressamente que o próprio requerente, ou membros da sua família, certifiquem traduções de seus próprios documentos, sob risco de negativa do processo. É necessário um profissional imparcial e capacitado."
+      },
+      {
+        "q": "A Promobidocs é credenciada para fazer essas traduções?",
+        "a": "Sim. Nossa equipe técnica é composta por membros da American Translators Association (ATA) e atuamos em conformidade com as diretrizes do governo americano. Além disso, nossos processos são validados por Notários Públicos comissionados no Estado da Flórida."
+      },
+      {
+        "q": "Preciso enviar meu documento original físico para vocês?",
+        "a": "Não. Todo o nosso processo é 100% digital. Basta enviar uma foto nítida ou um documento escaneado (PDF/JPG) com todas as bordas visíveis e legíveis através da nossa plataforma segura."
+      },
+      {
+        "q": "O USCIS aceita traduções digitais ou precisa do papel impresso?",
+        "a": "O USCIS aceita cópias digitais impressas de traduções certificadas em 99% dos casos, aplicados online ou por correio. Nós enviamos o PDF final com todas as certificações e selos notariais digitais prontos para envio."
+      },
+      {
+        "q": "Quando é necessário notarizar (reconhecer firma) a tradução?",
+        "a": "Embora o USCIS exija apenas a certificação, muitos bancos, tribunais estaduais, universidades e o DMV exigem que a assinatura do tradutor seja notarizada. Como nosso processo já inclui validação por um Notary Public da Flórida, seu documento terá máxima aceitação."
+      },
+      {
+        "q": "Vocês traduzem documentos para o DMV (Driver's License) e Universidades?",
+        "a": "Sim! Além de processos imigratórios, traduzimos CNHs brasileiras, históricos escolares (transcripts), diplomas, extratos bancários e declarações de imposto de renda para fins financeiros e educacionais."
+      },
+      {
+        "q": "Como o prazo de entrega funciona?",
+        "a": "Depende da urgência do seu processo. Oferecemos opções de entrega 'Standard' (3 a 5 dias), 'Express' (24 horas) e 'Ultra-Express' (12 horas). O prazo começa a contar a partir da confirmação do pagamento."
+      },
+      {
+        "q": "Meus dados e documentos estão seguros?",
+        "a": "Absolutamente. Utilizamos infraestrutura de ponta e criptografia de nível bancário. Seus documentos são acessados apenas pela nossa equipe técnica restrita e excluídos de nossos servidores após a conclusão do serviço, garantindo total privacidade."
+      }
+    ]
+  },
+  "footer": {
+    "copyright": "© 2026 Promobidocs Services LLC. Todos os direitos reservados.",
+    "disclaimer": "A Promobidocs é uma empresa de tecnologia e serviços de tradução e notarização. Não somos um escritório de advocacia (Law Firm) e não prestamos consultoria jurídica."
+  }
+}

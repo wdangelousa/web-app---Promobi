@@ -274,7 +274,7 @@ const DocCard = ({ doc, idx, base }: { doc: any; idx: number; base: number }) =>
           <View style={S.exclBar} />
           <View style={S.exclBody}>
             <Text style={S.exclHead}>
-              {excCount} {excCount === 1 ? 'pagina excluida' : 'paginas excluidas'} pela equipe Promobi
+              {excCount} {excCount === 1 ? 'pagina excluida' : 'paginas excluidas'} pela equipe Promobidocs
             </Text>
             <Text style={S.exclPgs}>
               {fmtExcluded(excludedPgs)} — desnecessarias para o processo
@@ -322,7 +322,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
 
   const totalDocs = docs.length;
   const totalAmt = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
-  const clientName = order?.user?.fullName || order?.clientName || 'Cliente Promobi';
+  const clientName = order?.user?.fullName || order?.clientName || 'Cliente Promobidocs';
   const clientEmail = order?.user?.email || order?.clientEmail || '';
 
   // Total included pages
@@ -357,7 +357,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
   const totalPdfPages = chunks.length;
 
   return (
-    <Document title={`Proposta-Promobi-${order?.id}`} author="Promobi">
+    <Document title={`Proposta-Promobidocs-${order?.id}`} author="Promobidocs">
       {chunks.map((chunk, pi) => {
         const isFirst = pi === 0;
         const isLast = pi === totalPdfPages - 1;
@@ -377,7 +377,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <View style={S.logoWrap}>
                       {logoBase64
                         ? <Image src={logoBase64} style={S.logo} />
-                        : <Text style={S.logoText}>PROMOBi</Text>
+                        : <Text style={S.logoText}>PROMOBIDOCSDOCS</Text>
                       }
                     </View>
                     <Text style={S.headerTagline}>TRADUCAO CERTIFICADA · USCIS ACCEPTED</Text>
@@ -478,7 +478,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                 <View style={S.savingsHead}>
                   <View style={S.savingsLeft}>
                     <Text style={S.savingsTitle}>
-                      OTIMIZACAO DO ORCAMENTO — PROMOBI CUIDA DO SEU DINHEIRO
+                      OTIMIZACAO DO ORCAMENTO — PROMOBIDOCSDOCS CUIDA DO SEU DINHEIRO
                     </Text>
                     <Text style={S.savingsSub}>
                       Nossa equipe removeu paginas desnecessarias para reduzir seu custo
@@ -553,10 +553,10 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
             <View style={S.footer}>
               <View>
                 <Text style={S.footerAddr}>4700 Millenia Blvd, Orlando, FL 32839, USA</Text>
-                <Text style={S.footerContact}>(321) 324-5851 · info@promobi.us</Text>
+                <Text style={S.footerContact}>(321) 324-5851 · desk@promobidocs.com</Text>
               </View>
               <View style={S.footerRight}>
-                <Text style={S.footerUrl}>www.promobi.us</Text>
+                <Text style={S.footerUrl}>www.promobidocs.com</Text>
                 <Text style={S.footerPage}>{pageNum}/{totalPdfPages}</Text>
               </View>
             </View>

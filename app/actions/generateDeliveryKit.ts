@@ -81,11 +81,14 @@ function isImageUrl(url: string): boolean {
 
 async function _buildCoverPageInDoc(
     targetDoc: PDFDocument,
-    params: { docType: string; orderId: number; totalPages: number; dateStr: string }
+    params: { docType: string; orderId: number; totalPages: number; dateStr: string; sourceLanguage?: string }
 ) {
-    const { docType, orderId, totalPages, dateStr } = params
+    const { docType, orderId, totalPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
-    const capaBytes = await fs.readFile(path.join(publicDir, 'capa_certificacao_modelo.pdf'))
+    const capaFile = sourceLanguage === 'ES'
+        ? 'capa certificacao es-en.pdf'
+        : 'capa certificacao pt-en.pdf'
+    const capaBytes = await fs.readFile(path.join(publicDir, capaFile))
     const capaSrc = await PDFDocument.load(capaBytes, { ignoreEncryption: true })
     const [capaPage] = await targetDoc.copyPages(capaSrc, [0])
     const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
@@ -157,7 +160,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         // LOAD TIMBRADO
         const publicDir = path.join(process.cwd(), 'public')
-        const timbradoBytes = await fs.readFile(path.join(publicDir, 'timbrado_promobi.pdf'))
+        const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes, { ignoreEncryption: true })
 
         const finalPdf = await PDFDocument.create()
@@ -311,7 +314,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         // Use the actual count from our translationPdf
         const finalPageCount = translationPdf.getPageCount()
         const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: finalPageCount, dateStr })
+        const capaPage = await _buildCoverPageInDoc(finalPdf, { docType, orderId, totalPages: finalPageCount, dateStr, sourceLanguage: doc.order?.sourceLanguage ?? undefined })
 
         // Final Document Assembly: Cover -> Translation -> Original
         finalPdf.insertPage(0, capaPage)

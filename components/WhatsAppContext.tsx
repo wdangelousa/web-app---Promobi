@@ -9,7 +9,7 @@ type WhatsAppContextType = {
     resetMessage: () => void;
 }
 
-const defaultMessage = "Olá, Equipa Promobi! Já consultei as perguntas frequentes no site, mas tenho uma dúvida específica sobre os meus documentos para avançar com o orçamento. Podem ajudar-me?"
+const defaultMessage = "Olá, Equipe Promobidocsdocs! Já consultei as perguntas frequentes no site, mas tenho uma dúvida específica sobre os meus documentos para avançar com o orçamento. Podem ajudar-me?"
 
 const WhatsAppContext = createContext<WhatsAppContextType | undefined>(undefined)
 

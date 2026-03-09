@@ -26,7 +26,7 @@ export const AdminNotificationEmail: React.FC<AdminNotificationEmailProps> = ({
         </ul>
 
         <p style={{ marginTop: '20px', textAlign: 'center' }}>
-            <a href={`https://promobi.us/admin/orders/${orderId}`} style={{ backgroundColor: '#f5b000', color: '#000', padding: '10px 20px', borderRadius: '4px', textDecoration: 'none', fontWeight: 'bold' }}>
+            <a href={`https://promobidocs.com/admin/orders/${orderId}`} style={{ backgroundColor: '#f5b000', color: '#000', padding: '10px 20px', borderRadius: '4px', textDecoration: 'none', fontWeight: 'bold' }}>
                 Ver no Painel Admin →
             </a>
         </p>

@@ -35,6 +35,7 @@ import { useUIFeedback } from '../components/UIFeedbackProvider'
 
 // Types
 import { analyzeDocument, DocumentAnalysis } from '../lib/documentAnalyzer'
+import { Header } from '../components/Header'
 
 type DocumentItem = {
     id: string;
@@ -53,6 +54,7 @@ type DocumentItem = {
 export default function Home() {
     // --- STATE & LOGIC ---
     const [serviceType, setServiceType] = useState<'translation' | 'notarization' | null>(null)
+    const [docLanguage, setDocLanguage] = useState<'PT_BR' | 'ES'>('PT_BR')
     const [documents, setDocuments] = useState<DocumentItem[]>([])
     // We can reuse 'documents' for both, but might need a union type or distinct state if they diverge too much.
     // For 'notarization', we need pairs. Let's try to fit it into DocumentItem or make a separate state?
@@ -528,6 +530,7 @@ export default function Home() {
                     breakdown: { basePrice, notaryFee, urgencyFee, minOrderApplied, serviceType },
                     paymentProvider: 'STRIPE',
                     serviceType: serviceType ?? 'translation',
+                    sourceLanguage: docLanguage,
                 })
 
                 if (!orderResult.success || !orderResult.orderId) {
@@ -592,70 +595,7 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-[#f58220]/20">
             {/* --- HEADER --- */}
-            <motion.header
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100"
-            >
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-32 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Image src="/logo.png" width={480} height={165} alt="Promobi" className="object-contain h-24 md:h-32 w-auto" />
-                    </div>
-
-                    {/* Desktop Nav */}
-                    <nav className="hidden md:flex items-center gap-4 text-sm">
-                        <a
-                            href="#calculator"
-                            className="bg-[#f58220] hover:bg-orange-600 text-white px-6 py-2.5 rounded-full font-bold shadow-md hover:shadow-orange-200 hover:scale-[1.02] transition-all active:scale-95 flex items-center gap-2"
-                        >
-                            Comece seu Pedido <ArrowRight className="h-4 w-4" />
-                        </a>
-                        <a
-                            href="/admin"
-                            className="flex items-center gap-1.5 text-slate-400 hover:text-slate-500 transition-colors text-xs font-medium"
-                        >
-                            <Lock className="h-3.5 w-3.5" /> Área Restrita
-                        </a>
-                    </nav>
-
-                    {/* Mobile Menu Button */}
-                    <button
-                        className="md:hidden p-3 text-slate-600 hover:text-[#f58220] transition-colors"
-                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                    >
-                        {mobileMenuOpen ? <X className="h-7 w-7" /> : <Menu className="h-7 w-7" />}
-                    </button>
-                </div>
-
-                {/* Mobile Menu Overlay */}
-                <AnimatePresence>
-                    {mobileMenuOpen && (
-                        <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
-                        >
-                            <nav className="flex flex-col p-4 space-y-3 text-sm font-medium">
-                                <a
-                                    href="#calculator"
-                                    className="p-3 bg-[#f58220] text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-md active:scale-95"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                >
-                                    Comece seu Pedido <ArrowRight className="h-4 w-4" />
-                                </a>
-                                <a
-                                    href="/admin"
-                                    className="p-2 text-slate-400 text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                >
-                                    <Lock className="h-3.5 w-3.5" /> Área Restrita
-                                </a>
-                            </nav>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </motion.header>
+            <Header />
 
             {/* --- HERO SECTION --- */}
             <main className="pt-28 pb-12 md:pt-40 md:pb-24 overflow-hidden relative">
@@ -777,6 +717,37 @@ export default function Home() {
                                         </button>
                                     )}
                                 </div>
+
+                                {/* Document Language Selector — adicionar DENTRO da seção do calculador, após o serviceType ser selecionado e antes dos uploads */}
+                                {serviceType === 'translation' && (
+                                    <div className="mb-4 p-4 bg-[#F5EDE3] rounded-xl border border-[#E8D5C0]">
+                                        <label className="block text-sm font-bold text-slate-700 mb-2">
+                                            Idioma do documento original
+                                        </label>
+                                        <div className="flex gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setDocLanguage('PT_BR')}
+                                                className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-all ${docLanguage === 'PT_BR'
+                                                    ? 'bg-[#B8763E] text-white shadow-md'
+                                                    : 'bg-white text-slate-600 border border-slate-200 hover:border-[#B8763E]'
+                                                    }`}
+                                            >
+                                                🇧🇷 Português
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDocLanguage('ES')}
+                                                className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-all ${docLanguage === 'ES'
+                                                    ? 'bg-[#B8763E] text-white shadow-md'
+                                                    : 'bg-white text-slate-600 border border-slate-200 hover:border-[#B8763E]'
+                                                    }`}
+                                            >
+                                                🇪🇸 Español
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* --- WARNING FOR NOTARIZATION FLOW --- */}
                                 {serviceType === 'notarization' && (
@@ -1361,7 +1332,7 @@ export default function Home() {
                     </div>
                     <div className="max-w-4xl mx-auto">
                         <div className="bg-white p-12 md:p-16 rounded-3xl shadow-sm border border-gray-100 text-center">
-                            <h4 className="text-3xl font-bold text-slate-900 mb-6">Equipe Técnica Promobi</h4>
+                            <h4 className="text-3xl font-bold text-slate-900 mb-6">Equipe Técnica Promobidocs</h4>
 
                             <p className="text-slate-600 text-lg md:text-xl leading-relaxed max-w-3xl mx-auto">
                                 "Nossos processos são conduzidos por especialistas técnicos membros da ATA e validados por Notários Públicos comissionados na Flórida. Garantimos aceitação total nos principais órgãos americanos (USCIS, DMV, Universidades e Bancos)."
@@ -1380,7 +1351,7 @@ export default function Home() {
                             { q: "O que é uma Tradução Certificada nos EUA?", a: "É uma tradução acompanhada de um 'Certificate of Accuracy' (Certificado de Precisão), assinado pelo tradutor ou empresa de tradução, atestando que o documento é uma representação fiel e precisa do original. É a exigência padrão do USCIS e outros órgãos americanos." },
                             { q: "Qual a diferença entre a 'Tradução Juramentada' do Brasil e a Certificada nos EUA?", a: "Nos EUA não existe a figura do tradutor concursado (juramentado) como no Brasil. O sistema americano exige uma Tradução Certificada e, para maior segurança jurídica (como exigido por tribunais, DMV e universidades), a assinatura do tradutor deve ser Notarizada por um Notary Public oficial." },
                             { q: "Eu mesmo posso traduzir meus documentos para o USCIS?", a: "Não. O USCIS proíbe expressamente que o próprio requerente, ou membros da sua família, certifiquem traduções de seus próprios documentos, sob risco de negativa do processo. É necessário um profissional imparcial e capacitado." },
-                            { q: "A Promobi é credenciada para fazer essas traduções?", a: "Sim. Nossa equipe técnica é composta por membros da American Translators Association (ATA) e atuamos em conformidade com as diretrizes do governo americano. Além disso, nossos processos são validados por Notários Públicos comissionados no Estado da Flórida." },
+                            { q: "A Promobidocs é credenciada para fazer essas traduções?", a: "Sim. Nossa equipe técnica é composta por membros da American Translators Association (ATA) e atuamos em conformidade com as diretrizes do governo americano. Além disso, nossos processos são validados por Notários Públicos comissionados no Estado da Flórida." },
                             { q: "Preciso enviar meu documento original físico para vocês?", a: "Não. Todo o nosso processo é 100% digital. Basta enviar uma foto nítida ou um documento escaneado (PDF/JPG) com todas as bordas visíveis e legíveis através da nossa plataforma segura." },
                             { q: "O USCIS aceita traduções digitais ou preciso do papel impresso?", a: "O USCIS aceita cópias digitais impressas de traduções certificadas em 99% dos casos, aplicados online ou por correio. Nós enviamos o PDF final com todas as certificações e selos notariais digitais prontos para envio." },
                             { q: "Quando é necessário notarizar (reconhecer firma) a tradução?", a: "Embora o USCIS exija apenas a certificação, muitos bancos, tribunais estaduais, universidades e o DMV exigem que a assinatura do tradutor seja notarizada. Como nosso processo já inclui validação por um Notary Public da Flórida, seu documento terá máxima aceitação." },
@@ -1418,10 +1389,10 @@ export default function Home() {
 
             {/* --- FOOTER --- */}
             <footer className="bg-slate-900 text-slate-400 py-12 text-center text-sm">
-                <p>&copy; 2024 Promobi Services LLC. Todos os direitos reservados.</p>
+                <p>&copy; 2024 Promobidocs Services LLC. Todos os direitos reservados.</p>
                 <p className="mt-2 text-slate-500">Orlando, FL • Florida Notary Public & ATA Member</p>
                 <p className="mt-4 max-w-2xl mx-auto text-xs opacity-60">
-                    A Promobi é uma empresa de tecnologia e serviços de tradução e notarização. Não somos um escritório de advocacia (Law Firm) e não prestamos consultoria jurídica.
+                    A Promobidocs é uma empresa de tecnologia e serviços de tradução e notarização. Não somos um escritório de advocacia (Law Firm) e não prestamos consultoria jurídica.
                 </p>
                 <div className="mt-8 pt-8 border-t border-slate-800">
                     <a href="/admin/orders" className="text-xs text-slate-600 hover:text-slate-400 transition-colors">

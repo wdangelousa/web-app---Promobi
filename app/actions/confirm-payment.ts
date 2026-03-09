@@ -168,7 +168,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
   if (recipientEmails.length === 0) return
 
   await resend.emails.send({
-    from: 'Promobi Ops <ops@promobi.us>',
+    from: 'Promobidocs <desk@promobidocs.com>',
     to: recipientEmails,
     subject: `🟡 Novo pedido para traduzir — #${order.id} (${order.user?.fullName ?? 'Cliente'})`,
     html: `
@@ -179,8 +179,8 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
           <!-- Header -->
           <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
-            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style="margin-bottom: 10px;">
-            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI OPS</p>
+            <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;">
+            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCSDOCS OPS</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Novo pedido pronto para tradução</h1>
           </div>
           <div style="height: 3px; background: #f5b000;"></div>
@@ -219,7 +219,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
             </div>
 
             <!-- CTA -->
-            <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobi.us'}/admin/orders/${order.id}"
+            <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobidocs.com'}/admin/orders/${order.id}"
                style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Abrir no Workbench →
             </a>
@@ -227,7 +227,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
           <!-- Footer -->
           <div style="background: #F3F4F6; border-top: 1px solid #E5E7EB; padding: 16px 32px; text-align: center;">
-            <p style="color: #9CA3AF; font-size: 11px; margin: 0;">Promobi · 4700 Millenia Blvd, Orlando FL 32839 · ops@promobi.us</p>
+            <p style="color: #9CA3AF; font-size: 11px; margin: 0;">Promobi · 4700 Millenia Blvd, Orlando FL 32839 · desk@promobidocs.com</p>
           </div>
         </div>
       </body>
@@ -250,7 +250,7 @@ async function sendClientConfirmation(order: any) {
   }
 
   await resend.emails.send({
-    from: 'Promobi <noreply@promobi.us>',
+    from: 'Promobidocs <desk@promobidocs.com>',
     to: [recipient],
     subject: `✅ Pagamento confirmado — Pedido #${order.id} em tradução`,
     html: `
@@ -260,8 +260,8 @@ async function sendClientConfirmation(order: any) {
         <div style="max-width: 560px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
 
           <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
-            <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" style="margin-bottom: 10px;">
-            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBI</p>
+            <img src="https://promobidocs.com/logo-promobidocs.png" width="200" alt="Promobidocs" style="margin-bottom: 10px;">
+            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCS</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Seu pagamento foi confirmado!</h1>
           </div>
           <div style="height: 3px; background: #f5b000;"></div>
@@ -296,7 +296,7 @@ async function sendClientConfirmation(order: any) {
               </p>
             </div>
 
-            <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobi.us'}/meu-pedido"
+            <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobidocs.com'}/meu-pedido"
                style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Acompanhar meu pedido →
             </a>
@@ -304,7 +304,7 @@ async function sendClientConfirmation(order: any) {
 
           <div style="background: #F3F4F6; border-top: 1px solid #E5E7EB; padding: 16px 32px; text-align: center;">
             <p style="color: #9CA3AF; font-size: 11px; margin: 0;">
-              Dúvidas? (321) 324-5851 · info@promobi.us · www.promobi.us
+              Dúvidas? (321) 324-5851 · desk@promobidocs.com · www.promobidocs.com
             </p>
           </div>
         </div>

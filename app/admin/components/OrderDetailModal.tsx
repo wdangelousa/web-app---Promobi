@@ -166,7 +166,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                         {globalSettings && (
                             <PDFDownloadLink
                                 document={<ProposalPDF order={order} globalSettings={globalSettings} logoBase64={logoBase64} />}
-                                fileName={`Proposta-Promobi-${order.id}.pdf`}
+                                fileName={`Proposta-Promobidocs-${order.id}.pdf`}
                                 className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95"
                             >
                                 {({ loading }) => (

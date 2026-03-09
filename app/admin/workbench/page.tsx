@@ -71,7 +71,7 @@ export default async function WorkbenchQueuePage() {
       <div className="bg-slate-900 border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold text-orange-400 tracking-widest mb-1">PROMOBI OPS</p>
+            <p className="text-[10px] font-bold text-orange-400 tracking-widest mb-1">PROMOBIDOCSDOCS OPS</p>
             <h1 className="text-white text-xl font-bold">Mesa de Operações</h1>
           </div>
           <div className="flex items-center gap-6">

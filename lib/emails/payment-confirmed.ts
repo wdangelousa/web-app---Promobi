@@ -23,7 +23,7 @@ export function renderPaymentConfirmed({
     totalAmount,
     urgency = 'normal',
 }: PaymentConfirmedProps): string {
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
     const serviceLabel = serviceType === 'notarization' ? 'Notarization Only' : 'Certified Translation';
     const urgencyMap = {
         normal: '2–3 business days',

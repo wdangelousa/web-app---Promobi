@@ -63,7 +63,7 @@ export const NotificationService = {
         console.log(`[Notification] Order #${order.id} Translation Ready. Notifying Admin...`);
 
         // Admin Email (Fixed for now, or use environment variable)
-        const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@promobi.com';
+        const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'desk@promobidocs.com';
 
         await sendAdminReviewEmail({
             orderId: order.id,

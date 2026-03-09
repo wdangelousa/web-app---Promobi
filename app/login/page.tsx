@@ -50,10 +50,10 @@ export default function LoginPage() {
                 <div className="text-center">
                     <div className="flex justify-center mb-6">
                         <Image
-                            src="/logo.png"
+                            src="/logo-promobidocs.png"
                             width={200}
                             height={70}
-                            alt="Promobi"
+                            alt="Promobidocs"
                             className="h-16 w-auto object-contain"
                         />
                     </div>

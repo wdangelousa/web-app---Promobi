@@ -16,7 +16,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
 
             {/* Header */}
             <div style={{ backgroundColor: '#0f172a', padding: '30px', textAlign: 'center' }}>
-                <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style={{ marginBottom: '15px' }} />
+                <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style={{ marginBottom: '15px' }} />
                 <h1 style={{ color: '#ffffff', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>Sua Documentação Chegou</h1>
             </div>
 
@@ -65,7 +65,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
 
             {/* Footer */}
             <div style={{ backgroundColor: '#f1f5f9', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
-                <p style={{ margin: '0 0 8px 0' }}>Promobi Services LLC • Florida Notary Public</p>
+                <p style={{ margin: '0 0 8px 0' }}>Promobidocs Services LLC • Florida Notary Public</p>
                 <p style={{ margin: 0 }}>Orlando, FL • OAB/SP Affiliate</p>
             </div>
 

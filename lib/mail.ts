@@ -81,7 +81,7 @@ export async function sendAdminReviewEmail({
     customerName,
     adminEmail = ADMIN_EMAIL,
 }: AdminReviewEmailProps) {
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
     const dashboardUrl = `${APP_URL}/admin/orders/${orderId}`;
 
     const html = `<!DOCTYPE html><html><head><style>

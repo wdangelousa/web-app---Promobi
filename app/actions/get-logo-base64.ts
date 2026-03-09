@@ -5,7 +5,7 @@ import path from 'path';
 
 export async function getLogoBase64() {
     try {
-        const logoPath = path.join(process.cwd(), 'public', 'logo.png');
+        const logoPath = path.join(process.cwd(), 'public', 'logo-promobidocs.png');
         if (!fs.existsSync(logoPath)) {
             console.warn("Logo file not found at:", logoPath);
             return null;

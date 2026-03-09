@@ -35,7 +35,7 @@ export default async function PayPage({ params }: { params: { orderId: string } 
             {/* Header / Brand */}
             <header className="bg-white border-b border-gray-100 py-6">
                 <div className="max-w-7xl mx-auto px-4 flex items-center justify-center">
-                    <Image src="/logo.png" width={480} height={165} alt="Promobi" className="object-contain h-12 w-auto" />
+                    <Image src="/logo-promobidocs.png" width={480} height={165} alt="Promobidocs" className="object-contain h-12 w-auto" />
                 </div>
             </header>
 
@@ -44,7 +44,7 @@ export default async function PayPage({ params }: { params: { orderId: string } 
             </main>
 
             <footer className="max-w-4xl mx-auto px-4 pt-12 text-center text-xs text-slate-400">
-                <p>&copy; 2024 Promobi Services LLC. Todos os direitos reservados.</p>
+                <p>&copy; 2024 Promobidocs Services LLC. Todos os direitos reservados.</p>
                 <p className="mt-1">Pagamento Seguro & Criptografado</p>
             </footer>
         </div>

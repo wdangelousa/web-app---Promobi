@@ -22,7 +22,7 @@ export async function sendDelivery(orderId: number) {
 
         // Send Email
         await resend.emails.send({
-            from: 'Promobi Delivery <delivery@promobidocs.com>',
+            from: 'Promobidocs <desk@promobidocs.com>',
             to: order.user.email,
             subject: 'Seus documentos traduzidos e notarizados chegaram! - Promobi',
             react: <DeliveryEmail

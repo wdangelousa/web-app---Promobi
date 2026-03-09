@@ -24,7 +24,7 @@ export async function sendOrderEmails(order: any) {
     try {
         // 1. Send Customer Email
         await resend.emails.send({
-            from: 'Promobi Docs <desk@promobidocs.com>',
+            from: 'Promobidocs <desk@promobidocs.com>',
             to: customerRecipient,
             subject: `Recebemos seu pedido #${id}`,
             react: <OrderConfirmationEmail
@@ -37,7 +37,7 @@ export async function sendOrderEmails(order: any) {
 
         // 2. Send Admin Notification
         await resend.emails.send({
-            from: 'Promobi System <desk@promobidocs.com>',
+            from: 'Promobidocs <desk@promobidocs.com>',
             to: [adminRecipient],
             subject: `[Novo Pedido] #${id} - ${user.fullName}`,
             react: <AdminNotificationEmail

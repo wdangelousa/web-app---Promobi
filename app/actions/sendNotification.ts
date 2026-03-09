@@ -13,7 +13,7 @@ interface SendReviewLinkParams {
 
 export async function sendReviewLink({ email, name, orderId }: SendReviewLinkParams) {
   try {
-    const reviewLink = `https://web-app-promobi.vercel.app/revisar/${orderId}`;
+    const reviewLink = `https://promobidocs.com/revisar/${orderId}`;
 
     let recipient = email;
     if (process.env.NODE_ENV === 'development') {
@@ -22,7 +22,7 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
     }
 
     const { data, error } = await resend.emails.send({
-      from: 'Promobi <contato@promobi.us>',
+      from: 'Promobidocs <desk@promobidocs.com>',
       to: [recipient],
       subject: 'Sua tradução está pronta para revisão! 📄',
       html: `
@@ -62,7 +62,7 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
           <body>
             <div class="container">
               <div class="header">
-                <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="200" alt="Promobi" style="margin-bottom: 10px;">
+                <img src="https://promobidocs.com/logo-promobidocs.png" width="200" alt="Promobidocs" style="margin-bottom: 10px;">
                 <h1 style="color: #1f2937; margin-top: 0;">Tradução Pronta</h1>
               </div>
               <div class="content">

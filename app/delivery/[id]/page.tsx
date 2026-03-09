@@ -29,7 +29,7 @@ export default async function DeliveryVault({ params }: { params: { id: string }
             {/* Header */}
             <header className="bg-white border-b border-gray-100 py-6 px-4">
                 <div className="max-w-4xl mx-auto flex items-center justify-between">
-                    <Image src="/logo.png" width={180} height={60} alt="Promobi" className="h-10 w-auto object-contain" />
+                    <Image src="/logo-promobidocs.png" width={180} height={60} alt="Promobidocs" className="h-10 w-auto object-contain" />
                     <div className="flex items-center gap-2 text-sm text-green-700 font-medium bg-green-50 px-3 py-1.5 rounded-full border border-green-200 shadow-sm">
                         <Lock className="w-4 h-4" /> Cofre Seguro (256-bit)
                     </div>

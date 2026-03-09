@@ -25,7 +25,7 @@ export function renderOrderReceived({
     totalAmount,
     paymentMethod,
 }: OrderReceivedProps): string {
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
     const isWhatsApp = paymentMethod === 'BRL_WHATSAPP';
     const urgencyMap = {
         normal: { label: 'Standard (2–3 business days)', color: '#64748b' },

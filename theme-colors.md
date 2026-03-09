@@ -1,51 +1,37 @@
-# Promobi Color Palette
+# Promobidocs Color Palette
 
-Based on the analysis of `public/logo.png` and the brand guidelines (Promobi Orange), here is the suggested color palette for the Promobi application.
+Extracted from the `public/logo-promobidocs.png` brand asset.
 
 ## 1. Primary Colors
-The core brand identity colors.
 
 | Name | Hex | CSS Variable | Usage |
 |------|-----|--------------|-------|
-| **Promobi Orange** | `#FF7518` | `--color-primary` | Primary buttons, active states, brand highlights |
-| **Pure White** | `#FFFFFF` | `--color-white` | Text on dark backgrounds, card backgrounds |
+| **Copper** | `#B8763E` | `--color-primary` | Primary buttons, active states, brand highlights |
+| **Gold** | `#C9956B` | `--color-primary-light` | Hover states, soft accents |
 
-## 2. Secondary Colors
-Colors that support the primary palette and provide depth (Premium Feel).
-
-| Name | Hex | CSS Variable | Usage |
-|------|-----|--------------|-------|
-| **Deep Navy** | `#0F172A` | `--color-secondary` | Headers, footer, primary text in light mode |
-| **Slate Gray** | `#334155` | `--color-secondary-light` | Body text, subheadings |
-
-## 3. Accent Colors
-Used sparingly for emphasis, success states, or premium touches.
+## 2. Dark & Neutral
 
 | Name | Hex | CSS Variable | Usage |
 |------|-----|--------------|-------|
-| **Gold** | `#F59E0B` | `--color-accent` | Premium badges, stars, high-value actions |
-| **Teal** | `#14B8A6` | `--color-success` | Success messages, verified badges |
+| **Dark** | `#1A1A1A` | `--color-dark` | Headers, footer, primary text |
+| **Silver** | `#C0C0C8` | `--color-silver` | Subheadings, secondary text |
 
-## 4. Background Colors
-Neutral shades for layout structure.
+## 3. Background Colors
 
 | Name | Hex | CSS Variable | Usage |
 |------|-----|--------------|-------|
-| **Light Gray** | `#F8FAFC` | `--color-bg-light` | Main background (light mode) |
-| **Off-White** | `#F1F5F9` | `--color-bg-subtle` | Sidebar backgrounds, secondary sections |
-| **Dark Void** | `#020617` | `--color-bg-dark` | Main background (dark mode) |
+| **Background** | `#FAFAF8` | `--color-bg` | Main page background |
+| **Background Accent** | `#F5EDE3` | `--color-bg-accent` | Warm card backgrounds, sections |
 
 ## Implementation in Tailwind CSS v4
 
-Update your `app/globals.css` `@theme` block:
-
 ```css
 @theme {
-  --color-primary: #FF7518;
-  --color-secondary: #0F172A;
-  --color-accent: #F59E0B;
-  
-  --color-background-light: #F8FAFC;
-  --color-background-dark: #020617;
+  --color-primary: #B8763E;
+  --color-primary-light: #C9956B;
+  --color-dark: #1A1A1A;
+  --color-silver: #C0C0C8;
+  --color-bg: #FAFAF8;
+  --color-bg-accent: #F5EDE3;
 }
 ```

@@ -3,7 +3,7 @@
  * Shared HTML building blocks used by all transactional email templates.
  */
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 export const brand = {
@@ -83,7 +83,7 @@ export const footerHtml = `
     <div style="text-align:center;">
         <div class="footer-brand">Promobi</div>
         <div class="footer-line">
-            <strong style="color:#94a3b8;">Promobi Services LLC</strong><br>
+            <strong style="color:#94a3b8;">Promobidocs Services LLC</strong><br>
             Winter Garden / Horizon West · Orlando, FL · United States
         </div>
         <div class="footer-line" style="margin-top:8px;">

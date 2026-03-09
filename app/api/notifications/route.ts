@@ -22,7 +22,7 @@ import {
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'belebmd@gmail.com';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
 
 // ── BRL Admin Alert (inline — no extra file needed) ───────────────────────────
 async function sendBrlAdminAlert(props: {
@@ -104,7 +104,7 @@ async function sendBrlAdminAlert(props: {
       <a href="mailto:${props.customerEmail}?subject=Seu Pedido ${props.orderId} - Promobi&body=Olá ${props.customerName}, aqui é da Promobi..." class="email-btn">📧 Send Email Instead</a>
     </div>
   </div>
-  <div class="footer">Promobi Services LLC · Winter Garden, FL · Sent automatically from ${APP_URL}</div>
+  <div class="footer">Promobidocs Services LLC · Winter Garden, FL · Sent automatically from ${APP_URL}</div>
 </div>
 </body></html>`;
 

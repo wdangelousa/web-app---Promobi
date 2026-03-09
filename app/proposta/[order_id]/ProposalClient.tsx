@@ -96,7 +96,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
             if (result.success && result.base64) {
                 const link = document.createElement('a');
                 link.href = `data:application/pdf;base64,${result.base64}`;
-                link.download = result.fileName || `Proposta-Promobi-${order.id}.pdf`;
+                link.download = result.fileName || `Proposta-Promobidocs-${order.id}.pdf`;
                 link.click();
                 toast.success('PDF gerado com sucesso!');
             } else {
@@ -119,7 +119,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                     <h2 className="text-3xl font-black text-slate-800 mb-2">Proposta Atualizada</h2>
                     <p className="text-slate-500 mb-8">Esta proposta já foi aprovada ou seu status foi atualizado pelo nosso time.</p>
-                    <a href="https://promobi.us" className="bg-[#f58220] hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full transition-all block w-full">
+                    <a href="https://promobidocs.com" className="bg-[#f58220] hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full transition-all block w-full">
                         Voltar ao Site
                     </a>
                 </div>
@@ -146,10 +146,10 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         {/* Coluna central */}
                         <div className="flex flex-col items-center text-center col-start-1 md:col-start-2">
                             <Image
-                                src="/logo.png"
+                                src="/logo-promobidocs.png"
                                 width={140}
                                 height={46}
-                                alt="Promobi"
+                                alt="Promobidocs"
                                 className="h-10 w-auto mb-3"
                                 style={{ objectFit: 'contain' }}
                             />
@@ -446,7 +446,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-purple-200 text-sm">
                                         <div className="bg-white p-4 rounded-lg border border-purple-100 mb-4 text-center">
                                             <p className="text-slate-500 mb-1">Envie o valor exato para o número Zelle abaixo:</p>
-                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">zelle@promobi.us</p>
+                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">zelle@promobidocs.com</p>
                                             <p className="text-xs text-slate-400 mt-2">Promobi Corporate Services LLC</p>
                                         </div>
                                         <button

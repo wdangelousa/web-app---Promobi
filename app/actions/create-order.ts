@@ -38,6 +38,7 @@ type CreateOrderInput = {
     paymentProvider: 'STRIPE' | 'PARCELADO_USA';
     serviceType?: 'translation' | 'notarization'; // drives hasTranslation
     status?: any; // Allow custom initial status (e.g. PENDING_PAYMENT)
+    sourceLanguage?: 'PT_BR' | 'ES';
 }
 
 export async function createOrder(data: CreateOrderInput) {
@@ -113,11 +114,13 @@ export async function createOrder(data: CreateOrderInput) {
                     urgency: data.urgency,
                     hasTranslation,
                     hasNotary,
+                    sourceLanguage: data.sourceLanguage || 'PT_BR',
                     metadata: JSON.stringify({
                         documents: data.documents,
                         breakdown: data.breakdown,
                         urgency: data.urgency,
                         serviceType: data.serviceType,
+                        sourceLanguage: data.sourceLanguage,
                     }),
                     discountPercentage,
                     discountAmount,

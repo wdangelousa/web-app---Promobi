@@ -34,10 +34,10 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
             <div className="p-6 border-b border-gray-800 space-y-6">
                 <Link href="/admin/dashboard" className="flex items-center">
                     <Image
-                        src="/logo.png"
+                        src="/logo-promobidocs.png"
                         width={160}
                         height={55}
-                        alt="Promobi"
+                        alt="Promobidocs"
                         className="h-10 w-auto object-contain brightness-0 invert"
                     />
                 </Link>

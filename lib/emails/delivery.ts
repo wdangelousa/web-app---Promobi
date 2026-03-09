@@ -91,10 +91,10 @@ export function renderDelivery({
             Satisfied with your experience?
         </p>
         <p style="font-size:13px;color:#64748b;line-height:1.6;">
-            Share Promobi with friends who need certified translations.
+            Share Promobidocs with friends who need certified translations.
             Your referral means the world to our small business. 🙏
         </p>
-        <a href="https://wa.me/?text=I%20used%20Promobi%20for%20my%20certified%20translation%20and%20it%20was%20amazing!%20Check%20them%20out%3A%20https%3A%2F%2Fpromobi.vercel.app"
+        <a href="https://wa.me/?text=I%20used%20Promobidocs%20for%20my%20certified%20translation%20and%20it%20was%20amazing!%20Check%20them%20out%3A%20https%3A%2F%2Fpromobidocs.com"
            style="display:inline-block;margin-top:14px;padding:10px 24px;background:${brand.primary};
                   color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;">
             Share on WhatsApp 📱

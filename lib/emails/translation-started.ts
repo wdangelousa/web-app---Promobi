@@ -18,7 +18,7 @@ export function renderTranslationStarted({
     pageCount = 1,
     urgency = 'normal',
 }: TranslationStartedProps): string {
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobi.vercel.app';
+    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
     const urgencyMap = {
         normal: { label: '2–3 business days', color: '#64748b' },
         urgent: { label: '24 hours', color: '#f59e0b' },

@@ -1,6 +1,6 @@
 /**
  * lib/auth.ts
- * Server-side role resolution for the Promobi RBAC system.
+ * Server-side role resolution for the Promobidocs RBAC system.
  *
  * Usage (in any Server Component or Server Action):
  *   const { user, role } = await getCurrentUser()
@@ -16,9 +16,9 @@ export type AdminRole = 'OPERATIONS' | 'FINANCIAL' | 'TECHNICAL' | 'PARTNER'
 // Update these when actual emails are confirmed for each team member.
 const ROLE_SEED: Record<string, AdminRole> = {
     'wdangelo81@gmail.com': 'OPERATIONS',  // Walter
-    'leticia@promobi.com': 'FINANCIAL',   // Letícia Cruz — update if different
-    'isabele@promobiservices.com': 'TECHNICAL',   // Isabele — update if different
-    'evandro@promobi.com': 'PARTNER',     // Evandro — update if different
+    'leticia@promobidocs.com': 'FINANCIAL',   // Letícia Cruz — update if different
+    'isabele@promobidocs.com': 'TECHNICAL',   // Isabele — update if different
+    'evandro@promobidocs.com': 'PARTNER',     // Evandro — update if different
 }
 
 export type CurrentUser = {

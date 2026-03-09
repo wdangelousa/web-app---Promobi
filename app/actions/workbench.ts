@@ -232,7 +232,7 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
   console.log(`[sendDeliveryEmail] API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isRetry=${options.isRetry}`)
 
   const { data, error } = await resend.emails.send({
-    from: 'Promobi Delivery <onboarding@resend.dev>',
+    from: 'Promobidocs <desk@promobidocs.com>',
     to: 'wdangelo81@gmail.com',
     subject: `📩 [VALIDAÇÃO] Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
@@ -243,8 +243,8 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
           <!-- Header -->
           <tr>
             <td style="background: #0F1117; padding: 30px; text-align: center;">
-              <img src="https://web-app-promobi.vercel.app/logo_abelha.png" width="180" alt="Promobi" style="margin-bottom: 10px;" />
-              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBI · TRADUÇÃO CERTIFICADA</p>
+              <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;" />
+              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBIDOCSDOCS · TRADUÇÃO CERTIFICADA</p>
               <h1 style="color: white; font-size: 22px; margin: 0; font-weight: bold;">Sua tradução está pronta! 🎉</h1>
             </td>
           </tr>
@@ -266,15 +266,15 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
               <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
                 <p style="margin: 0 0 4px; color: #374151; font-size: 14px;">Atenciosamente,</p>
-                <p style="margin: 0; color: #111827; font-weight: bold; font-size: 15px;">Equipe Promobi</p>
-                <p style="margin: 0; color: #f5b000; font-size: 13px; font-weight: bold;">www.promobi.us</p>
+                <p style="margin: 0; color: #111827; font-weight: bold; font-size: 15px;">Equipe Promobidocs</p>
+                <p style="margin: 0; color: #f5b000; font-size: 13px; font-weight: bold;">www.promobidocs.com</p>
               </div>
             </td>
           </tr>
           <!-- Footer -->
           <tr>
             <td style="background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #f3f4f6;">
-              © 2026 Promobi Services · Orlando, FL · Tradução e Notarização
+              © 2026 Promobidocs Services · Orlando, FL · Tradução e Notarização
             </td>
           </tr>
         </table>

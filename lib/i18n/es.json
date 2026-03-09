@@ -1,0 +1,141 @@
+{
+  "meta": {
+    "locale": "es",
+    "label": "Español",
+    "flag": "🇪🇸"
+  },
+  "header": {
+    "startOrder": "Inicie su Pedido",
+    "restrictedArea": "Área Restringida",
+    "languageSwitch": "PT"
+  },
+  "hero": {
+    "badge": "Certificado por Notario Público de Florida",
+    "titleStart": "Traducciones Certificadas con la ",
+    "titleHighlight": "Velocidad de la Tecnología.",
+    "subtitle": "Combinamos la precisión técnica de alto nivel con la conveniencia de la notarización oficial inmediata. Documentos listos para inmigración (USCIS) y negocios en tiempo récord.",
+    "cta": "Inicie su Pedido"
+  },
+  "serviceSelect": {
+    "title": "Inicie su Pedido",
+    "subtitle": "¿Qué servicio necesita hoy?",
+    "translationTitle": "Necesito Traducir y Certificar",
+    "translationDesc": "Quiero el servicio completo. Envío el documento original y ustedes traducen y certifican (USCIS).",
+    "notaryTitle": "Ya tengo la traducción, solo quiero Notarizar",
+    "notaryDesc": "Ya tengo la traducción lista. Solo necesito la Notarización (autenticación de firma) por el Notario Público.",
+    "back": "Volver",
+    "changeService": "Cambiar Servicio"
+  },
+  "upload": {
+    "title": "Presupuesto de Traducción",
+    "titleNotary": "Presupuesto de Notarización",
+    "subtitle": "Configure su pedido en segundos.",
+    "subtitleNotary": "Cargue los pares de documentos.",
+    "dragDrop": "PDF, JPG o PNG (Detección automática)",
+    "dragDropNotary": "Inicie con el Documento Original (PDF)",
+    "addAnother": "Agregar otro documento",
+    "addAnotherNotary": "Agregar Nuevo Par",
+    "analyzing": "Analizando...",
+    "analyzingDensity": "Analizando densidad del documento...",
+    "analyzingNotary": "Preparando espacios...",
+    "docLanguageLabel": "Idioma del documento original",
+    "docLanguagePT": "Portugués",
+    "docLanguageES": "Español",
+    "removeDoc": "Eliminar Documento",
+    "removeConfirm": "¿Está seguro de que desea eliminar este documento del presupuesto?",
+    "clearAll": "Limpiar Presupuesto"
+  },
+  "pricing": {
+    "urgencyLabel": "Plazo de Entrega",
+    "standard": "Estándar",
+    "standardDays": "3-5 días hábiles",
+    "urgent": "Express 24h",
+    "urgentDays": "1 día hábil",
+    "flash": "Ultra Express 12h",
+    "flashDays": "12 horas",
+    "notarizeAdd": "Agregar Notarización",
+    "notarizeDesc": "Autenticación de firma por Notario Público de Florida",
+    "subtotal": "Subtotal",
+    "urgencyFee": "Cargo por Urgencia",
+    "notaryFee": "Cargo de Notarización",
+    "discount": "Descuento",
+    "total": "Total",
+    "perPage": "por página",
+    "priceLock": "Precio Fijo (Price Lock)",
+    "priceLockDesc": "El presupuesto generado es definitivo. Al confirmar el pago ahora, garantizamos que no habrá cargos adicionales de traducción, incluso después de la revisión de nuestro equipo."
+  },
+  "checkout": {
+    "title": "Sus Datos",
+    "fullName": "Nombre Completo",
+    "email": "Correo Electrónico",
+    "phone": "Teléfono / WhatsApp",
+    "paymentMethod": "Forma de Pago",
+    "creditCard": "Tarjeta de Crédito (USD)",
+    "pix": "Pix / Cuotas (BRL)",
+    "terms": "He leído y acepto los términos de servicio y la política de privacidad.",
+    "termsError": "Debe aceptar los términos para continuar.",
+    "submit": "Confirmar y Pagar",
+    "processing": "Procesando..."
+  },
+  "trust": {
+    "title": "Equipo Técnico Promobidocs",
+    "description": "Nuestros procesos son realizados por especialistas técnicos miembros de la ATA y validados por Notarios Públicos comisionados en Florida. Garantizamos aceptación total en las principales entidades estadounidenses (USCIS, DMV, Universidades y Bancos).",
+    "uscisTitle": "Inmigración (USCIS)",
+    "uscisDesc": "Traducciones certificadas aceptadas en el 100% de los procesos migratorios estadounidenses.",
+    "dmvTitle": "DMV (Licencia de Conducir)",
+    "dmvDesc": "Traducción oficial de su licencia de conducir para obtener la licencia en Florida.",
+    "eduTitle": "Universidades",
+    "eduDesc": "Expedientes académicos, diplomas y documentos educativos traducidos con precisión.",
+    "legalTitle": "Tribunales y Bancos",
+    "legalDesc": "Documentos con notarización oficial aceptados en cualquier instancia."
+  },
+  "faq": {
+    "title": "Preguntas Frecuentes",
+    "items": [
+      {
+        "q": "¿Qué es una Traducción Certificada en EE.UU.?",
+        "a": "Es una traducción acompañada de un 'Certificate of Accuracy' (Certificado de Precisión), firmado por el traductor o empresa de traducción, que certifica que el documento es una representación fiel y precisa del original. Es el requisito estándar del USCIS y otras entidades estadounidenses."
+      },
+      {
+        "q": "¿Cuál es la diferencia entre una Traducción Jurada y una Certificada en EE.UU.?",
+        "a": "En EE.UU. no existe la figura del traductor jurado como en algunos países latinoamericanos. El sistema estadounidense exige una Traducción Certificada y, para mayor seguridad jurídica (como lo exigen tribunales, DMV y universidades), la firma del traductor debe ser Notarizada por un Notario Público oficial."
+      },
+      {
+        "q": "¿Puedo traducir mis propios documentos para el USCIS?",
+        "a": "No. El USCIS prohíbe expresamente que el propio solicitante, o miembros de su familia, certifiquen traducciones de sus propios documentos, bajo riesgo de denegación del proceso. Se requiere un profesional imparcial y capacitado."
+      },
+      {
+        "q": "¿Promobidocs está acreditada para realizar estas traducciones?",
+        "a": "Sí. Nuestro equipo técnico está compuesto por miembros de la American Translators Association (ATA) y actuamos en conformidad con las directrices del gobierno estadounidense. Además, nuestros procesos son validados por Notarios Públicos comisionados en el Estado de Florida."
+      },
+      {
+        "q": "¿Necesito enviar mi documento original físico?",
+        "a": "No. Todo nuestro proceso es 100% digital. Basta con enviar una foto nítida o un documento escaneado (PDF/JPG) con todos los bordes visibles y legibles a través de nuestra plataforma segura."
+      },
+      {
+        "q": "¿El USCIS acepta traducciones digitales o necesito el papel impreso?",
+        "a": "El USCIS acepta copias digitales impresas de traducciones certificadas en el 99% de los casos, presentados en línea o por correo. Nosotros enviamos el PDF final con todas las certificaciones y sellos notariales digitales listos para envío."
+      },
+      {
+        "q": "¿Cuándo es necesario notarizar la traducción?",
+        "a": "Aunque el USCIS solo exige la certificación, muchos bancos, tribunales estatales, universidades y el DMV exigen que la firma del traductor sea notarizada. Como nuestro proceso ya incluye validación por un Notario Público de Florida, su documento tendrá máxima aceptación."
+      },
+      {
+        "q": "¿Traducen documentos para el DMV y Universidades?",
+        "a": "¡Sí! Además de procesos migratorios, traducimos licencias de conducir, expedientes académicos, diplomas, estados de cuenta bancarios y declaraciones de impuestos para fines financieros y educativos."
+      },
+      {
+        "q": "¿Cómo funciona el plazo de entrega?",
+        "a": "Depende de la urgencia de su proceso. Ofrecemos opciones de entrega 'Estándar' (3 a 5 días), 'Express' (24 horas) y 'Ultra-Express' (12 horas). El plazo comienza a contar desde la confirmación del pago."
+      },
+      {
+        "q": "¿Mis datos y documentos están seguros?",
+        "a": "Absolutamente. Utilizamos infraestructura de punta y encriptación de nivel bancario. Sus documentos son accedidos únicamente por nuestro equipo técnico restringido y eliminados de nuestros servidores al completarse el servicio, garantizando total privacidad."
+      }
+    ]
+  },
+  "footer": {
+    "copyright": "© 2026 Promobidocs Services LLC. Todos los derechos reservados.",
+    "disclaimer": "Promobidocs es una empresa de tecnología y servicios de traducción y notarización. No somos un bufete de abogados (Law Firm) y no brindamos asesoría legal."
+  }
+}
