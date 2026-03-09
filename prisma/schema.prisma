@@ -14,6 +14,7 @@ model User {
   fullName  String
   email     String   @unique
   phone     String?
+  address   String?
   role      Role     @default(CLIENT)
   createdAt DateTime @default(now())
   orders    Order[]

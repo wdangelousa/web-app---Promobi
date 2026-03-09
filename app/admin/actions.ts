@@ -77,12 +77,6 @@ export async function getOrderDetails(orderId: number) {
             }
         })
 
-        // We need to type cast or ensure the query returns these if they are top-level fields
-        // Since prisma.order.findUnique returns the whole object by default when 'include' is used ONLY for relations?
-        // Actually, if we use 'include', it returns all scalar fields of the top level model PLUS the included relations.
-        // So we don't need to explicitly select metadata, uspsTracking, deliveryUrl unless we used 'select'.
-        // Since we used 'include', they should be there.
-
         if (!order) return { success: false, error: "Order not found" }
 
         // Shield against malformed data
@@ -91,7 +85,7 @@ export async function getOrderDetails(orderId: number) {
             return { success: true, data: safeOrder }
         } catch (e) {
             console.error(`Failed to normalize order details #${orderId}:`, e);
-            // Fallback: still return order but it might be risky (though our UI is now shielded too)
+            // Fallback: still return order but it might be risky
             return { success: true, data: order }
         }
     } catch (error) {
@@ -118,7 +112,6 @@ export async function updateOrderStatus(orderId: number, newStatus: OrderStatus)
         // ── 1. Automate "Translation Started" Email ───────────────────────────
         if (newStatus === 'TRANSLATING') {
             try {
-                // Determine page count from metadata
                 let pageCount = 1;
                 if (order.metadata) {
                     try {
@@ -141,7 +134,6 @@ export async function updateOrderStatus(orderId: number, newStatus: OrderStatus)
                         urgency: order.urgency
                     })
                 });
-                console.log(`[admin/actions] Triggered translation_started for Order #${orderId}`);
             } catch (emailErr) {
                 console.error("Failed to trigger automatic email:", emailErr);
             }
@@ -166,5 +158,64 @@ export async function updateTrackingCode(orderId: number, trackingCode: string) 
     } catch (error) {
         console.error("Failed to update tracking:", error)
         return { success: false, error: "Failed to update tracking" }
+    }
+}
+
+export async function deleteOrder(orderId: number) {
+    try {
+        // Find order first to ensure it exists
+        const order = await prisma.order.findUnique({
+            where: { id: orderId }
+        });
+
+        if (!order) return { success: false, error: "Order not found" };
+
+        // Delete associated documents first to satisfy constraints
+        await prisma.document.deleteMany({
+            where: { orderId: orderId }
+        });
+
+        // Delete the order
+        await prisma.order.delete({
+            where: { id: orderId }
+        });
+
+        revalidatePath('/admin');
+        revalidatePath('/admin/finance');
+        revalidatePath('/admin/dashboard');
+
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to delete order:", error);
+        return { success: false, error: "Failed to delete order" };
+    }
+}
+
+export async function updateOrderCustomerInfo(orderId: number, fullName: string, phone: string) {
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { userId: true }
+        });
+
+        if (!order) return { success: false, error: "Order not found" };
+
+        // Update User info
+        await prisma.user.update({
+            where: { id: order.userId },
+            data: {
+                fullName,
+                phone
+            }
+        });
+
+        // Note: Field 'phone' does not exist on prisma.order model in the current schema.
+        // We only update the User model where the primary phone data resides.
+
+        revalidatePath('/admin');
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to update customer info:", error);
+        return { success: false, error: "Failed to update customer info" };
     }
 }

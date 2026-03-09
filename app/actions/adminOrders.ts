@@ -71,3 +71,45 @@ export async function applyFinancialAdjustment(orderId: number, extraDiscount: n
         return { success: false, error: 'Failed to apply financial adjustment' }
     }
 }
+
+export async function deleteOrder(orderId: number) {
+    try {
+        // Prisma will handle cascade if configured, but let's be explicit and safe
+        // First delete associated Documents
+        await prisma.document.deleteMany({
+            where: { orderId: orderId }
+        })
+
+        // Then delete the Order
+        await prisma.order.delete({
+            where: { id: orderId }
+        })
+
+        revalidatePath('/admin/orders')
+        revalidatePath('/admin/finance')
+        return { success: true }
+    } catch (error) {
+        console.error('Failed to delete order:', error)
+        return { success: false, error: 'Failed to delete order' }
+    }
+}
+
+export async function updateCustomerDetails(userId: number, data: { fullName?: string, phone?: string, address?: string }) {
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                fullName: data.fullName,
+                phone: data.phone,
+                address: data.address
+            }
+        })
+
+        revalidatePath('/admin/orders')
+        // Also revalidate specific orders if needed, but '/admin/orders' usually covers the list
+        return { success: true }
+    } catch (error) {
+        console.error('Failed to update customer details:', error)
+        return { success: false, error: 'Failed to update customer details' }
+    }
+}

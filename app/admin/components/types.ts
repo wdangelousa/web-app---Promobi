@@ -7,6 +7,7 @@ export type KanbanOrder = {
     totalAmount: number
     urgency: string
     user: {
+        id: number
         fullName: string
     }
     documents: {
@@ -22,6 +23,7 @@ export type KanbanOrder = {
 export type DetailOrder = KanbanOrder & {
     email: string
     phone?: string | null
+    address?: string | null
     uspsTracking?: string | null
     deliveryUrl?: string | null
     metadata?: string | null // JSON payload
