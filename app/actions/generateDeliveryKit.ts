@@ -84,29 +84,112 @@ async function _buildCoverPageInDoc(
     params: { docType: string; orderId: number; totalPages: number; dateStr: string; sourceLanguage?: string }
 ) {
     const { docType, orderId, totalPages, dateStr, sourceLanguage } = params
-    const publicDir = path.join(process.cwd(), 'public')
-    const capaFile = sourceLanguage === 'ES'
-        ? 'capa certificacao es-en.pdf'
-        : 'capa certificacao pt-en.pdf'
-    const capaBytes = await fs.readFile(path.join(publicDir, capaFile))
-    const capaSrc = await PDFDocument.load(capaBytes, { ignoreEncryption: true })
-    const [capaPage] = await targetDoc.copyPages(capaSrc, [0])
-    const fontHelv = await targetDoc.embedFont(StandardFonts.Helvetica)
+    const PAGE_WIDTH = 612
+    const PAGE_HEIGHT = 792
+    const MARGIN = 70
+
+    // 1. Add Blank Page (Pure White)
+    const page = targetDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+
+    const font = await targetDoc.embedFont(StandardFonts.Helvetica)
+    const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
     const black = rgb(0, 0, 0)
+    const grey = rgb(0.3, 0.3, 0.3)
 
-    // Valores dinâmicos alinhados em X=230; Y fixos conforme posições do template
-    // Portuguese/English são texto estático do template — NÃO redesenhar aqui
-    const valueX = 230
-    const displayOrderNumber = String(orderId + 1000).padStart(4, '0') + '-USA'
-    const formattedPages = totalPages ? String(totalPages).padStart(2, '0') : '01'
-    capaPage.drawText(sanitizeForWinAnsi(docType).toUpperCase(), { x: valueX, y: 618, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(formattedPages, { x: valueX, y: 570, size: 11, font: fontHelv, color: black })
-    capaPage.drawText(displayOrderNumber, { x: valueX, y: 554, size: 11, font: fontHelv, color: black })
+    // 2. Load and Draw Logo (Scaled -30%)
+    const publicDir = path.join(process.cwd(), 'public')
+    const logoBytes = await fs.readFile(path.join(publicDir, 'logo-promobidocs.png'))
+    const logoImg = await targetDoc.embedPng(logoBytes)
+    const originalWidth = 140
+    const originalHeight = (logoImg.height / logoImg.width) * originalWidth
+    const scaledWidth = originalWidth * 0.7 // -30%
+    const scaledHeight = originalHeight * 0.7
 
-    // Data cravada no canto inferior esquerdo
-    capaPage.drawText(`Dated: ${dateStr}`, { x: 70, y: 110, size: 11, font: fontHelv, color: black })
+    page.drawImage(logoImg, {
+        x: MARGIN,
+        y: PAGE_HEIGHT - scaledHeight - 40,
+        width: scaledWidth,
+        height: scaledHeight,
+    })
 
-    return capaPage
+    // 3. Title
+    page.drawText('CERTIFICATION OF TRANSLATION ACCURACY', {
+        x: MARGIN,
+        y: PAGE_HEIGHT - 160,
+        size: 16,
+        font: boldFont,
+        color: black,
+    })
+
+    // 4. Metadata Grid (Strict Alignment)
+    const labelX = 70
+    const valueX = 220
+    let currentY = PAGE_HEIGHT - 210
+    const lineSpacing = 22
+
+    const drawGridLine = (label: string, value: string) => {
+        page.drawText(label, { x: labelX, y: currentY, size: 10, font: boldFont })
+        page.drawText(value, { x: valueX, y: currentY, size: 10, font: font })
+        currentY -= lineSpacing
+    }
+
+    const sourceLangStr = sourceLanguage === 'ES' ? 'Spanish' : 'Portuguese'
+    drawGridLine('Document Type:', docType.toUpperCase())
+    drawGridLine('Source Language:', sourceLangStr)
+    drawGridLine('Target Language:', 'English')
+    drawGridLine('Number of pages:', String(totalPages).padStart(2, '0'))
+    drawGridLine('Order #:', String(orderId + 1000).padStart(4, '0') + '-USA')
+
+    // 5. Certification Body Text
+    currentY -= 20
+    const certText = `I, the undersigned, hereby certify that I am fluent in English and the source language (${sourceLangStr}) of the attached documents, and that the attached translation is a true, accurate, and complete translation of the original document attached hereto.`
+
+    const wrapWidth = PAGE_WIDTH - (MARGIN * 2)
+    const lines = wrapLines(certText, font, 11, wrapWidth)
+    for (const line of lines) {
+        page.drawText(line, { x: MARGIN, y: currentY, size: 11, font, lineHeight: 16 })
+        currentY -= 18
+    }
+
+    // 6. Signature & ATA Logo
+    currentY -= 50
+    const signatureBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'))
+    const signatureImg = await targetDoc.embedJpg(signatureBytes)
+    page.drawImage(signatureImg, {
+        x: MARGIN,
+        y: currentY,
+        width: 150,
+        height: 45,
+    })
+
+    const ataLogoBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'))
+    const ataImg = await targetDoc.embedPng(ataLogoBytes)
+    page.drawImage(ataImg, {
+        x: MARGIN + 180,
+        y: currentY + 5,
+        width: 40,
+        height: 40,
+    })
+
+    currentY -= 15
+    page.drawText('___________________________________', { x: MARGIN, y: currentY, size: 12, font })
+    currentY -= 20
+    page.drawText('Promobi Certified Translator', { x: MARGIN, y: currentY, size: 11, font: boldFont })
+    currentY -= 15
+    page.drawText(`Dated: ${dateStr}`, { x: MARGIN, y: currentY, size: 10, font })
+
+    // 7. Consolidated Footer
+    const footerText = '13558 Village Park Dr, Orlando/FL, 32837 | +1 321 324-5851 | translator@promobidocs.com | www.promobidocs.com'
+    const footerW = font.widthOfTextAtSize(footerText, 8.5)
+    page.drawText(footerText, {
+        x: (PAGE_WIDTH - footerW) / 2,
+        y: 35,
+        size: 8.5,
+        font,
+        color: grey
+    })
+
+    return page
 }
 
 // ── Main server action ────────────────────────────────────────────────────────
