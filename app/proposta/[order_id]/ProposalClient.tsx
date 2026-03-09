@@ -127,6 +127,12 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         )
     }
 
+    const optimizationSavings = metadata?.documents?.reduce((acc: number, doc: any) => {
+        return acc + (doc.analysis?.pages?.reduce((pAcc: number, p: any) => {
+            return pAcc + (p.included === false ? (p.price || 0) : 0);
+        }, 0) || 0);
+    }, 0) || 0;
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
 
@@ -340,8 +346,14 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     <div className="space-y-3 mb-6 font-mono text-sm border-b border-slate-700 pb-6">
                         <div className="flex justify-between text-slate-300">
                             <span>Base (Cálculo de Densidade)</span>
-                            <span>${breakdown.basePrice?.toFixed(2) || '---'}</span>
+                            <span>${(breakdown.basePrice || (order.totalAmount + optimizationSavings + (order.extraDiscount || 0))).toFixed(2)}</span>
                         </div>
+                        {optimizationSavings > 0 && (
+                            <div className="flex justify-between text-green-400">
+                                <span>Economia (Páginas Otimizadas)</span>
+                                <span>-${optimizationSavings.toFixed(2)}</span>
+                            </div>
+                        )}
                         {breakdown.urgencyFee > 0 && (
                             <div className="flex justify-between text-[#C9956B]">
                                 <span>Taxa de Urgência ({urgencyLabels[order.urgency]})</span>
@@ -354,7 +366,13 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                 <span>+${breakdown.notaryFee.toFixed(2)}</span>
                             </div>
                         )}
-                        {breakdown.totalDiscountApplied > 0 && (
+                        {order.extraDiscount > 0 && (
+                            <div className="flex justify-between text-green-400 font-bold border-t border-slate-800 pt-2 mt-2">
+                                <span>Cortesia Operacional / Ajuste de Tarifa</span>
+                                <span>-${order.extraDiscount.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {breakdown.totalDiscountApplied > 0 && !(order.extraDiscount > 0) && optimizationSavings === 0 && (
                             <div className="flex justify-between text-green-400">
                                 <span>Desconto Especial</span>
                                 <span>-${breakdown.totalDiscountApplied.toFixed(2)}</span>

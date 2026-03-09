@@ -339,10 +339,10 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
     s + ((d.analysis?.pages?.length) || d.count || 0), 0);
   const totalExcluded = docs.reduce((s: number, d: any) =>
     s + (d.analysis?.pages || []).filter((p: any) => p.included === false).length, 0);
-  const totalSavings = docs.reduce((s: number, d: any) =>
+  const totalSavings = (docs.reduce((s: number, d: any) =>
     s + (d.analysis?.pages || [])
       .filter((p: any) => p.included === false)
-      .reduce((acc: number, p: any) => acc + (p.price || 0), 0), 0);
+      .reduce((acc: number, p: any) => acc + (p.price || 0), 0), 0)) + (order.extraDiscount || 0);
   const hasSavings = totalSavings > 0.005;
 
   // Pagination — FIRST=3 (page 1 has tall hero), REST=5
@@ -532,6 +532,12 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                   <View style={S.totalDiscountRow}>
                     <Text style={S.totalDiscountLbl}>DESCONTO DE VOLUME ({meta.breakdown.volumeDiscountPercentage}%)</Text>
                     <Text style={S.totalDiscountVal}>-${meta.breakdown.volumeDiscountAmount.toFixed(2)}</Text>
+                  </View>
+                )}
+                {order.extraDiscount > 0 && (
+                  <View style={S.totalDiscountRow}>
+                    <Text style={S.totalDiscountLbl}>CORTESIA OPERACIONAL (AJUSTE DE TARIFA)</Text>
+                    <Text style={S.totalDiscountVal}>-${order.extraDiscount.toFixed(2)}</Text>
                   </View>
                 )}
                 <View style={S.totalDiv} />
