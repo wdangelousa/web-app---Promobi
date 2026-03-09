@@ -215,7 +215,7 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true, translatedPageCount })
+            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true })
             if (result.success && result.deliveryUrl) {
                 setKitPreviewUrl(result.deliveryUrl)
                 setShowPreviewModal(true)
@@ -238,7 +238,7 @@ export default function Workbench({ order }: { order: Order }) {
                 const res = await fetch('/api/translate/gemini', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fileUrl: selectedDoc.originalFileUrl, targetLang: 'en-US' })
+                    body: JSON.stringify({ fileUrl: selectedDoc.originalFileUrl, documentId: selectedDoc.id, orderId: order.id })
                 })
                 const data = await res.json()
                 if (!res.ok) throw new Error(data.error || 'Erro na API Gemini')
@@ -246,10 +246,6 @@ export default function Workbench({ order }: { order: Order }) {
                 const cleanedText = cleanAiHtml(data.translatedText)
                 justTranslatedRef.current = cleanedText
                 setEditorContent(cleanedText)
-
-                // Saving automatically just like the other route
-                const { saveTranslationDraft } = await import('../../../../actions/workbench')
-                await saveTranslationDraft(selectedDoc.id, cleanedText)
 
                 router.refresh()
             } else {
