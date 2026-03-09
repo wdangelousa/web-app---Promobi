@@ -139,9 +139,9 @@ export async function createOrder(data: CreateOrderInput) {
         console.log(`[createOrder] Created Order #${order.id} (hasTranslation=${hasTranslation})`);
         return { success: true, orderId: order.id };
 
-    } catch (error) {
-        console.error('[createOrder] Error:', error);
-        return { success: false, error: 'Failed to create order' };
+    } catch (error: any) {
+        console.error('[createOrder] FATAL ERROR:', error);
+        return { success: false, error: `Database Error: ${error?.message || String(error)}` };
     }
 }
 
@@ -234,6 +234,6 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
 
     } catch (error: any) {
         console.error('[updateOrder] Error:', error);
-        return { success: false, error: error.message || 'Failed to update order' };
+        return { success: false, error: `Failed to update order: ${error?.message || String(error)}` };
     }
 }
