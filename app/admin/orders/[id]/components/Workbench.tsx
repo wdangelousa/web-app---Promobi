@@ -517,11 +517,11 @@ export default function Workbench({ order }: { order: Order }) {
     }
 
     const handleReopenBudget = async () => {
-        if (!confirm('Deseja reabrir este orçamento? O status voltará para PENDENTE e o cliente poderá ver o novo valor.')) return
+        if (!confirm('Deseja reabrir este orçamento? O pedido voltará para a fase de rascunho interno (Draft). Você poderá ajustar documentos e valores com segurança. O cliente NÃO será notificado até que você reenvie a proposta oficial.')) return
         try {
             const result = await reopenOrder(order.id)
             if (result.success) {
-                alert('✅ Orçamento reaberto. O cliente já pode visualizar o novo valor.')
+                alert('✅ Orçamento reaberto internamente. Ajuste o pedido e reenvie a proposta ao cliente.')
                 router.refresh()
             } else {
                 alert('❌ Erro: ' + result.error)
@@ -703,7 +703,7 @@ export default function Workbench({ order }: { order: Order }) {
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
-                        {order.status !== 'PENDING' && (
+                        {!['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status) && (
                             <button
                                 onClick={handleReopenBudget}
                                 className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-amber-200"

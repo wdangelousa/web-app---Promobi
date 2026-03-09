@@ -131,8 +131,8 @@ export async function updateCustomerDetails(userId: number, data: { fullName?: s
             data: {
                 fullName: data.fullName,
                 phone: data.phone,
-                address: data.address
-            }
+                address: data.address,
+            } as any
         })
 
         revalidatePath('/admin/orders')
@@ -148,10 +148,10 @@ export async function reopenOrder(orderId: number) {
         await prisma.order.update({
             where: { id: orderId },
             data: {
-                status: 'PENDING' as any,
-                deliveryUrl: null, // Clear delivery URL as we are reopening
-                finalPaidAmount: null, // Reset final paid amount to reassess
-                extraDiscount: 0, // Reset extra discount
+                status: 'AWAITING_VERIFICATION' as any,
+                deliveryUrl: null,
+                finalPaidAmount: null,
+                extraDiscount: 0,
             }
         })
 
