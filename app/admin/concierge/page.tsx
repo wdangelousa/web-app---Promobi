@@ -150,14 +150,30 @@ export default function ConciergePage() {
                     try {
                         const meta = JSON.parse(order.metadata || '{}')
                         setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
-                        if (meta.documents) {
-                            // Rehydrate documents from metadata
-                            // Note: These docs won't have the File object, but they have URLs in 'uploadedFile'
+                        if (meta.documents && meta.documents.length > 0) {
+                            // Rehydrate documents from metadata (concierge-created orders)
                             setDocuments(meta.documents.map((d: any) => ({
                                 ...d,
                                 isSelected: true,
                                 analysisStatus: d.analysisStatus || 'deep'
                             })))
+                        } else if (order.documents && order.documents.length > 0) {
+                            // Fallback: map Document DB records (public checkout orders)
+                            setDocuments(order.documents.map((d) => {
+                                const urlParts = (d.originalFileUrl || '').split('/')
+                                const rawName = urlParts[urlParts.length - 1] || ''
+                                const fileName = decodeURIComponent(rawName) || d.docType || `Documento #${d.id}`
+                                return {
+                                    id: String(d.id),
+                                    fileName,
+                                    count: 1,
+                                    notarized: order.hasNotary,
+                                    analysisStatus: 'deep' as AnalysisStatus,
+                                    isSelected: true,
+                                    handwritten: false,
+                                    externalLink: d.originalFileUrl || undefined,
+                                }
+                            }))
                         }
                     } catch (e) {
                         console.error('Error parsing order metadata:', e)

@@ -170,7 +170,7 @@ export async function getOrderForConcierge(orderId: number) {
     try {
         const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { user: true }
+            include: { user: true, documents: true }
         })
 
         if (!order) {
