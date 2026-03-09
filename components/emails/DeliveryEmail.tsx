@@ -38,15 +38,15 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
                     <a
                         href={downloadLink}
                         style={{
-                            backgroundColor: '#f5b000',
-                            color: '#000000',
+                            backgroundColor: '#B8763E',
+                            color: '#ffffff',
                             padding: '16px 32px',
                             borderRadius: '8px',
                             textDecoration: 'none',
                             fontWeight: 'bold',
                             fontSize: '16px',
                             display: 'inline-block',
-                            boxShadow: '0 4px 6px rgba(245, 176, 0, 0.2)'
+                            boxShadow: '0 4px 6px rgba(184, 118, 62, 0.2)'
                         }}
                     >
                         Baixar Documentação Oficial
@@ -54,7 +54,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
                 </div>
 
                 {/* Security Warning */}
-                <div style={{ backgroundColor: '#fffcf0', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f5b000', fontSize: '14px', color: '#855a00' }}>
+                <div style={{ backgroundColor: '#F5EDE3', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #B8763E', fontSize: '14px', color: '#8B5A2B' }}>
                     <strong>Aviso de Segurança:</strong> Este link expirará em breve para proteger seus dados. Recomendamos que você baixe e salve o arquivo em um local seguro imediatamente.
                 </div>
 

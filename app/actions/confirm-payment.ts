@@ -180,10 +180,10 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
           <!-- Header -->
           <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
             <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;">
-            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCSDOCS OPS</p>
+            <p style="color: #B8763E; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCSDOCS OPS</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Novo pedido pronto para tradução</h1>
           </div>
-          <div style="height: 3px; background: #f5b000;"></div>
+          <div style="height: 3px; background: #B8763E;"></div>
 
           <!-- Body -->
           <div style="padding: 28px 32px;">
@@ -209,7 +209,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
                 </tr>
                 <tr>
                   <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Valor total</td>
-                  <td style="color: #f5b000; font-weight: bold; font-size: 16px; text-align: right;">$${(order.totalAmount ?? 0).toFixed(2)}</td>
+                  <td style="color: #B8763E; font-weight: bold; font-size: 16px; text-align: right;">$${(order.totalAmount ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Urgência</td>
@@ -220,7 +220,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
             <!-- CTA -->
             <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobidocs.com'}/admin/orders/${order.id}"
-               style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
+               style="display: block; background: #B8763E; color: #ffffff; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Abrir no Workbench →
             </a>
           </div>
@@ -261,10 +261,10 @@ async function sendClientConfirmation(order: any) {
 
           <div style="background: #0F1117; padding: 24px 32px; text-align: center;">
             <img src="https://promobidocs.com/logo-promobidocs.png" width="200" alt="Promobidocs" style="margin-bottom: 10px;">
-            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCS</p>
+            <p style="color: #B8763E; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 4px;">PROMOBIDOCS</p>
             <h1 style="color: white; font-size: 22px; margin: 0;">Seu pagamento foi confirmado!</h1>
           </div>
-          <div style="height: 3px; background: #f5b000;"></div>
+          <div style="height: 3px; background: #B8763E;"></div>
 
           <div style="padding: 28px 32px;">
             <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
@@ -272,13 +272,13 @@ async function sendClientConfirmation(order: any) {
             </p>
 
             <!-- Status steps -->
-            <div style="border-left: 3px solid #f5b000; padding-left: 16px; margin-bottom: 24px;">
+            <div style="border-left: 3px solid #B8763E; padding-left: 16px; margin-bottom: 24px;">
               <div style="margin-bottom: 12px; display: flex; align-items: center;">
                 <span style="color: #059669; font-weight: bold; margin-right: 8px;">✅</span>
                 <span style="color: #111827;">Pagamento confirmado</span>
               </div>
               <div style="margin-bottom: 12px;">
-                <span style="color: #f5b000; font-weight: bold; margin-right: 8px;">🔄</span>
+                <span style="color: #B8763E; font-weight: bold; margin-right: 8px;">🔄</span>
                 <span style="color: #111827; font-weight: bold;">Em tradução — nossa equipe está trabalhando agora</span>
               </div>
               <div style="color: #9CA3AF; margin-bottom: 12px;">
@@ -297,7 +297,7 @@ async function sendClientConfirmation(order: any) {
             </div>
 
             <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://promobidocs.com'}/meu-pedido"
-               style="display: block; background: #f5b000; color: #000000; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
+               style="display: block; background: #B8763E; color: #ffffff; text-align: center; padding: 14px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">
               Acompanhar meu pedido →
             </a>
           </div>

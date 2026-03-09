@@ -7,7 +7,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 export const brand = {
-    primary: '#f58220',
+    primary: '#B8763E',
     dark: '#0f172a',
     slate: '#334155',
     light: '#f8fafc',

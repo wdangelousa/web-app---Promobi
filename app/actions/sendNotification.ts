@@ -31,8 +31,8 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
           <head>
             <style>
               .button {
-                background-color: #f5b000;
-                color: #000000;
+                background-color: #B8763E;
+                color: #ffffff;
                 padding: 12px 24px;
                 border-radius: 6px;
                 text-decoration: none;
@@ -80,7 +80,7 @@ export async function sendReviewLink({ email, name, orderId }: SendReviewLinkPar
                 </div>
                 <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
                   Se o botão não funcionar, copie e cole este link no seu navegador:<br>
-                  <a href="${reviewLink}" style="color: #f5b000;">${reviewLink}</a>
+                  <a href="${reviewLink}" style="color: #B8763E;">${reviewLink}</a>
                 </p>
               </div>
               <div style="text-align: center; margin-top: 20px; color: #9ca3af; font-size: 12px;">

@@ -40,7 +40,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
     const urgencyColors: Record<string, string> = {
         standard: 'bg-blue-100 text-blue-800',
-        urgent: 'bg-orange-100 text-orange-800',
+        urgent: 'bg-[#F5EDE3] text-[#B8763E]',
         flash: 'bg-red-100 text-red-800'
     }
 
@@ -119,7 +119,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                     <h2 className="text-3xl font-black text-slate-800 mb-2">Proposta Atualizada</h2>
                     <p className="text-slate-500 mb-8">Esta proposta já foi aprovada ou seu status foi atualizado pelo nosso time.</p>
-                    <a href="https://promobidocs.com" className="bg-[#f58220] hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full transition-all block w-full">
+                    <a href="https://promobidocs.com" className="bg-[#B8763E] hover:bg-[#A36636] text-white font-bold py-3 px-8 rounded-full transition-all block w-full text-center">
                         Voltar ao Site
                     </a>
                 </div>
@@ -207,7 +207,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                 {/* Visão Geral */}
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800">
-                        <FileText className="text-[#f58220] w-5 h-5" /> Visão Geral do Pedido
+                        <FileText className="text-[#B8763E] w-5 h-5" /> Visão Geral do Pedido
                     </h2>
                     <p className="text-sm text-slate-600 leading-relaxed mb-6">
                         Analisamos cuidadosamente seus documentos via motor inteligente. Abaixo detalhamos a matemática exata, baseada puramente na densidade de texto (volume de palavras) encontrada nas páginas processadas. Padrão exigido pelo USCIS.
@@ -241,7 +241,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     <div className="flex justify-between items-end mb-6">
                         <div>
                             <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
-                                <Zap className="text-[#f58220] w-5 h-5" /> Raio-X de Transparência
+                                <Zap className="text-[#B8763E] w-5 h-5" /> Raio-X de Transparência
                             </h2>
                             <p className="text-xs text-slate-500 mt-1">Análise inteligente página por página</p>
                         </div>
@@ -313,7 +313,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                                                                 setQuicklookData({ url: doc.originalFileUrl, pageNumber: p.pageNumber });
                                                                             }
                                                                         }}
-                                                                        className="text-slate-400 hover:text-[#f58220] transition-colors p-1 bg-slate-100 hover:bg-orange-50 rounded"
+                                                                        className="text-slate-400 hover:text-[#B8763E] transition-colors p-1 bg-slate-100 hover:bg-[#F5EDE3] rounded"
                                                                         title="Visualizar Página Original"
                                                                     >
                                                                         <Eye className="w-3.5 h-3.5" />
@@ -334,7 +334,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
                 {/* Resumo Financeiro */}
                 <section className="bg-slate-900 rounded-2xl shadow-2xl p-6 md:p-8 text-white relative overflow-hidden">
-                    <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-[#f58220] rounded-full blur-3xl opacity-20"></div>
+                    <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-[#B8763E] rounded-full blur-3xl opacity-20"></div>
                     <h2 className="text-xl font-bold mb-6 text-slate-100">Resumo Financeiro</h2>
 
                     <div className="space-y-3 mb-6 font-mono text-sm border-b border-slate-700 pb-6">
@@ -343,7 +343,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             <span>${breakdown.basePrice?.toFixed(2) || '---'}</span>
                         </div>
                         {breakdown.urgencyFee > 0 && (
-                            <div className="flex justify-between text-orange-300">
+                            <div className="flex justify-between text-[#C9956B]">
                                 <span>Taxa de Urgência ({urgencyLabels[order.urgency]})</span>
                                 <span>+${breakdown.urgencyFee.toFixed(2)}</span>
                             </div>
@@ -372,7 +372,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         <div>
                             <span className="block text-slate-400 text-sm mb-1 uppercase tracking-wider font-bold">Total a Pagar</span>
                             {requires100Upfront ? (
-                                <span className="text-xs text-orange-300 bg-orange-900/50 px-2 py-1 rounded inline-flex items-center gap-1">
+                                <span className="text-xs text-[#C9956B] bg-[#4A3B2F] px-2 py-1 rounded inline-flex items-center gap-1">
                                     <Info className="w-3 h-3" /> 100% Upfront (Sem parcelamento p/ Urgência)
                                 </span>
                             ) : (
@@ -390,12 +390,12 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                 {/* Pagamento */}
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <h2 className="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">
-                        <Lock className="w-5 h-5 text-[#f58220]" /> Pagamento Seguro
+                        <Lock className="w-5 h-5 text-[#B8763E]" /> Pagamento Seguro
                     </h2>
 
                     <div className="space-y-3">
                         <div
-                            className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'STRIPE' ? 'border-[#f58220] bg-orange-50' : 'border-slate-200 hover:border-slate-300'}`}
+                            className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'STRIPE' ? 'border-[#B8763E] bg-[#F5EDE3]' : 'border-slate-200 hover:border-slate-300'}`}
                             onClick={() => setPaymentMethod('STRIPE')}
                         >
                             <div className="flex items-center justify-between">
@@ -406,17 +406,17 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                         <p className="text-xs text-slate-500">Google Pay, Apple Pay via Stripe</p>
                                     </div>
                                 </div>
-                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'STRIPE' ? 'border-[#f58220]' : 'border-slate-300'}`}>
-                                    {paymentMethod === 'STRIPE' && <div className="w-2.5 h-2.5 bg-[#f58220] rounded-full"></div>}
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'STRIPE' ? 'border-[#B8763E]' : 'border-slate-300'}`}>
+                                    {paymentMethod === 'STRIPE' && <div className="w-2.5 h-2.5 bg-[#B8763E] rounded-full"></div>}
                                 </div>
                             </div>
                             <AnimatePresence>
                                 {paymentMethod === 'STRIPE' && (
-                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-orange-200">
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-[#E8DCCF]">
                                         <button
                                             disabled={isProcessingStripe}
                                             onClick={handleStripeCheckout}
-                                            className="w-full bg-[#f58220] hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] disabled:opacity-70"
+                                            className="w-full bg-[#B8763E] hover:bg-[#A36636] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] disabled:opacity-70"
                                         >
                                             {isProcessingStripe ? 'Conectando seguro...' : 'Pagar com Cartão'} <ArrowRight className="w-4 h-4" />
                                         </button>

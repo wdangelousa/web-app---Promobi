@@ -8,14 +8,15 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
-  orange: '#E8751A',
-  orangeLight: '#FEF0E6',
-  dark: '#0F1117',
-  slate: '#374151',
-  gray: '#6B7280',
+  copper: '#B8763E',
+  copperLight: '#F5EDE3',
+  gold: '#C9956B',
+  dark: '#1A1A1A',
+  slate: '#4A4A4A',
+  gray: '#7A7A7A',
   lightGray: '#9CA3AF',
   border: '#E5E7EB',
-  bgLight: '#F9FAFB',
+  bgLight: '#FAFAF8',
   bgMid: '#F3F4F6',
   white: '#FFFFFF',
   green: '#059669',
@@ -91,13 +92,13 @@ const S = StyleSheet.create({
 
   // Page 1 header
   header: { backgroundColor: C.dark, paddingHorizontal: 36, paddingTop: 24, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerAccent: { height: 3, backgroundColor: C.orange },
+  headerAccent: { height: 3, backgroundColor: C.copper },
   logoWrap: { width: 148, height: 42 },
   logo: { width: 148, height: 42, objectFit: 'contain', objectPositionX: 0 },
-  logoText: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.orange },
+  logoText: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.copper },
   headerTagline: { fontSize: 7, color: C.lightGray, marginTop: 5, letterSpacing: 0.5 },
   headerRight: { alignItems: 'flex-end' },
-  headerBadge: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, letterSpacing: 2, marginBottom: 2 },
+  headerBadge: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.copper, letterSpacing: 2, marginBottom: 2 },
   headerId: { fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.white },
   headerDate: { fontFamily: 'Courier', fontSize: 8, color: C.lightGray, marginTop: 3 },
 
@@ -106,7 +107,7 @@ const S = StyleSheet.create({
   heroLeft: { flex: 1, marginRight: 18 },
   heroLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.gray, letterSpacing: 2.5, marginBottom: 7 },
   heroNameRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  heroAccent: { width: 4, height: 24, backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0, marginTop: 2 },
+  heroAccent: { width: 4, height: 24, backgroundColor: C.copper, borderRadius: 2, marginRight: 10, flexShrink: 0, marginTop: 2 },
   heroName: { fontFamily: 'Helvetica-Bold', fontSize: 20, color: C.dark, flex: 1, lineHeight: 1.3 },
   heroEmail: { fontSize: 8, color: C.gray, marginTop: 5, marginLeft: 14 },
 
@@ -117,15 +118,15 @@ const S = StyleSheet.create({
   pill: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: C.white },
   pillL: { marginLeft: 8 },
   pillGreen: { borderColor: C.greenBorder, backgroundColor: C.greenBg },
-  pillOrange: { borderColor: C.orange, backgroundColor: C.orangeLight },
+  pillCopper: { borderColor: C.copper, backgroundColor: C.copperLight },
   pillVal: { fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.dark },
   pillValGr: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.green },
-  pillValOr: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.orange },
+  pillValOr: { fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.copper },
   pillLbl: { fontSize: 7, color: C.gray, marginTop: 2 },
 
   // Section label
   secRow: { paddingHorizontal: 28, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  secDot: { width: 6, height: 6, backgroundColor: C.orange, borderRadius: 3, marginRight: 8 },
+  secDot: { width: 6, height: 6, backgroundColor: C.copper, borderRadius: 3, marginRight: 8 },
   secTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.dark, letterSpacing: 1.5 },
   secLine: { flex: 1, height: 1, backgroundColor: C.border, marginLeft: 10 },
 
@@ -143,7 +144,7 @@ const S = StyleSheet.create({
 
   // Excluded pages — compact amber strip
   exclRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#FFFBF5', borderBottomWidth: 1, borderBottomColor: C.amberBorder },
-  exclBar: { width: 3, alignSelf: 'stretch', backgroundColor: C.orange, borderRadius: 2, marginRight: 10, flexShrink: 0 },
+  exclBar: { width: 3, alignSelf: 'stretch', backgroundColor: C.copper, borderRadius: 2, marginRight: 10, flexShrink: 0 },
   exclBody: { flex: 1 },
   exclHead: { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: C.amber },
   exclPgs: { fontSize: 7, color: C.gray, marginTop: 1.5 },
@@ -175,8 +176,8 @@ const S = StyleSheet.create({
   savingsDesc: { paddingHorizontal: 16, paddingVertical: 9, fontSize: 7.5, color: '#065F46', lineHeight: 1.6 },
 
   // Methodology note — page 1 only, not on single-page proposals
-  methBox: { marginHorizontal: 20, marginTop: 8, backgroundColor: C.bgLight, borderLeftWidth: 3, borderLeftColor: C.orange, borderRadius: 4, paddingHorizontal: 12, paddingVertical: 8 },
-  methTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.orange, letterSpacing: 0.5, marginBottom: 3 },
+  methBox: { marginHorizontal: 20, marginTop: 8, backgroundColor: C.bgLight, borderLeftWidth: 3, borderLeftColor: C.copper, borderRadius: 4, paddingHorizontal: 12, paddingVertical: 8 },
+  methTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.copper, letterSpacing: 0.5, marginBottom: 3 },
   methText: { fontSize: 7.5, color: C.slate, lineHeight: 1.6 },
 
   // Total investment
@@ -186,8 +187,8 @@ const S = StyleSheet.create({
   totalName: { fontFamily: 'Helvetica-Bold', fontSize: 15, color: C.white },
   totalMeta: { fontSize: 8, color: C.lightGray, marginTop: 3 },
   totalRight: { alignItems: 'flex-end' },
-  totalCurr: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.orange, marginBottom: 2 },
-  totalVal: { fontFamily: 'Helvetica-Bold', fontSize: 34, color: C.orange, lineHeight: 1 },
+  totalCurr: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.copper, marginBottom: 2 },
+  totalVal: { fontFamily: 'Helvetica-Bold', fontSize: 34, color: C.copper, lineHeight: 1 },
   totalDiscountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(5, 150, 105, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(5, 150, 105, 0.3)' },
   totalDiscountLbl: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.greenBorder },
   totalDiscountVal: { fontFamily: 'Helvetica-Bold', fontSize: 11, color: C.greenBorder },
@@ -203,16 +204,16 @@ const S = StyleSheet.create({
   footerAddr: { fontSize: 7, color: C.slate },
   footerContact: { fontSize: 7, color: C.gray, marginTop: 2 },
   footerRight: { alignItems: 'flex-end' },
-  footerUrl: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.orange },
+  footerUrl: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.copper },
   footerPage: { fontSize: 7, color: C.lightGray, marginTop: 2 },
 
   // Continuation header (pages 2+)
   contHead: { backgroundColor: C.dark, paddingHorizontal: 36, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   contLeft: { flexDirection: 'row', alignItems: 'center' },
-  contDot: { width: 5, height: 5, backgroundColor: C.orange, borderRadius: 3, marginRight: 7 },
+  contDot: { width: 5, height: 5, backgroundColor: C.copper, borderRadius: 3, marginRight: 7 },
   contTitle: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.white },
   contMeta: { fontSize: 8, color: C.lightGray },
-  contAccent: { height: 2, backgroundColor: C.orange },
+  contAccent: { height: 2, backgroundColor: C.copper },
 });
 
 // ─── DocCard component ────────────────────────────────────────────────────────
@@ -422,7 +423,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                       ) : (
                         <View style={[S.pill, { borderColor: 'transparent', backgroundColor: 'transparent' }]} />
                       )}
-                      <View style={[S.pill, S.pillOrange, S.pillL]}>
+                      <View style={[S.pill, S.pillCopper, S.pillL]}>
                         <Text style={S.pillValOr}>${totalAmt.toFixed(2)}</Text>
                         <Text style={S.pillLbl}>total USD</Text>
                       </View>
