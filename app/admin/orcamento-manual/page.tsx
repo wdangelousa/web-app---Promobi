@@ -134,33 +134,43 @@ export default function OrcamentoManual() {
                     setClientName(order.user?.fullName || '')
                     setClientEmail(order.user?.email || '')
                     setClientPhone(order.user?.phone || '')
-                    setUrgency(order.urgency || 'standard')
 
-                    // 2. Map Service Type
-                    setServiceType(order.hasTranslation ? 'translation' : 'notarization')
+                    // 2. Safely Parse the Metadata (Where the rich UI state lives)
+                    let meta: any = {}
+                    if (order.metadata) {
+                        try {
+                            meta = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata;
+                        } catch (e) {
+                            console.error('Error parsing order metadata', e)
+                        }
+                    }
 
-                    // 3. Map Documents (From Prisma 'documents' relation)
-                    if (order.documents && Array.isArray(order.documents)) {
-                        const mappedDocs = order.documents.map((doc: any) => {
-                            // Handle analysis parsing if it was saved as JSON
-                            let parsedAnalysis = undefined;
-                            try {
-                                if (doc.analysis) {
-                                    parsedAnalysis = typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis;
-                                }
-                            } catch (e) { console.error('Error parsing doc analysis', e) }
+                    // 3. Restore Basic Order Config
+                    setUrgency(meta.urgency || order.urgency || 'standard')
+                    setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
+                    if (meta.breakdown) {
+                        setBreakdown(meta.breakdown) // Restores manual discounts and exact fees
+                    }
 
-                            return {
-                                id: doc.id.toString(), // Ensure string ID for UI state
-                                fileName: doc.fileName || doc.name || 'Documento Restaurado',
-                                count: doc.count || doc.pages || 1,
-                                notarized: doc.notarized || false,
-                                handwritten: doc.handwritten || false,
-                                isSelected: true,
-                                analysis: parsedAnalysis
-                            }
-                        })
-                        setDocuments(mappedDocs)
+                    // 4. Restore Documents from METADATA (Crucial for UI state)
+                    if (meta.documents && Array.isArray(meta.documents) && meta.documents.length > 0) {
+                        const restoredDocs = meta.documents.map((doc: any) => ({
+                            ...doc,
+                            isSelected: true, // Ensure they appear checked when reopened
+                            id: doc.id || crypto.randomUUID()
+                        }))
+                        setDocuments(restoredDocs)
+                    } else if (order.documents && Array.isArray(order.documents)) {
+                        // Absolute Fallback: use relational data only if metadata is corrupted
+                        const fallbackDocs = order.documents.map((doc: any) => ({
+                            id: doc.id.toString(),
+                            fileName: doc.exactNameOnDoc || doc.docType || 'Documento Restaurado',
+                            count: 1,
+                            notarized: false,
+                            isSelected: true,
+                            handwritten: false
+                        }))
+                        setDocuments(fallbackDocs)
                     }
                 }
             } catch (err) {
