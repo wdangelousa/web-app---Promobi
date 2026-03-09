@@ -1,6 +1,6 @@
 'use server'
 
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, StandardFonts, degrees } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
@@ -15,15 +15,14 @@ function sanitizeForWinAnsi(text: string): string {
     return text ? text.replace(/[^\x00-\xFF]/g, '') : ''
 }
 
-// --- Lógica da Capa de Certificação ---
-async function _buildCoverPageInDoc(
+async function _loadCertificationCover(
     targetDoc: PDFDocument,
-    params: { docType: string; orderId: number; totalPages: number; dateStr: string; sourceLanguage?: string }
+    sourceLanguage: string | null,
+    orderId: number,
+    dateStr: string
 ) {
-    const { docType, orderId, totalPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
-
-    // Identifica qual arquivo de capa usar
+    // Define qual arquivo de capa carregar
     const fileName = sourceLanguage === 'ES' ? 'capa certificacao es-en.pdf' : 'capa certificacao pt-en.pdf'
     const capaPath = path.join(publicDir, fileName)
 
@@ -32,16 +31,15 @@ async function _buildCoverPageInDoc(
         const capaPdf = await PDFDocument.load(capaBytes)
         const [capaPage] = await targetDoc.copyPages(capaPdf, [0])
 
-        // Opcional: Desenhar metadados dinâmicos sobre a capa se houver campos em branco
+        // Inserção de metadados básicos sobre a capa (ajuste as coordenadas se necessário)
         const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
-        capaPage.drawText(`Order #${orderId + 1000}-USA`, { x: 440, y: 550, size: 10, font: boldFont })
-        capaPage.drawText(`Date: ${dateStr}`, { x: 70, y: 150, size: 10, font: boldFont })
+        capaPage.drawText(`Order #${orderId + 1000}-USA`, { x: 430, y: 555, size: 10, font: boldFont })
+        capaPage.drawText(dateStr, { x: 75, y: 155, size: 10, font: boldFont })
 
         return capaPage
     } catch (err) {
-        console.error(`Erro ao carregar capa ${fileName}:`, err)
-        // Fallback: Adiciona página em branco se o arquivo não existir
-        return targetDoc.addPage([612, 792])
+        console.error(`Falha ao carregar capa ${fileName}:`, err)
+        return null
     }
 }
 
@@ -56,12 +54,20 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         if (!doc) return { success: false, error: 'Documento não encontrado.' }
 
         const finalPdf = await PDFDocument.create()
+
+        // 1. Preparar Capa de Certificação
+        const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        const lang = doc.sourceLanguage || doc.order.sourceLanguage
+        const capaPage = await _loadCertificationCover(finalPdf, lang, orderId, dateStr)
+        if (capaPage) finalPdf.addPage(capaPage)
+
+        // 2. Páginas de Tradução e Originais (lógica de montagem simplificada)
         const publicDir = path.join(process.cwd(), 'public')
         const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes)
         const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
 
-        // 1. Páginas de Tradução
+        // Páginas de Tradução
         const translationPdf = await PDFDocument.create()
         if (doc.translatedText) {
             const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
@@ -70,7 +76,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal })
         }
 
-        // 2. Páginas Originais
+        // Páginas Originais
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             const originalRes = await fetch(doc.originalFileUrl)
             const originalBuf = Buffer.from(await originalRes.arrayBuffer())
@@ -79,20 +85,12 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             copied.forEach(p => finalPdf.addPage(p))
         }
 
-        // 3. Gerar e Inserir Capa Baseada no Idioma
-        const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-        const capaPage = await _buildCoverPageInDoc(finalPdf, {
-            docType: doc.docType,
-            orderId,
-            totalPages: translationPdf.getPageCount(),
-            dateStr,
-            sourceLanguage: doc.sourceLanguage || doc.order.sourceLanguage
-        })
-        finalPdf.insertPage(0, capaPage)
-
         // Copiar páginas de tradução para o finalPdf
         const transPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
-        transPages.forEach((p, i) => finalPdf.insertPage(1 + i, p))
+        transPages.forEach((p, i) => {
+            // Inserimos a tradução logo após a capa (capa = index 0)
+            finalPdf.insertPage(1 + i, p)
+        })
 
         const pdfBytes = await finalPdf.save()
 
