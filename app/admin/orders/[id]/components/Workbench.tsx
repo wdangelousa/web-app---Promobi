@@ -8,8 +8,7 @@ import {
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
-import { applyFinancialAdjustment, reopenOrder } from '@/app/actions/adminOrders'
-import ReopenQuoteModal from '@/components/ReopenQuoteModal'
+import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -141,7 +140,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [isAddingDoc, setIsAddingDoc] = useState(false)
     const [isDeletingDocId, setIsDeletingDocId] = useState<number | null>(null)
     const [showReopenedBanner, setShowReopenedBanner] = useState(false)
-    const [isReopening, setIsReopening] = useState(false)
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
@@ -518,27 +516,6 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    const handleReopenBudget = async () => {
-        if (!confirm('Deseja reabrir este orçamento? O pedido voltará para a fase de rascunho interno (Draft). Você poderá ajustar documentos e valores com segurança. O cliente NÃO será notificado até que você reenvie a proposta oficial.')) return
-        setIsReopening(true)
-
-        // Yield to main thread to ensure loading state renders (INP)
-        setTimeout(async () => {
-            try {
-                const result = await reopenOrder(order.id)
-                if (result.success) {
-                    alert('✅ Orçamento reaberto internamente. Ajuste o pedido e reenvie a proposta ao cliente.')
-                    router.push(`/admin/orcamento-manual?orderId=${order.id}`)
-                } else {
-                    alert('❌ Erro: ' + result.error)
-                }
-            } catch (err: any) {
-                alert('❌ Erro fatal: ' + err.message)
-            } finally {
-                setIsReopening(false)
-            }
-        }, 0)
-    }
 
     const handleResendEmail = async () => {
         if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
@@ -712,9 +689,6 @@ export default function Workbench({ order }: { order: Order }) {
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
-                        {(order.status === 'PENDING_PAYMENT' || order.status === 'READY_FOR_REVIEW' || order.status === 'TRANSLATING' || order.status === 'CANCELLED') && (
-                            <ReopenQuoteModal orderId={order.id} />
-                        )}
 
                         <button
                             onClick={() => setShowFinancialModal(true)}

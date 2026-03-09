@@ -5,7 +5,6 @@ import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
 import { Role, OrderStatus } from '@prisma/client';
 import { normalizeOrder } from '@/lib/orderAdapter';
-import ReopenOrderButton from './components/ReopenOrderButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -141,8 +140,8 @@ export default async function AdminOrdersPage({
                             key={chip.value}
                             href={chip.value === 'ALL' ? '/admin/orders' : `/admin/orders?status=${chip.value}`}
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
-                                    ? `${chip.color} ring-2 ring-offset-1 ring-current shadow-sm`
-                                    : `${chip.color} opacity-60 hover:opacity-100`
+                                ? `${chip.color} ring-2 ring-offset-1 ring-current shadow-sm`
+                                : `${chip.color} opacity-60 hover:opacity-100`
                                 }`}
                         >
                             {chip.label}
@@ -219,7 +218,6 @@ export default async function AdminOrdersPage({
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                            <ReopenOrderButton orderId={order.id} status={order.status} />
                                             <Link
                                                 href={`/admin/orders/${order.id}`}
                                                 className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
