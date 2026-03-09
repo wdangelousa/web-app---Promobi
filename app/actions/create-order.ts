@@ -144,3 +144,96 @@ export async function createOrder(data: CreateOrderInput) {
         return { success: false, error: 'Failed to create order' };
     }
 }
+
+export async function updateOrder(orderId: number, data: CreateOrderInput) {
+    try {
+        console.log('[updateOrder] Starting for Order #', orderId);
+
+        const settings = await getGlobalSettings();
+        const PRICE_PER_PAGE = settings.basePrice;
+        const NOTARY_FEE_PER_DOC = settings.notaryFee;
+
+        const URGENCY_MULTIPLIER: Record<string, number> = {
+            standard: 1.0,
+            urgent: 1.0 + settings.urgencyRate,
+            flash: 1.0 + (settings.urgencyRate * 2),
+            normal: 1.0,
+        };
+
+        let totalAmount = 0;
+        let discountPercentage = 0;
+        let discountAmount = 0;
+
+        if (data.grandTotalOverride) {
+            totalAmount = data.grandTotalOverride;
+            discountPercentage = data.breakdown?.volumeDiscountPercentage || 0;
+            discountAmount = (data.breakdown?.volumeDiscountAmount || 0) + (data.breakdown?.manualDiscountAmount || 0);
+        } else {
+            const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
+            const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
+
+            if (totalCount >= 51) discountPercentage = 15;
+            else if (totalCount >= 31) discountPercentage = 10;
+            else if (totalCount >= 16) discountPercentage = 5;
+            else discountPercentage = 0;
+
+            discountAmount = base * (discountPercentage / 100);
+            const baseAfterDiscount = base - discountAmount;
+
+            const notary = data.documents.reduce((a, d) => a + (d.notarized ? NOTARY_FEE_PER_DOC : 0), 0);
+            totalAmount = baseAfterDiscount + notary;
+        }
+
+        const hasTranslation = data.serviceType !== 'notarization';
+        const hasNotary = data.serviceType === 'notarization' || data.documents.some(d => d.notarized);
+
+        const order = await prisma.$transaction(async (tx) => {
+            const existingOrder = await tx.order.findUnique({ where: { id: orderId } });
+            if (!existingOrder) throw new Error('Order not found');
+
+            await tx.user.update({
+                where: { email: data.user.email },
+                data: {
+                    fullName: data.user.fullName,
+                    phone: data.user.phone,
+                },
+            });
+
+            await tx.document.deleteMany({ where: { orderId } });
+
+            return tx.order.update({
+                where: { id: orderId },
+                data: {
+                    totalAmount,
+                    status: data.status || 'PENDING_PAYMENT',
+                    urgency: data.urgency,
+                    hasTranslation,
+                    hasNotary,
+                    metadata: JSON.stringify({
+                        documents: data.documents,
+                        breakdown: data.breakdown,
+                        urgency: data.urgency,
+                        serviceType: data.serviceType,
+                        sourceLanguage: data.sourceLanguage,
+                    }),
+                    discountPercentage,
+                    discountAmount,
+                    documents: {
+                        create: data.documents.map((doc) => ({
+                            docType: doc.fileName?.split('.').pop() ?? 'file',
+                            originalFileUrl: doc.uploadedFile?.url ?? 'PENDING_UPLOAD',
+                            exactNameOnDoc: doc.fileName ?? 'Unknown File',
+                        })),
+                    },
+                },
+            });
+        });
+
+        console.log(`[updateOrder] Updated Order #${order.id}`);
+        return { success: true, orderId: order.id };
+
+    } catch (error: any) {
+        console.error('[updateOrder] Error:', error);
+        return { success: false, error: error.message || 'Failed to update order' };
+    }
+}

@@ -528,7 +528,7 @@ export default function Workbench({ order }: { order: Order }) {
                 const result = await reopenOrder(order.id)
                 if (result.success) {
                     alert('✅ Orçamento reaberto internamente. Ajuste o pedido e reenvie a proposta ao cliente.')
-                    router.push(`/admin/concierge?orderId=${order.id}`)
+                    router.push(`/admin/orcamento-manual?orderId=${order.id}`)
                 } else {
                     alert('❌ Erro: ' + result.error)
                 }

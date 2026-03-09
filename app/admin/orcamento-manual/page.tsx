@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from '../../actions/create-order'
 import { getGlobalSettings, GlobalSettings } from '../../actions/settings'
@@ -29,6 +30,8 @@ import { useUIFeedback } from '../../../components/UIFeedbackProvider'
 import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer'
 import { PDFDocument } from 'pdf-lib'
 import { searchCustomers, CustomerSearchResult } from '../../actions/search-customers'
+import { getOrderForConcierge } from '../../actions/adminOrders'
+import { updateOrder } from '../../actions/create-order'
 
 // --- TYPES ---
 type PageWithInclusion = {
@@ -69,6 +72,10 @@ function calcDocPrice(pages: PageWithInclusion[]): number {
 }
 
 export default function OrcamentoManual() {
+    const searchParams = useSearchParams()
+    const orderIdParam = searchParams.get('orderId')
+    const orderId = orderIdParam ? parseInt(orderIdParam) : null
+
     // --- STATE ---
     const [serviceType, setServiceType] = useState<'translation' | 'notarization' | null>(null)
     const [documents, setDocuments] = useState<DocumentItem[]>([])
@@ -110,6 +117,52 @@ export default function OrcamentoManual() {
     useEffect(() => {
         getGlobalSettings().then(setGlobalSettings)
     }, [])
+
+    // --- HYDRATION EFFECT ---
+    useEffect(() => {
+        if (!orderId) return
+
+        const hydrate = async () => {
+            setLoading(true)
+            try {
+                const res = await getOrderForConcierge(orderId)
+                if (res.success && res.order) {
+                    const order = res.order
+                    setClientName(order.user?.fullName || '')
+                    setClientEmail(order.user?.email || '')
+                    setClientPhone(order.user?.phone || '')
+                    setUrgency(order.urgency || 'standard')
+
+                    let meta: any = {}
+                    try {
+                        meta = order.metadata ? JSON.parse(order.metadata as string) : {}
+                    } catch (e) {
+                        console.error('Error parsing order metadata', e)
+                    }
+
+                    if (meta.serviceType) {
+                        setServiceType(meta.serviceType)
+                    } else {
+                        setServiceType(order.hasTranslation ? 'translation' : 'notarization')
+                    }
+
+                    if (meta.documents && Array.isArray(meta.documents)) {
+                        setDocuments(meta.documents.map((doc: any) => ({
+                            ...doc,
+                            isSelected: true,
+                        })))
+                    }
+                }
+            } catch (err) {
+                console.error('Hydration error:', err)
+                toast.error('Erro ao carregar dados do pedido.')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        hydrate()
+    }, [orderId])
 
     // --- DEBOUNCED SEARCH EFFECT ---
     useEffect(() => {
@@ -410,7 +463,7 @@ export default function OrcamentoManual() {
                 }
             })
 
-            const orderResult = await createOrder({
+            const payload: any = {
                 user: { fullName: clientName, email: clientEmail, phone: clientPhone },
                 documents: orderDocuments,
                 urgency, docCategory: 'standard', notaryMode: 'none',
@@ -419,10 +472,17 @@ export default function OrcamentoManual() {
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT'
-            })
+            }
+
+            let orderResult;
+            if (orderId) {
+                orderResult = await updateOrder(orderId, payload)
+            } else {
+                orderResult = await createOrder(payload)
+            }
 
             if (!orderResult.success || !orderResult.orderId) {
-                toast.error(orderResult.error || 'Erro ao gerar proposta.')
+                toast.error(orderResult.error || 'Erro ao processar proposta.')
                 return
             }
 

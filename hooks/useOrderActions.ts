@@ -27,7 +27,7 @@ export function useOrderActions() {
             }
 
             // Success feedback and redirect
-            router.push(`/admin/concierge?orderId=${orderId}`);
+            router.push(`/admin/orcamento-manual?orderId=${orderId}`);
             return { success: true };
 
         } catch (err: any) {
