@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
-import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
+import { applyFinancialAdjustment, reopenOrder } from '@/app/actions/adminOrders'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -516,6 +516,21 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    const handleReopenBudget = async () => {
+        if (!confirm('Deseja reabrir este orçamento? O status voltará para PENDENTE e o cliente poderá ver o novo valor.')) return
+        try {
+            const result = await reopenOrder(order.id)
+            if (result.success) {
+                alert('✅ Orçamento reaberto. O cliente já pode visualizar o novo valor.')
+                router.refresh()
+            } else {
+                alert('❌ Erro: ' + result.error)
+            }
+        } catch (err: any) {
+            alert('❌ Erro fatal: ' + err.message)
+        }
+    }
+
     const handleResendEmail = async () => {
         if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
         setIsResending(true)
@@ -687,6 +702,16 @@ export default function Workbench({ order }: { order: Order }) {
                         </button>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
+
+                        {order.status !== 'PENDING' && (
+                            <button
+                                onClick={handleReopenBudget}
+                                className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-amber-200"
+                                title="Voltar pedido para fase de orçamento"
+                            >
+                                <RotateCcw className="h-3.5 w-3.5" /> Reabrir Orçamento
+                            </button>
+                        )}
 
                         <button
                             onClick={() => setShowFinancialModal(true)}

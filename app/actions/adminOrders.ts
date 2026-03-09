@@ -143,3 +143,25 @@ export async function updateCustomerDetails(userId: number, data: { fullName?: s
         return { success: false, error: 'Failed to update customer details' }
     }
 }
+export async function reopenOrder(orderId: number) {
+    try {
+        await prisma.order.update({
+            where: { id: orderId },
+            data: {
+                status: 'PENDING' as any,
+                deliveryUrl: null, // Clear delivery URL as we are reopening
+                finalPaidAmount: null, // Reset final paid amount to reassess
+                extraDiscount: 0, // Reset extra discount
+            }
+        })
+
+        revalidatePath('/admin/orders')
+        revalidatePath(`/admin/orders/${orderId}`)
+        revalidatePath('/admin/finance')
+
+        return { success: true }
+    } catch (error) {
+        console.error('Failed to reopen order:', error)
+        return { success: false, error: 'Falha ao reabrir orçamento.' }
+    }
+}
