@@ -69,6 +69,12 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
         setIsModalOpen(false); // Close on success? Or keep open? Let's close.
     }
 
+    const handleCopyLink = (orderId: number) => {
+        const url = `${window.location.origin}/proposta/${orderId}`;
+        navigator.clipboard.writeText(url);
+        toast.success('Link da proposta copiado!');
+    };
+
     const handleNotifyClient = async () => {
         if (!selectedOrder) return;
         setLoadingAction(true);
@@ -172,25 +178,23 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                     {formatDate(order?.createdAt)}
                                 </td>
                                 <td className="p-4 text-right">
-                                    <div className="flex justify-end gap-2 text-right">
+                                    <div className="flex justify-end items-center gap-2">
                                         {order.status === 'PENDING_PAYMENT' && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    const link = `${window.location.origin}/proposta/${order.id}`;
-                                                    navigator.clipboard.writeText(link);
-                                                    toast.success('Link copiado!');
+                                                    handleCopyLink(order.id);
                                                 }}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#f58220] bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200"
-                                                title="Copiar link da proposta"
+                                                className="bg-orange-500/10 text-[#f58220] hover:bg-[#f58220] hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 border border-[#f58220]/20"
+                                                title="Copiar Link da Proposta"
                                             >
                                                 <Copy className="w-3.5 h-3.5" />
-                                                Copiar Link
+                                                Link
                                             </button>
                                         )}
                                         <button
                                             onClick={() => handleOpenModal(order)}
-                                            className="bg-slate-900 border border-slate-700 hover:border-[#f58220] hover:text-[#f58220] text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                                            className="bg-slate-900 border border-slate-700 hover:border-slate-500 hover:text-white text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                                         >
                                             Gerenciar
                                         </button>

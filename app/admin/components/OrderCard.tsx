@@ -19,13 +19,13 @@ export default function OrderCard({ order, onClick }: Props) {
         e.stopPropagation();
         const link = `${window.location.origin}/proposta/${order.id}`;
         navigator.clipboard.writeText(link);
-        toast.success('Link copiado!');
+        toast.success('Link da proposta copiado!');
     };
 
     return (
         <div
             onClick={() => onClick(order)}
-            className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
+            className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group flex flex-col h-full"
         >
             <div className="flex justify-between items-start mb-2">
                 <span className="text-xs text-gray-400 font-mono">#{order.id?.toString().padStart(6, '0') || '000000'}</span>
@@ -42,7 +42,7 @@ export default function OrderCard({ order, onClick }: Props) {
                     )}
                 </div>
             </div>
-            <h4 className="font-bold text-gray-800 mb-1">{order.user?.fullName || 'Cliente N/A'}</h4>
+            <h4 className="font-bold text-gray-800 mb-1 flex-1">{order.user?.fullName || 'Cliente N/A'}</h4>
             <div className="flex justify-between items-end text-sm text-gray-500">
                 <div className="flex items-center gap-1">
                     <FileText className="h-3 w-3" />
@@ -54,8 +54,8 @@ export default function OrderCard({ order, onClick }: Props) {
             {order.status === 'PENDING_PAYMENT' && (
                 <button
                     onClick={handleCopyLink}
-                    className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-orange-50 text-[#f58220] hover:bg-[#f58220] hover:text-white border border-orange-200 hover:border-[#f58220] rounded-lg text-xs font-bold transition-colors"
-                    title="Copiar link da proposta"
+                    className="mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-50 text-[#f58220] hover:bg-[#f58220] hover:text-white border border-orange-200 hover:border-[#f58220] rounded-md text-xs font-bold transition-colors"
+                    title="Copiar link para o cliente"
                 >
                     <Copy className="w-3.5 h-3.5" />
                     Copiar Link
