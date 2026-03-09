@@ -24,18 +24,19 @@ export async function getCurrentUser() {
 
         if (error || !user?.email) return null
 
-        // MASTER KEY BYPASS for Founder
-        const FOUNDER_EMAIL = 'wdangelo81@gmail.com';
+        // MASTER KEY BYPASS - Safe access for critical roles
+        const BYPASS_EMAILS = ['wdangelo81@gmail.com', 'belebmd@gmail.com'];
 
         const dbUser = await prisma.user.findUnique({
             where: { email: user.email }
         })
 
-        if (!dbUser && user.email === FOUNDER_EMAIL) {
+        if (!dbUser && BYPASS_EMAILS.includes(user.email)) {
             console.log("[Auth] Master Key used for:", user.email);
+            const fullName = user.email === 'wdangelo81@gmail.com' ? 'Walter Dangelo (Founder)' : 'Isabele (Translator)';
             return {
                 id: 0, // Synthetic ID
-                fullName: 'Walter Dangelo (Founder)',
+                fullName,
                 email: user.email,
                 role: 'OPERATIONS',
                 createdAt: new Date(),
@@ -52,10 +53,13 @@ export async function getCurrentUser() {
         try {
             const supabase = await createClient()
             const { data: { user } } = await supabase.auth.getUser()
-            if (user?.email === 'wdangelo81@gmail.com') {
+            const BYPASS_EMAILS = ['wdangelo81@gmail.com', 'belebmd@gmail.com'];
+
+            if (user?.email && BYPASS_EMAILS.includes(user.email)) {
+                const fullName = user.email === 'wdangelo81@gmail.com' ? 'Walter Dangelo (Fail-safe)' : 'Isabele (Fail-safe)';
                 return {
                     id: 0,
-                    fullName: 'Walter Dangelo (Founder - Fail-safe)',
+                    fullName,
                     email: user.email,
                     role: 'OPERATIONS',
                     createdAt: new Date(),
