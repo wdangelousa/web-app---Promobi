@@ -52,7 +52,7 @@ async function _loadCertificationCover(
         const fontSize = 11;
         const fontColor = rgb(0, 0, 0);
 
-        // COORDENADAS EXTRAÍDAS DIRETAMENTE DO SEU DESIGN NO SEJDA:
+        // COORDENADAS EXTRAÍDAS DIRETAMENTE DO SEJDA:
         
         // 1. Document Type
         capaPage.drawText(docType.toUpperCase(), { 
@@ -64,8 +64,8 @@ async function _loadCertificationCover(
             x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor 
         })
         
-        // 3. Order Number
-        capaPage.drawText(`Order #${orderId + 1000}-USA`, { 
+        // 3. Order Number (Apenas o número, sem repetir "Order #")
+        capaPage.drawText(`${orderId}-USA`, { 
             x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor 
         })
         
