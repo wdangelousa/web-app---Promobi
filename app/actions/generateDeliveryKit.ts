@@ -21,7 +21,7 @@ function sanitizeForWinAnsi(text: string): string {
     return text.replace(/[^\x00-\xFF]/g, '')
 }
 
-// --- Carregamento da Capa com Correção de Fonte Invisível ---
+// --- Carregamento da Capa com Coordenadas Visuais (Base Limpa) ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
     params: { 
@@ -43,41 +43,37 @@ async function _loadCertificationCover(
 
     try {
         const capaBytes = await fs.readFile(capaPath)
-        // 1. Carregamos o PDF Base
         const templatePdf = await PDFDocument.load(capaBytes)
         
-        // 2. CORREÇÃO CRÍTICA: Embutimos a fonte DIRETAMENTE no template antes de copiar
-        const boldFont = await templatePdf.embedFont(StandardFonts.HelveticaBold)
+        // 1. Copiamos a página limpa (Do Canva) para o documento alvo
+        const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
+        
+        // 2. Carregamos a fonte DIRETAMENTE no documento final (Garante que o texto não suma)
+        const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
         const fontSize = 11;
         const fontColor = rgb(0, 0, 0);
 
-        // 3. Pegamos a primeira página do template para escrever
-        const page = templatePdf.getPages()[0]
-
-        // COORDENADAS EXATAS DO SEU DESIGN NO SEJDA:
+        // 3. Carimbamos o texto nas coordenadas exatas que você definiu visualmente
         
         // Document Type
-        page.drawText(docType.toUpperCase(), { 
+        capaPage.drawText(docType.toUpperCase(), { 
             x: 153, y: 660, size: fontSize, font: boldFont, color: fontColor 
         })
         
         // Number of Pages
-        page.drawText(String(translatedPages).padStart(2, '0'), { 
+        capaPage.drawText(String(translatedPages).padStart(2, '0'), { 
             x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor 
         })
         
         // Order Number
-        page.drawText(`${orderId}-USA`, { 
+        capaPage.drawText(`${orderId}-USA`, { 
             x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor 
         })
         
-        // Data Inferior
-        page.drawText(dateStr, { 
+        // Date
+        capaPage.drawText(dateStr, { 
             x: 77, y: 108, size: fontSize, font: boldFont, color: fontColor 
         })
-
-        // 4. AGORA SIM, copiamos a página já com o texto impresso para o documento final
-        const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
 
         return capaPage
     } catch (err) {
@@ -100,7 +96,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const finalPdf = await PDFDocument.create()
         const publicDir = path.join(process.cwd(), 'public')
         
-        // Páginas de Tradução (Papel Timbrado)
+        // Páginas de Tradução
         const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes)
         const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
@@ -115,16 +111,10 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             
             actualTranslationPageCount = 1
             
-            bgPage.drawText(plainText, { 
-                x: 72, 
-                y: 650, 
-                size: 11, 
-                font: fontNormal, 
-                lineHeight: 15 
-            })
+            bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
         }
 
-        // Páginas do Documento Original
+        // Páginas Originais
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             const originalRes = await fetch(doc.originalFileUrl)
             const originalBuf = Buffer.from(await originalRes.arrayBuffer())
@@ -133,14 +123,14 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             copied.forEach(p => finalPdf.addPage(p))
         }
 
-        // Formatação da Data USA (MM/DD/YYYY)
+        // Data USA
         const now = new Date();
         const mm = (now.getMonth() + 1).toString().padStart(2, '0');
         const dd = now.getDate().toString().padStart(2, '0');
         const yyyy = now.getFullYear();
         const dateStr = `${mm}/${dd}/${yyyy}`;
         
-        // Geração e Inserção da Capa (Posição 0)
+        // Geração da Capa
         const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
@@ -152,11 +142,11 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         if (capaPage) finalPdf.insertPage(0, capaPage)
 
-        // Acoplamento das Páginas de Tradução
+        // Montagem
         const transPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
         transPages.forEach((p, i) => finalPdf.insertPage(1 + i, p))
 
-        // Finalização e Upload
+        // Upload
         const pdfBytes = await finalPdf.save()
         const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
