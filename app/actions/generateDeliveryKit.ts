@@ -1,12 +1,12 @@
 'use server'
 
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 
-// --- Utilitários de Texto ---
+// --- Utilitários de Limpeza ---
 function stripHtml(html: string): string {
     return html
         .replace(/<br\s*\/?>/gi, '\n')
@@ -21,7 +21,7 @@ function sanitizeForWinAnsi(text: string): string {
     return text.replace(/[^\x00-\xFF]/g, '')
 }
 
-// --- Ajuste de Designer: Preenchimento da Capa ---
+// --- Carregamento e Preenchimento da Capa via Formulário ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
     params: { 
@@ -35,7 +35,6 @@ async function _loadCertificationCover(
     const { docType, orderId, translatedPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
     
-    // Seleção automática da capa baseada no idioma
     const fileName = sourceLanguage === 'ES' 
         ? 'capa certificacao es-en.pdf' 
         : 'capa certificacao pt-en.pdf'
@@ -44,41 +43,34 @@ async function _loadCertificationCover(
 
     try {
         const capaBytes = await fs.readFile(capaPath)
-        const capaPdf = await PDFDocument.load(capaBytes)
-        const [capaPage] = await targetDoc.copyPages(capaPdf, [0])
+        const templatePdf = await PDFDocument.load(capaBytes)
         
-        const font = await targetDoc.embedFont(StandardFonts.Helvetica)
-        const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
-        
-        // --- AJUSTES DE COORDENADAS (PRECISÃO DE DESIGN) ---
-        // Alinhamento horizontal dos valores à direita dos labels
-        const valueX = 225; 
-        // Baixamos o startY para 585 para alinhar com o grid do template
-        const startY = 585; 
-        const spacing = 26; 
-        const fontSize = 10;
+        const form = templatePdf.getForm()
 
-        // 1. Document Type (Linha 1)
-        capaPage.drawText(docType.toUpperCase(), { x: valueX, y: startY, size: fontSize, font: boldFont })
-        
-        // OBS: Linhas 2 (Source) e 3 (Target) são fixas no template. Não imprimimos nada nelas.
+        // Mapeamento dos campos aleatórios gerados no seu PDF PT-EN
+        try { form.getTextField('text_1gtaq').setText(docType.toUpperCase()) } catch(e) {}
+        try { form.getTextField('text_2mln').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
+        try { form.getTextField('text_3mtey').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
+        try { form.getTextField('text_4r').setText(dateStr) } catch(e) {}
 
-        // 4. Number of Pages (Linha 4 - offset de 3 espaços)
-        // Conta apenas as páginas traduzidas (actualTranslationPageCount)
-        const pageCountStr = String(translatedPages).padStart(2, '0')
-        capaPage.drawText(pageCountStr, { x: valueX, y: startY - (spacing * 3), size: fontSize, font })
+        // Mapeamento dos campos aleatórios gerados no seu PDF ES-EN
+        try { form.getTextField('text_1pkmn').setText(docType.toUpperCase()) } catch(e) {}
+        try { form.getTextField('text_2lqrz').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
+        try { form.getTextField('text_3hmws').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
+        try { form.getTextField('text_4ownm').setText(dateStr) } catch(e) {}
 
-        // 5. Order Number (Linha 5)
-        const orderDisplay = `Order #${orderId + 1000}-USA`
-        capaPage.drawText(orderDisplay, { x: valueX, y: startY - (spacing * 4), size: fontSize, font: boldFont })
+        // Mapeamento ideal (caso refaça os PDFs no futuro com os nomes padronizados)
+        try { form.getTextField('field_doc_type').setText(docType.toUpperCase()) } catch(e) {}
+        try { form.getTextField('field_num_pages').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
+        try { form.getTextField('field_order_id').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
+        try { form.getTextField('field_date').setText(dateStr) } catch(e) {}
 
-        // --- DATA NO RODAPÉ (Padrão USA: MM/DD/YYYY) ---
-        // Coordenada Y baixada para alinhar com o campo "Dated:"
-        capaPage.drawText(dateStr, { x: 75, y: 142, size: 10, font: boldFont })
+        form.flatten()
 
+        const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
         return capaPage
     } catch (err) {
-        console.error(`[DeliveryKit] Erro ao carregar capa ${fileName}:`, err)
+        console.error(`[DeliveryKit] Erro ao carregar capa preenchível ${fileName}:`, err)
         return null
     }
 }
@@ -110,7 +102,6 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
             translationPdf.addPage(bgPage)
             
-            // Incrementa contagem de páginas traduzidas
             actualTranslationPageCount = 1
             
             bgPage.drawText(plainText, { 
