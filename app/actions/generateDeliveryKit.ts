@@ -155,7 +155,12 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
         const pathPrefix = isPreview ? 'orders/previews/' : 'orders/completed/'
         
-        await supabase.storage.from('documents').upload(pathPrefix + safeName, pdfBytes, { contentType: 'application/pdf' })
+        const pdfBuffer = Buffer.from(pdfBytes)
+        await supabase.storage.from('documents').upload(pathPrefix + safeName, pdfBuffer, { 
+            contentType: 'application/pdf',
+            duplex: 'half'
+        } as any)
+        
         const { data: urlData } = supabase.storage.from('documents').getPublicUrl(pathPrefix + safeName)
 
         if (!isPreview) {
