@@ -1,6 +1,8 @@
 import { FileText, Copy, Link as LinkIcon } from 'lucide-react'
 import { KanbanOrder } from './types'
 import { useUIFeedback } from '../../../components/UIFeedbackProvider'
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 
 type Props = {
     order: KanbanOrder
@@ -10,6 +12,19 @@ type Props = {
 export default function OrderCard({ order, onClick }: Props) {
     const metadataStr = typeof order.metadata === 'string' ? order.metadata : JSON.stringify(order.metadata || {});
     const { toast } = useUIFeedback();
+
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+        id: order.id,
+        data: {
+            type: 'Order',
+            order,
+        }
+    });
+
+    const style = {
+        transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.5 : undefined,
+    };
 
     const hasNotary = metadataStr.includes('"notarize":true') ||
         metadataStr.includes('"notarized":true') ||
@@ -24,8 +39,12 @@ export default function OrderCard({ order, onClick }: Props) {
 
     return (
         <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
             onClick={() => onClick(order)}
-            className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group flex flex-col h-full"
+            className={`bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 cursor-grab active:cursor-grabbing transition-all group flex flex-col h-full ${isDragging ? 'ring-2 ring-[#f58220]' : ''}`}
         >
             <div className="flex justify-between items-start mb-2">
                 <span className="text-xs text-gray-400 font-mono">#{order.id?.toString().padStart(6, '0') || '000000'}</span>
