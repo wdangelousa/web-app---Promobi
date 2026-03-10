@@ -112,6 +112,9 @@ export default function Workbench({ order }: { order: Order }) {
     const [isUploadingExternal, setIsUploadingExternal] = useState(false)
     const [isReplacing, setIsReplacing] = useState(false)
 
+    // NOVO ESTADO: Armazena o idioma selecionado no topo para o PDF externo
+    const [externalLang, setExternalLang] = useState('PT_BR')
+
     // States do Modal de Envio
     const [showDeliveryModal, setShowDeliveryModal] = useState(false)
     const [sendToClient, setSendToClient] = useState(true)
@@ -334,7 +337,7 @@ export default function Workbench({ order }: { order: Order }) {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
-            formData.append('lang', lang)
+            if (lang) formData.append('language', lang)
             const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
             const res = await uploadExternalTranslation(formData)
             if (res.success) {
@@ -350,7 +353,7 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    // --- FUNÇÕES DE UPLOAD DE PDF EXTERNO ---
+    // --- FUNÇÕES DE UPLOAD DE PDF EXTERNO PELO BOTÃO SUPERIOR ---
     const handleExternalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file || !selectedDoc) return
@@ -359,6 +362,8 @@ export default function Workbench({ order }: { order: Order }) {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
+            formData.append('language', externalLang) // Adiciona o idioma selecionado no topo
+
             const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
             const res = await uploadExternalTranslation(formData)
             if (res.success) {
@@ -372,6 +377,8 @@ export default function Workbench({ order }: { order: Order }) {
             alert('Erro inesperado: ' + err.message)
         } finally {
             setIsUploadingExternal(false)
+            // Reseta o input para permitir enviar o mesmo arquivo novamente se necessário
+            if (e.target) e.target.value = ''
         }
     }
 
@@ -679,10 +686,23 @@ export default function Workbench({ order }: { order: Order }) {
                             {isReplacing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Trocar Original
                         </button>
 
-                        <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
-                            {isUploadingExternal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />} PDF Externo
-                        </button>
+                        {/* MENU DE SELEÇÃO DE IDIOMA E UPLOAD PDF EXTERNO */}
+                        <div className="flex items-center gap-1">
+                            <select
+                                value={externalLang}
+                                onChange={(e) => setExternalLang(e.target.value)}
+                                disabled={isUploadingExternal}
+                                className="text-[11px] font-bold border border-gray-300 rounded-l px-2 py-1.5 bg-white text-gray-700 outline-none hover:border-gray-400 cursor-pointer"
+                            >
+                                <option value="PT_BR">PT ➔ EN</option>
+                                <option value="ES">ES ➔ EN</option>
+                            </select>
+
+                            <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
+                            <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 border border-gray-200 border-l-0 rounded-r text-gray-700 px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors">
+                                {isUploadingExternal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />} PDF Externo
+                            </button>
+                        </div>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
 
