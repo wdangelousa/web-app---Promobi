@@ -5,6 +5,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
+import { SourceLanguage } from '@prisma/client'
 
 // --- Utilitários de Limpeza ---
 function stripHtml(html: string): string {
@@ -24,27 +25,27 @@ function sanitizeForWinAnsi(text: string): string {
 // --- Carregamento da Capa com Coordenadas Visuais (Base Limpa) ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
-    params: { 
-        docType: string; 
-        orderId: number; 
-        translatedPages: number; 
-        dateStr: string; 
-        sourceLanguage?: string | null 
+    params: {
+        docType: string;
+        orderId: number;
+        translatedPages: number;
+        dateStr: string;
+        sourceLanguage?: string | null
     }
 ) {
     const { docType, orderId, translatedPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
-    
-    const fileName = sourceLanguage === 'ES' 
-        ? 'capa certificacao es-en.pdf' 
+
+    const fileName = sourceLanguage === 'ES'
+        ? 'capa certificacao es-en.pdf'
         : 'capa certificacao pt-en.pdf'
-    
+
     const capaPath = path.join(publicDir, fileName)
 
     try {
         const capaBytes = await fs.readFile(capaPath)
         const templatePdf = await PDFDocument.load(capaBytes)
-        
+
         // 1. Carregamos a fonte DIRETAMENTE no documento original antes de copiar (evita texto invisível)
         const boldFont = await templatePdf.embedFont(StandardFonts.HelveticaBold)
         const fontSize = 11;
@@ -52,27 +53,27 @@ async function _loadCertificationCover(
 
         // 2. Pegamos a página original do Canva para carimbar o texto
         const page = templatePdf.getPages()[0]
-        
+
         // 3. Carimbamos o texto nas coordenadas exatas sobre os espaços agora em branco
-        
+
         // Document Type
-        page.drawText(docType.toUpperCase(), { 
-            x: 153, y: 660, size: fontSize, font: boldFont, color: fontColor 
+        page.drawText(docType.toUpperCase(), {
+            x: 153, y: 660, size: fontSize, font: boldFont, color: fontColor
         })
-        
+
         // Number of Pages
-        page.drawText(String(translatedPages).padStart(2, '0'), { 
-            x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor 
+        page.drawText(String(translatedPages).padStart(2, '0'), {
+            x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor
         })
-        
+
         // Order Number
-        page.drawText(`${orderId}-USA`, { 
-            x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor 
+        page.drawText(`${orderId}-USA`, {
+            x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor
         })
-        
+
         // Date
-        page.drawText(dateStr, { 
-            x: 77, y: 108, size: fontSize, font: boldFont, color: fontColor 
+        page.drawText(dateStr, {
+            x: 77, y: 108, size: fontSize, font: boldFont, color: fontColor
         })
 
         // 4. Copiamos a página já carimbada para o documento alvo
@@ -86,7 +87,7 @@ async function _loadCertificationCover(
 }
 
 // --- Ação Principal de Geração ---
-export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
+export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean; coverLanguage?: string }) {
     const isPreview = options?.preview ?? false
     try {
         const doc = await prisma.document.findUnique({
@@ -96,9 +97,18 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         if (!doc) throw new Error('Documento não encontrado.')
 
+        // SALVA A ESCOLHA DO IDIOMA DA CAPA NO BANCO DE DADOS
+        if (options?.coverLanguage) {
+            await prisma.document.update({
+                where: { id: documentId },
+                data: { sourceLanguage: options.coverLanguage as SourceLanguage }
+            });
+            doc.sourceLanguage = options.coverLanguage as SourceLanguage;
+        }
+
         const finalPdf = await PDFDocument.create()
         const publicDir = path.join(process.cwd(), 'public')
-        
+
         // Páginas de Tradução
         const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes)
@@ -109,53 +119,12 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         if (doc.translatedText) {
             const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
-            
-            const fontSize = 11
-            const lineHeight = 15
-            const maxWidth = 468 // A4 roughly Width 595 - 72 - 55 = 468, US Letter 612 - 72 - 72 = 468
-            const linesPerPage = 38
-            
-            const rawParagraphs = plainText.split('\n')
-            const wrappedLines: string[] = []
-            for (const para of rawParagraphs) {
-                if (para.trim() === '') {
-                    wrappedLines.push('')
-                    continue
-                }
-                const words = para.split(' ')
-                let currentLine = ''
-                for (const word of words) {
-                    const testLine = currentLine ? currentLine + ' ' + word : word
-                    const width = fontNormal.widthOfTextAtSize(testLine, fontSize)
-                    if (width > maxWidth && currentLine) {
-                        wrappedLines.push(currentLine)
-                        currentLine = word
-                    } else {
-                        currentLine = testLine
-                    }
-                }
-                if (currentLine) {
-                    wrappedLines.push(currentLine)
-                }
-            }
-            
-            const requiredPagesByText = Math.max(1, Math.ceil(wrappedLines.length / linesPerPage))
-            const totalPagesToCreate = requiredPagesByText;
-            const dynamicLinesPerPage = Math.ceil(wrappedLines.length / totalPagesToCreate)
+            const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
+            translationPdf.addPage(bgPage)
 
-            
-            for (let i = 0; i < totalPagesToCreate; i++) {
-                const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
-                translationPdf.addPage(bgPage)
-                
-                const pageLines = wrappedLines.slice(i * dynamicLinesPerPage, (i + 1) * dynamicLinesPerPage)
-                if (pageLines.length > 0) {
-                    const pageText = pageLines.join('\n')
-                    bgPage.drawText(pageText, { x: 72, y: 650, size: fontSize, font: fontNormal, lineHeight })
-                }
-            }
-            
-            actualTranslationPageCount = totalPagesToCreate
+            actualTranslationPageCount = 1
+
+            bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
         }
 
         // Páginas Originais
@@ -173,15 +142,16 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const dd = now.getDate().toString().padStart(2, '0');
         const yyyy = now.getFullYear();
         const dateStr = `${mm}/${dd}/${yyyy}`;
-        
+
         // Geração da Capa
         const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
             orderId,
-            translatedPages: actualTranslationPageCount, // using the calculated page count for the final merged PDF
+            translatedPages: actualTranslationPageCount,
             dateStr,
-            sourceLanguage: doc.sourceLanguage || doc.order.sourceLanguage
+            // A capa vai priorizar o que a tradutora escolher no modal de Preview
+            sourceLanguage: options?.coverLanguage || doc.sourceLanguage || doc.order.sourceLanguage
         })
 
         if (capaPage) finalPdf.insertPage(0, capaPage)
@@ -195,13 +165,13 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
         const pathPrefix = isPreview ? 'orders/previews/' : 'orders/completed/'
-        
+
         const pdfBuffer = Buffer.from(pdfBytes)
-        await supabase.storage.from('documents').upload(pathPrefix + safeName, pdfBuffer, { 
+        await supabase.storage.from('documents').upload(pathPrefix + safeName, pdfBuffer, {
             contentType: 'application/pdf',
             duplex: 'half'
         } as any)
-        
+
         const { data: urlData } = supabase.storage.from('documents').getPublicUrl(pathPrefix + safeName)
 
         if (!isPreview) {

@@ -188,7 +188,6 @@ export default function Workbench({ order }: { order: Order }) {
 
     const allSelected = selectedDocsForDelivery.length === order.documents.length
     const someSelected = selectedDocsForDelivery.length > 0
-    // const { toast, dialog } = useUIFeedback()
 
     const handleSave = async (translatedPageCount?: number) => {
         if (!selectedDoc) return
@@ -433,8 +432,8 @@ export default function Workbench({ order }: { order: Order }) {
             const errors: string[] = []
 
             for (const docId of selectedDocsForDelivery) {
-                // Aqui não passamos capa, pois ela já foi salva no banco durante o Preview
-                const result = await generateDeliveryKit(order.id, docId)
+                // CORREÇÃO: Passamos `{}` para evitar o erro de tipagem
+                const result = await generateDeliveryKit(order.id, docId, {})
                 if (result.success) {
                     generatedCount++
                 } else {
