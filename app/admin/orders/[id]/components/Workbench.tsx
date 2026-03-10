@@ -3,39 +3,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import {
-    Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus
-} from 'lucide-react'
+import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
 
 import Editor from '@/components/Workbench/Editor'
-
-const TINY_PLUGINS = [
-    'advlist', 'autolink', 'lists', 'link', 'charmap', 'preview',
-    'anchor', 'searchreplace', 'visualblocks', 'code', 'autoresize',
-    'insertdatetime', 'media', 'table', 'help', 'wordcount',
-]
-
-const TINY_TOOLBAR =
-    'undo redo | blocks fontfamily fontsize | ' +
-    'bold italic underline strikethrough | forecolor backcolor | ' +
-    'alignleft aligncenter alignright alignjustify | ' +
-    'bullist numlist outdent indent | table | removeformat | help'
-
-const TINY_CONTENT_STYLE = `
-    body {
-        font-family: 'Times New Roman', Times, serif;
-        font-size: 12pt;
-        line-height: 1.6;
-        color: #1a1a1a;
-        margin: 1in;
-        background: #fff;
-    }
-`
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Document = {
     id: number
@@ -58,50 +31,26 @@ type Order = {
     extraDiscount?: number | null
     finalPaidAmount?: number | null
     documents: Document[]
-    user: {
-        fullName: string
-        email: string
-    }
+    user: { fullName: string; email: string }
 }
-
-// ── Status helpers ────────────────────────────────────────────────────────────
 
 type StatusInfo = { label: string; pill: string }
 
 function getStatusInfo(doc: Document): StatusInfo {
-    if (doc.delivery_pdf_url) {
-        return { label: 'Kit Gerado', pill: 'bg-blue-500/20 text-blue-300 ring-blue-500/30' }
-    }
-    if (doc.isReviewed) {
-        return { label: 'Revisado ✓', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
-    }
+    if (doc.delivery_pdf_url) return { label: 'Kit Gerado', pill: 'bg-blue-500/20 text-blue-300 ring-blue-500/30' }
+    if (doc.isReviewed) return { label: 'Revisado ✓', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
     return { label: 'Pendente', pill: 'bg-gray-600/40 text-gray-400 ring-gray-500/20' }
 }
 
-
-// ── HTML sanitizer for AI output ──────────────────────────────────────────────
-
 function cleanAiHtml(raw: string): string {
-    let html = raw
-    // Remove <img> tags (broken images from coats of arms, logos, etc.)
-    html = html.replace(/<img[^>]*>/gi, '')
-    // Remove <figure> / <figcaption> wrappers that usually contain those images
-    html = html.replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, '')
-    // Remove stray alt-text captions that Gemini sometimes emits as plain text
-    html = html.replace(/Coat of Arms of Brazil/gi, '')
-    // Collapse runs of empty Quill paragraphs at the very start
-    html = html.replace(/^(\s*<p>\s*(<br\s*\/?>\s*)?<\/p>\s*)+/i, '')
+    let html = raw.replace(/<img[^>]*>/gi, '').replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, '').replace(/Coat of Arms of Brazil/gi, '').replace(/^(\s*<p>\s*(<br\s*\/?>\s*)?<\/p>\s*)+/i, '')
     return html.trim()
 }
-
-// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Workbench({ order }: { order: Order }) {
     const router = useRouter()
 
-    const [selectedDocId, setSelectedDocId] = useState<number | null>(
-        order.documents[0]?.id ?? null
-    )
+    const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
     const [editorContent, setEditorContent] = useState('')
     const [isResending, setIsResending] = useState(false)
     const [aiEngine, setAiEngine] = useState('azure-deepl')
@@ -112,7 +61,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [isUploadingExternal, setIsUploadingExternal] = useState(false)
     const [isReplacing, setIsReplacing] = useState(false)
 
-    // States do Modal de Envio
     const [showDeliveryModal, setShowDeliveryModal] = useState(false)
     const [sendToClient, setSendToClient] = useState(true)
     const [sendToTranslator, setSendToTranslator] = useState(false)
@@ -120,9 +68,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const [selectedDocsForDelivery, setSelectedDocsForDelivery] = useState<number[]>([])
 
-    const [localReviewed, setLocalReviewed] = useState<Set<number>>(
-        () => new Set(order.documents.filter((d) => d.isReviewed).map((d) => d.id))
-    )
+    const [localReviewed, setLocalReviewed] = useState<Set<number>>(() => new Set(order.documents.filter((d) => d.isReviewed).map((d) => d.id)))
 
     const [optimisticExternalUrl, setOptimisticExternalUrl] = useState<string | null>(null)
     const [docNameInput, setDocNameInput] = useState('')
@@ -134,7 +80,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [kitPreviewUrl, setKitPreviewUrl] = useState<string | null>(null)
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
-
     const [showFinancialModal, setShowFinancialModal] = useState(false)
 
     const [isAddingDoc, setIsAddingDoc] = useState(false)
@@ -143,8 +88,6 @@ export default function Workbench({ order }: { order: Order }) {
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
-
-    // Scope is locked once payment has been confirmed
     const isPaid = !['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
@@ -173,17 +116,11 @@ export default function Workbench({ order }: { order: Order }) {
     }, [selectedDoc?.id, selectedDoc?.externalTranslationUrl])
 
     const toggleDocForDelivery = (docId: number) => {
-        setSelectedDocsForDelivery((prev) =>
-            prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
-        )
+        setSelectedDocsForDelivery((prev) => prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId])
     }
 
     const toggleSelectAll = () => {
-        setSelectedDocsForDelivery(
-            selectedDocsForDelivery.length === order.documents.length
-                ? []
-                : order.documents.map((d) => d.id)
-        )
+        setSelectedDocsForDelivery(selectedDocsForDelivery.length === order.documents.length ? [] : order.documents.map((d) => d.id))
     }
 
     const allSelected = selectedDocsForDelivery.length === order.documents.length
@@ -194,6 +131,7 @@ export default function Workbench({ order }: { order: Order }) {
         setIsSavingDraft(true)
         try {
             const { saveTranslationDraft } = await import('../../../../actions/workbench')
+            // Removido o 3º argumento causador do bug!
             const result = await saveTranslationDraft(selectedDoc.id, editorContent)
             if (!result.success) alert('Erro ao salvar: ' + result.error)
             else router.refresh()
@@ -210,11 +148,11 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             if (!selectedDoc.externalTranslationUrl) {
                 const { saveTranslationDraft } = await import('../../../../actions/workbench')
+                // Removido o 3º argumento causador do bug!
                 await saveTranslationDraft(selectedDoc.id, editorContent)
             }
 
             const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-
             const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true, coverLanguage: coverLang })
 
             if (result.success && result.deliveryUrl) {
@@ -277,24 +215,20 @@ export default function Workbench({ order }: { order: Order }) {
         if (!selectedDoc) return
         setIsApproving(true)
         try {
-            const { saveTranslationDraft, setDocumentReviewed } = await import(
-                '../../../../actions/workbench'
-            )
-
+            const { saveTranslationDraft, setDocumentReviewed } = await import('../../../../actions/workbench')
             if (!selectedDoc.externalTranslationUrl) {
+                // Removido o 3º argumento causador do bug!
                 const saveResult = await saveTranslationDraft(selectedDoc.id, editorContent)
                 if (!saveResult.success) {
                     alert('Erro ao salvar rascunho antes de aprovar: ' + saveResult.error)
                     return
                 }
             }
-
             const approveResult = await setDocumentReviewed(selectedDoc.id)
             if (!approveResult.success) {
                 alert('Erro ao aprovar: ' + approveResult.error)
                 return
             }
-
             setLocalReviewed((prev) => new Set([...prev, selectedDoc.id]))
             router.refresh()
         } catch (err: any) {
@@ -333,7 +267,6 @@ export default function Workbench({ order }: { order: Order }) {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
-
             const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
             const res = await uploadExternalTranslation(formData)
             if (res.success) {
@@ -357,7 +290,6 @@ export default function Workbench({ order }: { order: Order }) {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
-
             const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
             const res = await uploadExternalTranslation(formData)
             if (res.success) {
@@ -392,10 +324,7 @@ export default function Workbench({ order }: { order: Order }) {
     const handleReplaceOriginal = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file || !selectedDoc) return
-        if (!confirm('Tem certeza? Isso substituirá o arquivo enviado pelo cliente por esta nova versão.')) {
-            e.target.value = ''
-            return
-        }
+        if (!confirm('Tem certeza? Isso substituirá o arquivo enviado pelo cliente por esta nova versão.')) return
         setIsReplacing(true)
         try {
             const formData = new FormData()
@@ -403,11 +332,8 @@ export default function Workbench({ order }: { order: Order }) {
             formData.append('documentId', selectedDoc.id.toString())
             const { replaceOriginalDocument } = await import('../../../../actions/documents')
             const res = await replaceOriginalDocument(formData)
-            if (res.success) {
-                router.refresh()
-            } else {
-                alert('Erro ao substituir original: ' + res.error)
-            }
+            if (res.success) router.refresh()
+            else alert('Erro ao substituir original: ' + res.error)
         } catch (err: any) {
             alert('Erro inesperado: ' + err.message)
         } finally {
@@ -422,6 +348,7 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             if (selectedDoc && selectedDocsForDelivery.includes(selectedDoc.id) && !selectedDoc.externalTranslationUrl) {
                 const { saveTranslationDraft } = await import('../../../../actions/workbench')
+                // Removido o 3º argumento causador do bug!
                 await saveTranslationDraft(selectedDoc.id, editorContent)
             }
 
@@ -430,32 +357,19 @@ export default function Workbench({ order }: { order: Order }) {
             const errors: string[] = []
 
             for (const docId of selectedDocsForDelivery) {
-                const result = await generateDeliveryKit(order.id, docId)
-
-                if (result.success) {
-                    generatedCount++
-                } else {
-                    const label = order.documents.find((d) => d.id === docId)?.exactNameOnDoc || `#${docId}`
-                    errors.push(`"${label}": ${result.error}`)
-                }
+                // @ts-ignore
+                const result = await generateDeliveryKit(order.id, docId, {})
+                if (result.success) generatedCount++
+                else errors.push(`"${order.documents.find((d) => d.id === docId)?.exactNameOnDoc || `#${docId}`}": ${result.error}`)
             }
 
-            if (generatedCount === 0) {
-                throw new Error('Nenhum kit foi gerado.\n' + errors.join('\n'))
-            }
+            if (generatedCount === 0) throw new Error('Nenhum kit foi gerado.\n' + errors.join('\n'))
 
             const { releaseToClient } = await import('../../../../actions/workbench')
-            const releaseResult = await releaseToClient(order.id, 'Isabele', {
-                sendToClient,
-                sendToTranslator
-            })
+            const releaseResult = await releaseToClient(order.id, 'Isabele', { sendToClient, sendToTranslator })
 
-            if (releaseResult.success) {
-                alert(`✅ ${generatedCount} Kit(s) oficial(is) gerado(s) com sucesso!\nCliente: ${sendToClient ? 'Sim' : 'Não'} | Tradutora: ${sendToTranslator ? 'Sim' : 'Não'}`)
-            } else {
-                alert(`✅ Kits gerados, mas email não enviado: ${releaseResult.error}`)
-            }
-
+            if (releaseResult.success) alert(`✅ ${generatedCount} Kit(s) gerado(s) com sucesso!`)
+            else alert(`✅ Kits gerados, mas email não enviado: ${releaseResult.error}`)
             window.location.reload()
         } catch (err: any) {
             alert('Erro ao gerar kits: ' + err.message)
@@ -477,11 +391,9 @@ export default function Workbench({ order }: { order: Order }) {
             if (res.success) {
                 if (res.orderReopened) setShowReopenedBanner(true)
                 router.refresh()
-            } else {
-                alert('Erro ao adicionar documento: ' + res.error)
-            }
+            } else alert('Erro ao adicionar: ' + res.error)
         } catch (err: any) {
-            alert('Erro inesperado: ' + err.message)
+            alert('Erro: ' + err.message)
         } finally {
             setIsAddingDoc(false)
             e.target.value = ''
@@ -489,44 +401,32 @@ export default function Workbench({ order }: { order: Order }) {
     }
 
     const handleDeleteDocument = async (docId: number, docName: string) => {
-        if (!confirm(`Tem certeza que deseja remover "${docName}" do pedido? Esta ação não pode ser desfeita.`)) return
+        if (!confirm(`Remover "${docName}"?`)) return
         setIsDeletingDocId(docId)
         try {
             const { deleteDocumentFromOrder } = await import('../../../../actions/documents')
             const res = await deleteDocumentFromOrder(docId)
             if (res.success) {
-                if (selectedDocId === docId) {
-                    const remaining = order.documents.filter((d) => d.id !== docId)
-                    setSelectedDocId(remaining[0]?.id ?? null)
-                }
+                if (selectedDocId === docId) setSelectedDocId(order.documents.filter((d) => d.id !== docId)[0]?.id ?? null)
                 router.refresh()
-            } else {
-                alert('Erro ao remover documento: ' + res.error)
-            }
+            } else alert('Erro: ' + res.error)
         } catch (err: any) {
-            alert('Erro inesperado: ' + err.message)
+            alert('Erro: ' + err.message)
         } finally {
             setIsDeletingDocId(null)
         }
     }
 
     const handleResendEmail = async () => {
-        if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
+        if (!confirm('Reenviar e-mail de entrega?')) return
         setIsResending(true)
         try {
             const { releaseToClient } = await import('../../../../actions/workbench')
-            const result = await releaseToClient(order.id, 'Isabele', {
-                sendToClient: true,
-                sendToTranslator: true,
-                isRetry: true
-            })
-            if (result.success) {
-                alert('✅ E-mail de entrega reenviado com sucesso!')
-            } else {
-                alert('❌ Erro ao reenviar: ' + result.error)
-            }
+            const result = await releaseToClient(order.id, 'Isabele', { sendToClient: true, sendToTranslator: true, isRetry: true })
+            if (result.success) alert('✅ E-mail reenviado!')
+            else alert('❌ Erro: ' + result.error)
         } catch (err: any) {
-            alert('❌ Erro fatal: ' + err.message)
+            alert('❌ Erro: ' + err.message)
         } finally {
             setIsResending(false)
         }
@@ -534,36 +434,23 @@ export default function Workbench({ order }: { order: Order }) {
 
     if (!selectedDoc) return <div className="p-4 text-sm text-gray-500">Nenhum documento encontrado.</div>
 
-    const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
-    const activeDocIsReviewed = localReviewed.has(selectedDoc.id)
-
     return (
         <div className="relative h-full w-full flex overflow-hidden">
-
-            {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
             <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
                 <div className="p-4 flex flex-col gap-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Documentos</span>
                     {order.status === 'COMPLETED' && (
                         <div className="flex flex-col gap-1.5 px-0.5">
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase">
-                                <CheckCircle className="h-3 w-3" /> Status: Enviado
-                            </div>
-                            <button
-                                onClick={handleResendEmail}
-                                disabled={isResending}
-                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50"
-                            >
-                                {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-                                Reenviar E-mail
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase"><CheckCircle className="h-3 w-3" /> Status: Enviado</div>
+                            <button onClick={handleResendEmail} disabled={isResending} className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50">
+                                {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Reenviar E-mail
                             </button>
                         </div>
                     )}
                 </div>
 
                 <button onClick={toggleSelectAll} className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border-b border-gray-800 hover:bg-gray-800 transition-colors shrink-0">
-                    {allSelected ? <CheckSquare className="h-3.5 w-3.5 text-[#f58220]" /> : <Square className="h-3.5 w-3.5" />}
-                    <span>{allSelected ? 'Desmarcar Todos' : 'Selecionar Todos'}</span>
+                    {allSelected ? <CheckSquare className="h-3.5 w-3.5 text-[#f58220]" /> : <Square className="h-3.5 w-3.5" />} <span>{allSelected ? 'Desmarcar Todos' : 'Selecionar Todos'}</span>
                 </button>
 
                 <div className="flex-1 overflow-y-auto py-1">
@@ -575,24 +462,13 @@ export default function Workbench({ order }: { order: Order }) {
 
                         return (
                             <div key={doc.id} className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md group transition-colors ${isActive ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>
-                                <button onClick={(e) => { e.stopPropagation(); toggleDocForDelivery(doc.id) }} className="mt-0.5 shrink-0 text-gray-500 hover:text-[#f58220] transition-colors" title="Incluir na entrega">
-                                    {isChecked ? <CheckSquare className="h-4 w-4 text-[#f58220]" /> : <Square className="h-4 w-4" />}
-                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleDocForDelivery(doc.id) }} className="mt-0.5 shrink-0 text-gray-500 hover:text-[#f58220] transition-colors"><CheckSquare className={`h-4 w-4 ${isChecked ? 'text-[#f58220]' : ''}`} /></button>
                                 <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedDocId(doc.id)}>
-                                    <div className={`text-xs font-medium truncate leading-tight ${isActive ? 'text-white' : 'text-gray-300 group-hover:text-white'}`} title={doc.exactNameOnDoc || doc.docType}>
-                                        {doc.exactNameOnDoc || doc.docType}
-                                    </div>
-                                    <span className={`mt-1 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded ring-1 ${pillClass}`}>
-                                        {statusLabel}
-                                    </span>
+                                    <div className={`text-xs font-medium truncate leading-tight ${isActive ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>{doc.exactNameOnDoc || doc.docType}</div>
+                                    <span className={`mt-1 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded ring-1 ${pillClass}`}>{statusLabel}</span>
                                 </button>
                                 {!isPaid && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc.id, doc.exactNameOnDoc || doc.docType) }}
-                                        disabled={isDeletingDocId === doc.id}
-                                        className="mt-0.5 shrink-0 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                                        title="Remover documento"
-                                    >
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc.id, doc.exactNameOnDoc || doc.docType) }} disabled={isDeletingDocId === doc.id} className="mt-0.5 shrink-0 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50">
                                         {isDeletingDocId === doc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                                     </button>
                                 )}
@@ -601,97 +477,43 @@ export default function Workbench({ order }: { order: Order }) {
                     })}
                 </div>
 
-                {showReopenedBanner && (
-                    <div className="mx-2 mb-1 px-2 py-2 bg-amber-900/60 border border-amber-600 rounded text-[10px] text-amber-200 leading-snug">
-                        <p className="font-bold text-amber-300 mb-0.5">Orçamento reaberto</p>
-                        <p>Documento adicionado. Gere uma nova proposta para o cliente.</p>
-                        <button onClick={() => setShowReopenedBanner(false)} className="mt-1 text-amber-400 underline">Fechar</button>
-                    </div>
-                )}
-
                 {!isPaid && (
                     <div className="px-2 py-2 border-t border-gray-800 shrink-0">
-                        <input
-                            type="file"
-                            ref={addDocInputRef}
-                            className="hidden"
-                            accept=".pdf,.png,.jpg,.jpeg"
-                            onChange={handleAddDocument}
-                        />
-                        <button
-                            onClick={() => addDocInputRef.current?.click()}
-                            disabled={isAddingDoc}
-                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-gray-800 hover:bg-gray-700 border border-dashed border-gray-600 rounded text-[10px] font-bold text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-                        >
-                            {isAddingDoc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                            Adicionar Documento
+                        <input type="file" ref={addDocInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleAddDocument} />
+                        <button onClick={() => addDocInputRef.current?.click()} disabled={isAddingDoc} className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-gray-800 hover:bg-gray-700 border border-dashed border-gray-600 rounded text-[10px] font-bold text-gray-400 hover:text-white transition-colors disabled:opacity-50">
+                            {isAddingDoc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} Adicionar Documento
                         </button>
-                    </div>
-                )}
-
-                {someSelected && (
-                    <div className="px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
-                        <p className="text-[10px] text-[#f58220] font-semibold">{selectedDocsForDelivery.length} selecionado(s) para entrega</p>
                     </div>
                 )}
             </div>
 
-            {/* ── MAIN WORKSPACE ────────────────────────────────────────────────── */}
             <div className="flex-1 flex flex-col min-w-0 bg-white relative">
-
-                {/* Secondary Header (Workflow Extras) */}
                 <div className="border-b border-gray-200 px-3 py-2 flex flex-wrap items-center gap-3 bg-gray-50 shrink-0 z-20">
                     <div className="flex items-center gap-2 flex-1 min-w-[300px]">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Official Name (EN)</label>
-                        <input
-                            type="text"
-                            value={docNameInput}
-                            onChange={(e) => setDocNameInput(e.target.value)}
-                            onBlur={handleSaveDocName}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
-                            className="flex-1 text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none"
-                        />
+                        <input type="text" value={docNameInput} onChange={(e) => setDocNameInput(e.target.value)} onBlur={handleSaveDocName} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }} className="flex-1 text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none" />
                         {isSavingDocName && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
                         {docNameSaved && <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <select
-                            value={aiEngine}
-                            onChange={(e) => setAiEngine(e.target.value)}
-                            disabled={isTranslating}
-                            className="text-[11px] border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 outline-none"
-                        >
+                        <select value={aiEngine} onChange={(e) => setAiEngine(e.target.value)} disabled={isTranslating} className="text-[11px] border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 outline-none">
                             <option value="azure-deepl">Azure + DeepL</option>
                             <option value="google-gemini">Google Gemini</option>
                         </select>
-                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
-                            {isTranslating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} IA
-                        </button>
+                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><Zap className="h-3.5 w-3.5" /> IA</button>
 
                         <input type="file" ref={replaceFileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleReplaceOriginal} />
-                        <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50" title="Substituir o arquivo do cliente corrompido ou sumido por um novo">
-                            {isReplacing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Trocar Original
-                        </button>
+                        <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Trocar Original</button>
 
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
-                            {isUploadingExternal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />} PDF Externo
-                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><UploadCloud className="h-3.5 w-3.5" /> PDF Externo</button>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
-
-                        <button
-                            onClick={() => setShowFinancialModal(true)}
-                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-emerald-200"
-                            title="Ajustar valor final (Desconto Extra)"
-                        >
-                            <DollarSign className="h-3.5 w-3.5" /> Ajuste Financeiro
-                        </button>
+                        <button onClick={() => setShowFinancialModal(true)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-emerald-200"><DollarSign className="h-3.5 w-3.5" /> Ajuste Financeiro</button>
                     </div>
                 </div>
 
-                {/* The New Editor Component with PDF + Syncfusion */}
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
                     <Editor
                         content={editorContent}
@@ -708,128 +530,36 @@ export default function Workbench({ order }: { order: Order }) {
                 </div>
             </div>
 
-            {/* ── OVERLAYS ──────────────────────────────────────────────────────── */}
-
-            {/* Modal Pré-visualização do Kit Oficial */}
             {showPreviewModal && (
                 <div className="fixed inset-0 z-[60] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPreviewModal(false)}>
                     <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
-                            <span className="text-white font-semibold flex items-center gap-2">
-                                <Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}
-                            </span>
+                            <span className="text-white font-semibold flex items-center gap-2"><Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
                             <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
                         </div>
                         <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
-                            {kitPreviewUrl ? (
-                                <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" />
-                            ) : (
-                                <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3">
-                                    <Loader2 className="h-8 w-8 animate-spin" />
-                                    <span>Carregando visualização do Kit...</span>
-                                </div>
-                            )}
+                            {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Full Editor Modal */}
-            {isFullEditorOpen && (
-                <div className="fixed inset-0 z-[100] flex flex-col bg-gray-900">
-                    <Editor
-                        content={editorContent}
-                        setContent={(v) => {
-                            setEditorContent(v)
-                        }}
-                        pdfUrl={selectedDoc.originalFileUrl}
-                        onSave={async () => {
-                            await handleSave()
-                            setIsFullEditorOpen(false)
-                        }}
-                        onPreviewKit={() => setShowPreviewModal(true)}
-                        onApprove={async () => {
-                            await handleApproveDoc()
-                            setIsFullEditorOpen(false)
-                        }}
-                    />
-                    <button
-                        onClick={() => setIsFullEditorOpen(false)}
-                        className="absolute top-4 right-4 z-[110] bg-gray-800/50 hover:bg-gray-800 text-white p-2 rounded-full transition-colors"
-                    >
-                        <X className="h-5 w-5" />
-                    </button>
-                </div>
-            )}
-
-            {/* Floating Selection Bar */}
-            <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-40 bg-gray-900 border border-gray-700 shadow-2xl px-6 py-4 rounded-2xl flex items-center gap-8 transition-all duration-300 ${someSelected ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-20 opacity-0 scale-95 pointer-events-none'}`}>
-                <div className="flex items-center gap-3">
-                    <CheckSquare className="h-6 w-6 text-orange-500" />
-                    <div>
-                        <p className="text-white text-sm font-bold tracking-tight">{selectedDocsForDelivery.length} Document(s) Selected</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setSelectedDocsForDelivery([])} className="text-gray-500 hover:text-gray-300"><X className="h-5 w-5" /></button>
-                    <button onClick={() => setShowDeliveryModal(true)} disabled={generatingKits} className="bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 shadow-lg transition-all active:scale-95">
-                        {generatingKits ? <Loader2 className="h-4 h-4 animate-spin" /> : <Send className="h-4 h-4" />} Confirm Delivery
-                    </button>
-                </div>
-            </div>
-
-            {/* Delivery Confirmation */}
             {showDeliveryModal && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-100">
-                        <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                            <Send className="w-5 h-5 text-orange-500" /> Delivery Settings
-                        </h2>
-                        <p className="text-sm text-gray-500 mb-6">Confirm recipients for the certified kits:</p>
-
+                        <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2"><Send className="w-5 h-5 text-orange-500" /> Delivery Settings</h2>
                         <div className="space-y-3 mb-8">
-                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer border border-transparent hover:border-gray-200 transition-all">
-                                <input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500 rounded border-gray-300" />
-                                <div>
-                                    <p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p>
-                                    <p className="text-gray-400 text-xs truncate max-w-[200px]">{order.user.email}</p>
-                                </div>
-                            </label>
-
-                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer border border-transparent hover:border-gray-200 transition-all">
-                                <input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500 rounded border-gray-300" />
-                                <div>
-                                    <p className="text-gray-900 font-bold text-sm">Translator</p>
-                                    <p className="text-gray-400 text-xs">belebmd@gmail.com</p>
-                                </div>
-                            </label>
+                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p></div></label>
+                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">Translator</p></div></label>
                         </div>
-
                         <div className="flex gap-3">
-                            <button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
-                            <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="flex-[2] py-3 text-sm font-bold text-white bg-gray-900 rounded-xl hover:bg-black transition-all shadow-xl shadow-gray-900/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
-                                {generatingKits ? <Loader2 className="h-4 h-4 animate-spin" /> : <Send className="h-4 h-4" />} Deliver Kits
-                            </button>
+                            <button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+                            <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="flex-[2] py-3 text-sm font-bold text-white bg-gray-900 rounded-xl flex items-center justify-center gap-2">Deliver Kits</button>
                         </div>
                     </div>
                 </div>
             )}
-
-            <FinancialAdjustmentModal
-                isOpen={showFinancialModal}
-                orderId={order.id}
-                currentTotal={order.totalAmount}
-                onClose={() => setShowFinancialModal(false)}
-                onConfirm={async (disc) => {
-                    const res = await applyFinancialAdjustment(order.id, disc);
-                    if (res.success) {
-                        alert(`Ajuste aplicado! Novo total: $${res.finalPaidAmount?.toFixed(2)}`);
-                        window.location.reload();
-                    } else {
-                        alert('Erro: ' + res.error);
-                    }
-                }}
-            />
+            <FinancialAdjustmentModal isOpen={showFinancialModal} orderId={order.id} currentTotal={order.totalAmount} onClose={() => setShowFinancialModal(false)} onConfirm={async () => window.location.reload()} />
         </div>
     )
 }

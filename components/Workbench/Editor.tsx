@@ -8,7 +8,6 @@ import {
 } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
 
-// ── Estilos nativos do Syncfusion ──────────
 import '@syncfusion/ej2-base/styles/material.css';
 import '@syncfusion/ej2-buttons/styles/material.css';
 import '@syncfusion/ej2-inputs/styles/material.css';
@@ -29,9 +28,9 @@ interface EditorProps {
     pdfUrl?: string;
     translatedPdfUrl?: string | null;
     onSave?: (translatedPageCount?: number) => void;
-    onPreviewKit?: (translatedPageCount?: number, lang?: string) => void; // Atualizado
+    onPreviewKit?: (translatedPageCount?: number, lang?: string) => void;
     onApprove?: () => void;
-    onUploadExternalPdf?: (file: File) => Promise<void>; // Voltou ao normal
+    onUploadExternalPdf?: (file: File) => Promise<void>;
     onRemoveExternalPdf?: () => Promise<void>;
     isPreviewingKit?: boolean;
 }
@@ -40,7 +39,7 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
     const [showReference, setShowReference] = useState(false);
     const [isEditorReady, setIsEditorReady] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const [showLangModal, setShowLangModal] = useState(false); // Novo Modal de Idioma
+    const [showLangModal, setShowLangModal] = useState(false);
 
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +102,7 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
         if (!docEditor) return;
 
         const sfdt = docEditor.serialize();
-        const pages = docEditor.pageCount;
+        const pages = docEditor.pageCount || 1;
         setContent(sfdt);
         lastInjectedContent.current = sfdt;
 
@@ -112,19 +111,17 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
         }
     };
 
-    // Abre o modal de escolha de idioma em vez de gerar direto
     const handlePreviewClick = () => {
         setShowLangModal(true);
     };
 
-    // Confirma a escolha e envia para a Action gerar
     const confirmPreview = (lang: string) => {
         setShowLangModal(false);
         if (translatedPdfUrl) {
             if (onPreviewKit) onPreviewKit(1, lang);
             return;
         }
-        const pages = containerRef.current?.documentEditor?.pageCount;
+        const pages = containerRef.current?.documentEditor?.pageCount || 1;
         if (onPreviewKit) onPreviewKit(pages, lang);
     }
 
@@ -250,7 +247,6 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
                                 // @ts-ignore
                                 created={() => {
                                     setIsEditorReady(true);
-
                                     if (containerRef.current) {
                                         const editor = containerRef.current.documentEditor;
                                         if (editor && editor.selection && editor.selection.sectionFormat) {
@@ -263,29 +259,28 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
                         </div>
                     )}
                 </div>
-
             </div>
 
-            {/* MODAL DE SELEÇÃO DE IDIOMA DA CAPA (PREVIEW) */}
+            {/* MODAL DE SELEÇÃO DE IDIOMA */}
             {showLangModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col items-center text-center transform transition-all">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col items-center text-center">
                         <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
                             <span className="text-xl">📄</span>
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">Capa de Certificação</h3>
-                        <p className="text-sm text-gray-500 mb-6">Qual deve ser o idioma da capa oficial para este documento específico?</p>
+                        <p className="text-sm text-gray-500 mb-6">Qual deve ser o idioma da capa oficial para este documento?</p>
 
                         <div className="flex gap-3 w-full">
                             <button
                                 onClick={() => confirmPreview('PT_BR')}
-                                className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl border border-blue-200 hover:bg-blue-100 hover:shadow-md transition-all active:scale-95"
+                                className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl border border-blue-200 hover:bg-blue-100 transition-all"
                             >
                                 PT ➔ EN
                             </button>
                             <button
                                 onClick={() => confirmPreview('ES')}
-                                className="flex-1 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 hover:shadow-md transition-all active:scale-95"
+                                className="flex-1 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-all"
                             >
                                 ES ➔ EN
                             </button>
