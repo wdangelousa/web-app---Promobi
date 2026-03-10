@@ -47,8 +47,8 @@ export async function createOrder(data: CreateOrderInput) {
 
         // ── 1. Calculate total ────────────────────────────────────────────────
         const settings = await getGlobalSettings();
-        const PRICE_PER_PAGE = settings.basePrice;
-        const NOTARY_FEE_PER_DOC = settings.notaryFee;
+        const PRICE_PER_PAGE = settings.basePrice || 9.00;
+        const NOTARY_FEE_PER_DOC = settings.notaryFee || 25.00;
 
         // Unify with frontend: standard/urgent/flash
         const URGENCY_MULTIPLIER: Record<string, number> = {
@@ -150,8 +150,8 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
         console.log('[updateOrder] Starting for Order #', orderId);
 
         const settings = await getGlobalSettings();
-        const PRICE_PER_PAGE = settings.basePrice;
-        const NOTARY_FEE_PER_DOC = settings.notaryFee;
+        const PRICE_PER_PAGE = settings.basePrice || 9.00;
+        const NOTARY_FEE_PER_DOC = settings.notaryFee || 25.00;
 
         const URGENCY_MULTIPLIER: Record<string, number> = {
             standard: 1.0,

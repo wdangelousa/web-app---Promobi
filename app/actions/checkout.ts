@@ -54,7 +54,7 @@ export async function createCheckoutSession(orderId: number) {
                                 name: `Tradução/Notarização #${order.id}`,
                                 description: 'Serviço de Tradução e Notarização Certificada',
                             },
-                            unit_amount: Math.round(order.totalAmount * 100), // Amount in cents
+                            unit_amount: Math.round((order.totalAmount || 0) * 100), // Amount in cents
                         },
                         quantity: 1,
                     },

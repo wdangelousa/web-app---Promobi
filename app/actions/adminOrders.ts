@@ -51,7 +51,7 @@ export async function applyFinancialAdjustment(orderId: number, extraDiscount: n
             return { success: false, error: 'Order not found' }
         }
 
-        const finalPaidAmount = Math.max(0, order.totalAmount - extraDiscount)
+        const finalPaidAmount = Math.max(0, (order.totalAmount || 0) - (extraDiscount || 0))
 
         await prisma.order.update({
             where: { id: orderId },

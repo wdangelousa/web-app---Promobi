@@ -312,7 +312,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                                                     {label}
                                                                 </span>
                                                                 <div className="ml-auto flex items-center gap-3 shrink-0">
-                                                                    <span className="font-mono text-slate-700 font-bold">${p.price.toFixed(2)}</span>
+                                                                    <span className="font-mono text-slate-700 font-bold">${(p.price || 0).toFixed(2)}</span>
                                                                     <button
                                                                         onClick={() => {
                                                                             if (doc.originalFileUrl) {
@@ -346,7 +346,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     <div className="space-y-3 mb-6 font-mono text-sm border-b border-slate-700 pb-6">
                         <div className="flex justify-between text-slate-300">
                             <span>Base (Cálculo de Densidade)</span>
-                            <span>${(breakdown.basePrice || (order.totalAmount + optimizationSavings + (order.extraDiscount || 0))).toFixed(2)}</span>
+                            <span>${(breakdown.basePrice || ((order.totalAmount || 0) + optimizationSavings + (order.extraDiscount || 0))).toFixed(2)}</span>
                         </div>
                         {optimizationSavings > 0 && (
                             <div className="flex justify-between text-green-400">
@@ -369,7 +369,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         {order.extraDiscount > 0 && (
                             <div className="flex justify-between text-green-400 font-bold border-t border-slate-800 pt-2 mt-2">
                                 <span>Cortesia Operacional / Ajuste de Tarifa</span>
-                                <span>-${order.extraDiscount.toFixed(2)}</span>
+                                <span>-${(order.extraDiscount || 0).toFixed(2)}</span>
                             </div>
                         )}
                         {breakdown.totalDiscountApplied > 0 && !(order.extraDiscount > 0) && optimizationSavings === 0 && (
@@ -400,7 +400,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             )}
                         </div>
                         <div className="text-4xl font-black text-white">
-                            ${order.totalAmount.toFixed(2)}
+                            ${(order.totalAmount || 0).toFixed(2)}
                         </div>
                     </div>
                 </section>
@@ -505,7 +505,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                             <p className="font-mono font-bold text-xl text-slate-900 select-all tracking-wider">+14076396154</p>
                                             <p className="text-xs text-slate-400 mt-2">Nominal/Favorecido: Walter D'Angelo</p>
                                             <p className="text-xs text-teal-600 font-bold mt-4 bg-teal-50 py-1.5 px-3 rounded-full inline-block">
-                                                Valor em R$: R$ {(order.totalAmount * 5.2).toFixed(2)}
+                                                Valor em R$: R$ {((order.totalAmount || 0) * 5.2).toFixed(2)}
                                             </p>
                                         </div>
                                         <button
