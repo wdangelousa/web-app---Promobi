@@ -204,7 +204,6 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    // Recebe o coverLang do Modal de Preview no Editor
     const handlePreviewKit = async (translatedPageCount?: number, coverLang?: string) => {
         if (!selectedDoc) return
         setIsPreviewingKit(true)
@@ -215,8 +214,9 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            // Passa a linguagem escolhida para gerar a capa correta E salvar no banco
+
             const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true, coverLanguage: coverLang })
+
             if (result.success && result.deliveryUrl) {
                 setKitPreviewUrl(result.deliveryUrl)
                 setShowPreviewModal(true)
@@ -326,7 +326,6 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    // Adapter for Editor's hidden PDF Upload
     const handleUploadExternalFile = async (file: File) => {
         if (!selectedDoc) return
         setIsUploadingExternal(true)
@@ -350,7 +349,6 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    // --- FUNÇÕES DE UPLOAD DE PDF EXTERNO (BOTÃO CABEÇALHO) ---
     const handleExternalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file || !selectedDoc) return
@@ -432,8 +430,8 @@ export default function Workbench({ order }: { order: Order }) {
             const errors: string[] = []
 
             for (const docId of selectedDocsForDelivery) {
-                // CORREÇÃO: Passamos `{}` para evitar o erro de tipagem
-                const result = await generateDeliveryKit(order.id, docId, {})
+                const result = await generateDeliveryKit(order.id, docId)
+
                 if (result.success) {
                     generatedCount++
                 } else {
@@ -512,7 +510,6 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-
     const handleResendEmail = async () => {
         if (!confirm('Deseja reenviar o e-mail de entrega? (O e-mail será forçado para wdangelo81@gmail.com nesta fase)')) return
         setIsResending(true)
@@ -539,7 +536,6 @@ export default function Workbench({ order }: { order: Order }) {
 
     const viewUrl = selectedDoc.translatedFileUrl || selectedDoc.originalFileUrl
     const activeDocIsReviewed = localReviewed.has(selectedDoc.id)
-
 
     return (
         <div className="relative h-full w-full flex overflow-hidden">
@@ -678,14 +674,12 @@ export default function Workbench({ order }: { order: Order }) {
                             {isReplacing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Trocar Original
                         </button>
 
-                        {/* BOTÃO LIMPO (SEM MENU DE IDIOMA AQUI) */}
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
                         <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
                             {isUploadingExternal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />} PDF Externo
                         </button>
 
                         {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
-
 
                         <button
                             onClick={() => setShowFinancialModal(true)}

@@ -5,7 +5,6 @@ import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
-import { SourceLanguage } from '@prisma/client'
 
 // --- Utilitários de Limpeza ---
 function stripHtml(html: string): string {
@@ -101,29 +100,50 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         if (options?.coverLanguage) {
             await prisma.document.update({
                 where: { id: documentId },
-                data: { sourceLanguage: options.coverLanguage as SourceLanguage }
+                data: { sourceLanguage: options.coverLanguage }
             });
-            doc.sourceLanguage = options.coverLanguage as SourceLanguage;
+            doc.sourceLanguage = options.coverLanguage;
         }
 
         const finalPdf = await PDFDocument.create()
         const publicDir = path.join(process.cwd(), 'public')
 
-        // Páginas de Tradução
-        const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
-        const timbradoPdf = await PDFDocument.load(timbradoBytes)
-        const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
-
         const translationPdf = await PDFDocument.create()
         let actualTranslationPageCount = 0
 
-        if (doc.translatedText) {
-            const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
+        // 🚀 AQUI ESTÁ A CORREÇÃO MESTRA:
+        // 1. Verifica PDF Externo primeiro e usa as páginas dele!
+        if (doc.externalTranslationUrl) {
+            try {
+                const extRes = await fetch(doc.externalTranslationUrl)
+                const extBuf = Buffer.from(await extRes.arrayBuffer())
+                const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true })
+
+                const copied = await translationPdf.copyPages(extPdf, extPdf.getPageIndices())
+                copied.forEach(p => translationPdf.addPage(p))
+
+                actualTranslationPageCount = copied.length
+            } catch (err) {
+                console.error('Erro ao ler PDF Externo:', err)
+                throw new Error('Falha ao processar o PDF de Tradução Externa.')
+            }
+        }
+        // 2. Se não houver PDF Externo, cai no texto do Editor
+        else if (doc.translatedText) {
+            const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
+            const timbradoPdf = await PDFDocument.load(timbradoBytes)
+            const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
+
+            let plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
+
+            // Segurança extra: Se vazar código do Syncfusion aqui, oculta para não estragar o PDF
+            if (plainText.includes('"sections":') || plainText.includes('{"blocks":')) {
+                plainText = " " // Imprime espaço vazio se for JSON
+            }
+
             const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
             translationPdf.addPage(bgPage)
-
             actualTranslationPageCount = 1
-
             bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
         }
 
@@ -148,9 +168,8 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
             orderId,
-            translatedPages: actualTranslationPageCount,
+            translatedPages: actualTranslationPageCount, // <--- Agora tem o número exato de páginas do PDF externo
             dateStr,
-            // A capa vai priorizar o que a tradutora escolher no modal de Preview
             sourceLanguage: options?.coverLanguage || doc.sourceLanguage || doc.order.sourceLanguage
         })
 
