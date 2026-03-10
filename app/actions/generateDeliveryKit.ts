@@ -45,35 +45,38 @@ async function _loadCertificationCover(
         const capaBytes = await fs.readFile(capaPath)
         const templatePdf = await PDFDocument.load(capaBytes)
         
-        // 1. Copiamos a página limpa (Do Canva) para o documento alvo
-        const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
-        
-        // 2. Carregamos a fonte DIRETAMENTE no documento final (Garante que o texto não suma)
-        const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
+        // 1. Carregamos a fonte DIRETAMENTE no documento original antes de copiar (evita texto invisível)
+        const boldFont = await templatePdf.embedFont(StandardFonts.HelveticaBold)
         const fontSize = 11;
         const fontColor = rgb(0, 0, 0);
 
-        // 3. Carimbamos o texto nas coordenadas exatas que você definiu visualmente
+        // 2. Pegamos a página original do Canva para carimbar o texto
+        const page = templatePdf.getPages()[0]
+        
+        // 3. Carimbamos o texto nas coordenadas exatas sobre os espaços agora em branco
         
         // Document Type
-        capaPage.drawText(docType.toUpperCase(), { 
+        page.drawText(docType.toUpperCase(), { 
             x: 153, y: 660, size: fontSize, font: boldFont, color: fontColor 
         })
         
         // Number of Pages
-        capaPage.drawText(String(translatedPages).padStart(2, '0'), { 
+        page.drawText(String(translatedPages).padStart(2, '0'), { 
             x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor 
         })
         
         // Order Number
-        capaPage.drawText(`${orderId}-USA`, { 
+        page.drawText(`${orderId}-USA`, { 
             x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor 
         })
         
         // Date
-        capaPage.drawText(dateStr, { 
+        page.drawText(dateStr, { 
             x: 77, y: 108, size: fontSize, font: boldFont, color: fontColor 
         })
+
+        // 4. Copiamos a página já carimbada para o documento alvo
+        const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
 
         return capaPage
     } catch (err) {
