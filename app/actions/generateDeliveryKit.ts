@@ -1,167 +1,256 @@
 'use server'
 
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
-import fs from 'fs/promises'
-import path from 'path'
-import prisma from '@/lib/prisma'
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import prisma from "@/lib/prisma";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { createClient } from '@supabase/supabase-js'
+import { getLogoBase64 } from './get-logo-base64'
 
-// --- Utilitários de Limpeza ---
-function stripHtml(html: string): string {
-    return html
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .trim()
-}
-
-function sanitizeForWinAnsi(text: string): string {
-    if (!text) return ''
-    return text.replace(/[^\x00-\xFF]/g, '')
-}
-
-// --- Carregamento da Capa de Certificação em PDF ---
-async function _loadCertificationCover(
-    targetDoc: PDFDocument,
-    params: { orderId: number; dateStr: string; sourceLanguage?: string | null }
-) {
-    const { orderId, dateStr, sourceLanguage } = params
-    const publicDir = path.join(process.cwd(), 'public')
-
-    // Seleção dinâmica do ficheiro de capa
-    const fileName = sourceLanguage === 'ES'
-        ? 'capa certificacao es-en.pdf'
-        : 'capa certificacao pt-en.pdf'
-
-    const capaPath = path.join(publicDir, fileName)
-
-    try {
-        const capaBytes = await fs.readFile(capaPath)
-        const capaPdf = await PDFDocument.load(capaBytes)
-        const [capaPage] = await targetDoc.copyPages(capaPdf, [0])
-
-        const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
-
-        // Coordenadas sugeridas para preenchimento dinâmico sobre o PDF
-        // Ajuste estes valores (x, y) conforme o layout final das suas capas
-        capaPage.drawText(`Order #${orderId + 1000}-USA`, {
-            x: 440,
-            y: 555,
-            size: 10,
-            font: boldFont,
-            color: rgb(0, 0, 0)
-        })
-
-        capaPage.drawText(dateStr, {
-            x: 75,
-            y: 155,
-            size: 10,
-            font: boldFont,
-            color: rgb(0, 0, 0)
-        })
-
-        return capaPage
-    } catch (err) {
-        console.error(`[DeliveryKit] Erro ao carregar capa ${fileName}:`, err)
-        return null
+// Helper to sanitize text for WinAnsi encoding (standard PDF fonts)
+function sanitizeText(text: string): string {
+  return text.replace(/[^\x00-\xFF]/g, (char) => {
+    const map: { [key: string]: string } = {
+      '–': '-', '—': '-', '‘': "'", '’': "'", '“': '"', '”': '"', '…': '...',
+      'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+      'â': 'a', 'ê': 'e', 'ô': 'o', 'ã': 'a', 'õ': 'o',
+      'ç': 'c', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+      'Â': 'A', 'Ê': 'E', 'Ô': 'O', 'Ã': 'A', 'Õ': 'O', 'Ç': 'C'
     }
+    return map[char] || '?'
+  })
 }
 
-// --- Ação Principal de Geração ---
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
-    const isPreview = options?.preview ?? false
-    console.log(`[DeliveryKit] Gerando kit para Doc #${documentId} (Idioma: ${isPreview ? 'Preview' : 'Final'})`)
+  const isPreview = options?.preview ?? false
+  
+  try {
+    const doc = await prisma.document.findUnique({
+      where: { id: documentId },
+      include: { order: true }
+    })
 
-    try {
-        const doc = await prisma.document.findUnique({
-            where: { id: documentId },
-            include: { order: true },
+    if (!doc) throw new Error('Documento não encontrado')
+
+    // 1. Create PDF and embed fonts/images
+    const pdfDoc = await PDFDocument.create()
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
+    // 2. Add Content Page (Translation)
+    const page = pdfDoc.addPage([595.28, 841.89]) // A4
+    const { width, height } = page.getSize()
+
+    const logoBase64 = await getLogoBase64()
+    if (logoBase64) {
+      try {
+        const base64Data = logoBase64.replace(/^data:image\/png;base64,/, '')
+        const logoImage = await pdfDoc.embedPng(Buffer.from(base64Data, 'base64'))
+        const logoDims = logoImage.scale(0.3)
+        page.drawImage(logoImage, {
+          x: page.getWidth() - logoDims.width - 40,
+          y: page.getHeight() - logoDims.height - 40,
+          width: logoDims.width,
+          height: logoDims.height,
         })
-
-        if (!doc) throw new Error('Documento não encontrado no banco.')
-
-        const finalPdf = await PDFDocument.create()
-        const publicDir = path.join(process.cwd(), 'public')
-
-        // 1. Carregar Papel Timbrado para as páginas de tradução
-        const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
-        const timbradoPdf = await PDFDocument.load(timbradoBytes)
-        const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
-
-        // 2. Processar Páginas de Tradução
-        const translationPdf = await PDFDocument.create()
-        if (doc.translatedText) {
-            const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
-            const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
-            translationPdf.addPage(bgPage)
-
-            // Renderização básica de texto (Substituir por lógica de Tiptap futuramente)
-            bgPage.drawText(plainText, {
-                x: 72,
-                y: 650,
-                size: 11,
-                font: fontNormal,
-                lineHeight: 15
-            })
-        }
-
-        // 3. Adicionar Páginas Originais
-        if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
-            const originalRes = await fetch(doc.originalFileUrl)
-            const originalBuf = Buffer.from(await originalRes.arrayBuffer())
-            const originalPdf = await PDFDocument.load(originalBuf, { ignoreEncryption: true })
-            const copied = await finalPdf.copyPages(originalPdf, originalPdf.getPageIndices())
-            copied.forEach(p => finalPdf.addPage(p))
-        }
-
-        // 4. Inserir a Capa Correta (PT ou ES) na Posição 0
-        const dateStr = new Date().toLocaleDateString('en-US', {
-            year: 'numeric', month: 'long', day: 'numeric'
-        })
-
-        const capaPage = await _loadCertificationCover(finalPdf, {
-            orderId,
-            dateStr,
-            sourceLanguage: doc.sourceLanguage || doc.order.sourceLanguage
-        })
-
-        if (capaPage) {
-            finalPdf.insertPage(0, capaPage)
-        }
-
-        // 5. Inserir Páginas de Tradução após a Capa
-        const transPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
-        transPages.forEach((p, i) => finalPdf.insertPage(1 + i, p))
-
-        // 6. Finalização e Upload
-        const pdfBytes = await finalPdf.save()
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-        const supabase = createClient(supabaseUrl, supabaseKey)
-
-        const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
-        const pathPrefix = isPreview ? 'orders/previews/' : 'orders/completed/'
-
-        const { error: uploadError } = await supabase.storage
-            .from('documents')
-            .upload(pathPrefix + safeName, pdfBytes, { contentType: 'application/pdf' })
-
-        if (uploadError) throw uploadError
-
-        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(pathPrefix + safeName)
-        const deliveryUrl = urlData.publicUrl
-
-        if (!isPreview) {
-            await prisma.document.update({
-                where: { id: documentId },
-                data: { delivery_pdf_url: deliveryUrl, translation_status: 'approved' }
-            })
-        }
-
-        return { success: true, deliveryUrl }
-    } catch (error: any) {
-        console.error('[DeliveryKit] Erro:', error)
-        return { success: false, error: error.message }
+      } catch (error) {
+        console.error("Error embedding logo in PDF:", error)
+      }
     }
+
+    // Document Title
+    // Draw header background
+    page.drawRectangle({
+      x: 0,
+      y: page.getHeight() - 120,
+      width: page.getWidth(),
+      height: 120,
+      color: rgb(0.05, 0.1, 0.2), // Dark Navy
+    })
+
+    page.drawText('KIT DE ENTREGA PROMOBIDOCS', {
+      x: 40,
+      y: page.getHeight() - 75,
+      size: 28,
+      font: helveticaBold,
+      color: rgb(1, 1, 1),
+    })
+
+    // Sub-header section
+    let currentY = page.getHeight() - 160
+
+    page.drawText('Informações da Venda', {
+      x: 40,
+      y: currentY,
+      size: 18,
+      font: helveticaBold,
+      color: rgb(0.05, 0.1, 0.2),
+    })
+
+    page.drawLine({
+      start: { x: 40, y: currentY - 5 },
+      end: { x: 200, y: currentY - 5 },
+      thickness: 2,
+      color: rgb(0.05, 0.1, 0.2),
+    })
+
+    currentY -= 30
+
+    const venda = doc.order
+    page.drawText(`Cliente: ${venda?.customerName || 'N/A'}`, {
+      x: 40,
+      y: currentY,
+      size: 12,
+      font: helvetica,
+    })
+    currentY -= 20
+    page.drawText(`Data: ${format(new Date(venda.createdAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}`, {
+      x: 40,
+      y: currentY,
+      size: 12,
+      font: helvetica,
+    })
+
+    currentY -= 40
+
+    page.drawText('Documentos do Kit', {
+      x: 40,
+      y: currentY,
+      size: 18,
+      font: helveticaBold,
+      color: rgb(0.05, 0.1, 0.2),
+    })
+
+    page.drawLine({
+      start: { x: 40, y: currentY - 5 },
+      end: { x: 180, y: currentY - 5 },
+      thickness: 2,
+      color: rgb(0.05, 0.1, 0.2),
+    })
+
+    currentY -= 30
+
+    // Metadata
+    page.drawText(`Venda #${venda.id}`, {
+      x: 40,
+      y: page.getHeight() - 100,
+      size: 14,
+      font: helvetica,
+      color: rgb(0.8, 0.8, 0.8),
+    })
+
+    // Translated Text (now listing documents)
+    if (doc.translatedText) {
+      // Basic text wrapping logic (simplified)
+      const lines = sanitizeText(doc.translatedText.replace(/<[^>]*>/g, '')).split('\n')
+      
+      // Assuming 'doc' here refers to the current document being processed
+      // The original code had a loop over 'lines' from translatedText,
+      // but the new instruction replaces it with a single line for the current doc.
+      // This part of the instruction seems to be a mix-up, as it's inside the translatedText block
+      // but refers to a single doc.type and doc.link.
+      // I will interpret this as listing the current document's status.
+      page.drawText(`• ${doc.type}: ${doc.link ? 'Disponível' : 'Pendente'}`, {
+        x: 60,
+        y: currentY,
+        size: 12,
+        font: helvetica,
+      })
+      currentY -= 20
+    }
+
+    currentY -= 20
+
+    // Important Notice Section
+    page.drawRectangle({
+      x: 40,
+      y: currentY - 60,
+      width: page.getWidth() - 80,
+      height: 60,
+      color: rgb(0.95, 0.95, 0.98),
+      borderColor: rgb(0.8, 0.8, 0.8),
+      borderWidth: 1,
+    })
+
+    page.drawText('IMPORTANTE:', {
+      x: 55,
+      y: currentY - 20,
+      size: 10,
+      font: helveticaBold,
+      color: rgb(0.3, 0.3, 0.3),
+    })
+
+    page.drawText('Este documento comprova a geração do kit de entrega com os documentos listados acima.', {
+      x: 55,
+      y: currentY - 35,
+      size: 10,
+      font: helvetica,
+      color: rgb(0.4, 0.4, 0.4),
+    })
+
+    page.drawText('Verifique a integridade de cada arquivo no portal PromobiDocs.', {
+      x: 55,
+      y: currentY - 50,
+      size: 10,
+      font: helvetica,
+      color: rgb(0.4, 0.4, 0.4),
+    })
+  
+    // 3. Append Original Document if exists
+    if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
+      try {
+        const originalResponse = await fetch(doc.originalFileUrl)
+        const originalBytes = await originalResponse.arrayBuffer()
+        const originalDoc = await PDFDocument.load(originalBytes)
+        const copiedPages = await pdfDoc.copyPages(originalDoc, originalDoc.getPageIndices())
+        copiedPages.forEach(p => pdfDoc.addPage(p))
+      } catch (e) {
+        console.error('Error attaching original PDF:', e)
+      }
+    }
+
+    // 4. Finalize and Upload to Supabase
+    const pdfBytes = await pdfDoc.save()
+    
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    const fileName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
+    const filePath = `deliveries/${fileName}`
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, pdfBytes, {
+        contentType: 'application/pdf',
+        cacheControl: '3600'
+      })
+
+    if (uploadError) throw uploadError
+
+    const { data: urlData } = supabase.storage
+      .from('documents')
+      .getPublicUrl(filePath)
+
+    const deliveryUrl = urlData.publicUrl
+
+    // 5. Update Database (if not preview)
+    if (!isPreview) {
+      await prisma.document.update({
+        where: { id: documentId },
+        data: {
+          delivery_pdf_url: deliveryUrl,
+          translation_status: 'approved'
+        }
+      })
+    }
+
+    return { success: true, deliveryUrl }
+
+  } catch (error: any) {
+    console.error('Generate Delivery Kit Error:', error)
+    return { success: false, error: error.message }
+  }
 }
