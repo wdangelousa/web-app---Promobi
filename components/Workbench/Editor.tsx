@@ -31,7 +31,7 @@ interface EditorProps {
     onSave?: (translatedPageCount?: number) => void;
     onPreviewKit?: (translatedPageCount?: number) => void;
     onApprove?: () => void;
-    onUploadExternalPdf?: (file: File) => Promise<void>;
+    onUploadExternalPdf?: (file: File, language?: string) => Promise<void>;
     onRemoveExternalPdf?: () => Promise<void>;
     isPreviewingKit?: boolean;
 }

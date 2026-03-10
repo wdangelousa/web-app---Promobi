@@ -327,7 +327,7 @@ export default function Workbench({ order }: { order: Order }) {
     }
 
     // Adapter for Editor's File-based onUploadExternalPdf prop
-    const handleUploadExternalFile = async (file: File, lang: string) => {
+    const handleUploadExternalFile = async (file: File, lang?: string) => {
         if (!selectedDoc) return
         setIsUploadingExternal(true)
         try {

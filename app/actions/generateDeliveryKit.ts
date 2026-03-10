@@ -109,12 +109,53 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         if (doc.translatedText) {
             const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
-            const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
-            translationPdf.addPage(bgPage)
             
-            actualTranslationPageCount = 1
+            const fontSize = 11
+            const lineHeight = 15
+            const maxWidth = 468 // A4 roughly Width 595 - 72 - 55 = 468, US Letter 612 - 72 - 72 = 468
+            const linesPerPage = 38
             
-            bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
+            const rawParagraphs = plainText.split('\n')
+            const wrappedLines: string[] = []
+            for (const para of rawParagraphs) {
+                if (para.trim() === '') {
+                    wrappedLines.push('')
+                    continue
+                }
+                const words = para.split(' ')
+                let currentLine = ''
+                for (const word of words) {
+                    const testLine = currentLine ? currentLine + ' ' + word : word
+                    const width = fontNormal.widthOfTextAtSize(testLine, fontSize)
+                    if (width > maxWidth && currentLine) {
+                        wrappedLines.push(currentLine)
+                        currentLine = word
+                    } else {
+                        currentLine = testLine
+                    }
+                }
+                if (currentLine) {
+                    wrappedLines.push(currentLine)
+                }
+            }
+            
+            const requiredPagesByText = Math.max(1, Math.ceil(wrappedLines.length / linesPerPage))
+            const totalPagesToCreate = requiredPagesByText;
+            const dynamicLinesPerPage = Math.ceil(wrappedLines.length / totalPagesToCreate)
+
+            
+            for (let i = 0; i < totalPagesToCreate; i++) {
+                const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
+                translationPdf.addPage(bgPage)
+                
+                const pageLines = wrappedLines.slice(i * dynamicLinesPerPage, (i + 1) * dynamicLinesPerPage)
+                if (pageLines.length > 0) {
+                    const pageText = pageLines.join('\n')
+                    bgPage.drawText(pageText, { x: 72, y: 650, size: fontSize, font: fontNormal, lineHeight })
+                }
+            }
+            
+            actualTranslationPageCount = totalPagesToCreate
         }
 
         // Páginas Originais
@@ -138,7 +179,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
             orderId,
-            translatedPages: actualTranslationPageCount,
+            translatedPages: actualTranslationPageCount, // using the calculated page count for the final merged PDF
             dateStr,
             sourceLanguage: doc.sourceLanguage || doc.order.sourceLanguage
         })
