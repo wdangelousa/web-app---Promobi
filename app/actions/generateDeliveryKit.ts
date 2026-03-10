@@ -6,7 +6,7 @@ import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 
-// --- Utilitários de Limpeza ---
+// --- Utilitários de Texto ---
 function stripHtml(html: string): string {
     return html
         .replace(/<br\s*\/?>/gi, '\n')
@@ -21,7 +21,7 @@ function sanitizeForWinAnsi(text: string): string {
     return text.replace(/[^\x00-\xFF]/g, '')
 }
 
-// --- Carregamento e Preenchimento da Capa de Certificação ---
+// --- Ajuste de Designer: Preenchimento da Capa ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
     params: { 
@@ -35,7 +35,7 @@ async function _loadCertificationCover(
     const { docType, orderId, translatedPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
     
-    // Seleção da capa baseada no idioma detetado
+    // Seleção automática da capa baseada no idioma
     const fileName = sourceLanguage === 'ES' 
         ? 'capa certificacao es-en.pdf' 
         : 'capa certificacao pt-en.pdf'
@@ -50,34 +50,31 @@ async function _loadCertificationCover(
         const font = await targetDoc.embedFont(StandardFonts.Helvetica)
         const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
         
-        // --- COORDENADAS RECALIBRADAS (Baseadas no MediaBox 792pt) ---
-        // Alinhamento horizontal dos valores à direita dos rótulos
+        // --- AJUSTES DE COORDENADAS (PRECISÃO DE DESIGN) ---
+        // Alinhamento horizontal dos valores à direita dos labels
         const valueX = 225; 
-        // Y inicial ajustado para o topo do grid (Document Type)
-        const startY = 773; 
-        // Espaçamento vertical exato entre as linhas do template
+        // Baixamos o startY para 585 para alinhar com o grid do template
+        const startY = 585; 
         const spacing = 26; 
         const fontSize = 10;
 
-        // 1. Document Type
+        // 1. Document Type (Linha 1)
         capaPage.drawText(docType.toUpperCase(), { x: valueX, y: startY, size: fontSize, font: boldFont })
         
-        // 2. Source Language
-        const langStr = sourceLanguage === 'ES' ? 'Spanish' : 'Portuguese'
-        capaPage.drawText(langStr, { x: valueX, y: startY - spacing, size: fontSize, font })
+        // OBS: Linhas 2 (Source) e 3 (Target) são fixas no template. Não imprimimos nada nelas.
 
-        // 3. Target Language
-        capaPage.drawText('English', { x: valueX, y: startY - (spacing * 2), size: fontSize, font })
+        // 4. Number of Pages (Linha 4 - offset de 3 espaços)
+        // Conta apenas as páginas traduzidas (actualTranslationPageCount)
+        const pageCountStr = String(translatedPages).padStart(2, '0')
+        capaPage.drawText(pageCountStr, { x: valueX, y: startY - (spacing * 3), size: fontSize, font })
 
-        // 4. Number of Pages (Apenas as traduzidas)
-        capaPage.drawText(String(translatedPages).padStart(2, '0'), { x: valueX, y: startY - (spacing * 3), size: fontSize, font })
+        // 5. Order Number (Linha 5)
+        const orderDisplay = `Order #${orderId + 1000}-USA`
+        capaPage.drawText(orderDisplay, { x: valueX, y: startY - (spacing * 4), size: fontSize, font: boldFont })
 
-        // 5. Order Number
-        capaPage.drawText(`Order #${orderId + 1000}-USA`, { x: valueX, y: startY - (spacing * 4), size: fontSize, font: boldFont })
-
-        // --- DATA (PARTE INFERIOR) ---
-        // Alinhado horizontalmente com o rótulo "Dated:"
-        capaPage.drawText(dateStr, { x: 75, y: 181, size: 10, font: boldFont })
+        // --- DATA NO RODAPÉ (Padrão USA: MM/DD/YYYY) ---
+        // Coordenada Y baixada para alinhar com o campo "Dated:"
+        capaPage.drawText(dateStr, { x: 75, y: 142, size: 10, font: boldFont })
 
         return capaPage
     } catch (err) {
@@ -86,7 +83,7 @@ async function _loadCertificationCover(
     }
 }
 
-// --- Ação Principal ---
+// --- Ação Principal de Geração ---
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
     const isPreview = options?.preview ?? false
     try {
@@ -100,7 +97,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const finalPdf = await PDFDocument.create()
         const publicDir = path.join(process.cwd(), 'public')
         
-        // 1. Gerar Páginas de Tradução (Usando papel timbrado)
+        // 1. Páginas de Tradução (Papel Timbrado)
         const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes)
         const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
@@ -112,13 +109,20 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
             const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
             translationPdf.addPage(bgPage)
-            // Define o contador como 1 (ajustar se houver quebra de página automática no futuro)
+            
+            // Incrementa contagem de páginas traduzidas
             actualTranslationPageCount = 1
             
-            bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
+            bgPage.drawText(plainText, { 
+                x: 72, 
+                y: 650, 
+                size: 11, 
+                font: fontNormal, 
+                lineHeight: 15 
+            })
         }
 
-        // 2. Páginas Originais
+        // 2. Páginas do Documento Original
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             const originalRes = await fetch(doc.originalFileUrl)
             const originalBuf = Buffer.from(await originalRes.arrayBuffer())
@@ -127,14 +131,14 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             copied.forEach(p => finalPdf.addPage(p))
         }
 
-        // 3. Formatação da Data Padrão USA (MM/DD/YYYY)
+        // 3. Formatação da Data USA (MM/DD/YYYY)
         const now = new Date();
         const mm = (now.getMonth() + 1).toString().padStart(2, '0');
         const dd = now.getDate().toString().padStart(2, '0');
         const yyyy = now.getFullYear();
         const dateStr = `${mm}/${dd}/${yyyy}`;
         
-        // 4. Inserir Capa na Posição 0
+        // 4. Geração e Inserção da Capa (Posição 0)
         const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
@@ -146,11 +150,11 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         if (capaPage) finalPdf.insertPage(0, capaPage)
 
-        // 5. Inserir Páginas de Tradução após a Capa
+        // 5. Acoplamento das Páginas de Tradução
         const transPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
         transPages.forEach((p, i) => finalPdf.insertPage(1 + i, p))
 
-        // 6. Upload e Finalização
+        // 6. Finalização e Upload
         const pdfBytes = await finalPdf.save()
         const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
@@ -168,7 +172,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         return { success: true, deliveryUrl: urlData.publicUrl }
     } catch (error: any) {
-        console.error('[DeliveryKit] Erro crítico:', error)
+        console.error('[DeliveryKit] Erro de Geração:', error)
         return { success: false, error: error.message }
     }
 }
