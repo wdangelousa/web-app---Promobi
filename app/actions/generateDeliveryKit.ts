@@ -1,6 +1,6 @@
 'use server'
 
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
@@ -21,7 +21,7 @@ function sanitizeForWinAnsi(text: string): string {
     return text.replace(/[^\x00-\xFF]/g, '')
 }
 
-// --- Carregamento e Preenchimento da Capa via Formulário ---
+// --- Carregamento da Capa com Coordenadas Exatas (Milimétricas) ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
     params: { 
@@ -45,32 +45,38 @@ async function _loadCertificationCover(
         const capaBytes = await fs.readFile(capaPath)
         const templatePdf = await PDFDocument.load(capaBytes)
         
-        const form = templatePdf.getForm()
-
-        // Mapeamento dos campos aleatórios gerados no seu PDF PT-EN
-        try { form.getTextField('text_1gtaq').setText(docType.toUpperCase()) } catch(e) {}
-        try { form.getTextField('text_2mln').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
-        try { form.getTextField('text_3mtey').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
-        try { form.getTextField('text_4r').setText(dateStr) } catch(e) {}
-
-        // Mapeamento dos campos aleatórios gerados no seu PDF ES-EN
-        try { form.getTextField('text_1pkmn').setText(docType.toUpperCase()) } catch(e) {}
-        try { form.getTextField('text_2lqrz').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
-        try { form.getTextField('text_3hmws').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
-        try { form.getTextField('text_4ownm').setText(dateStr) } catch(e) {}
-
-        // Mapeamento ideal (caso refaça os PDFs no futuro com os nomes padronizados)
-        try { form.getTextField('field_doc_type').setText(docType.toUpperCase()) } catch(e) {}
-        try { form.getTextField('field_num_pages').setText(String(translatedPages).padStart(2, '0')) } catch(e) {}
-        try { form.getTextField('field_order_id').setText(`Order #${orderId + 1000}-USA`) } catch(e) {}
-        try { form.getTextField('field_date').setText(dateStr) } catch(e) {}
-
-        form.flatten()
-
+        // Removemos qualquer lógica de formulário para evitar que o texto suma
         const [capaPage] = await targetDoc.copyPages(templatePdf, [0])
+        
+        const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
+        const fontSize = 11;
+        const fontColor = rgb(0, 0, 0);
+
+        // COORDENADAS EXTRAÍDAS DIRETAMENTE DO SEU DESIGN NO SEJDA:
+        
+        // 1. Document Type
+        capaPage.drawText(docType.toUpperCase(), { 
+            x: 153, y: 660, size: fontSize, font: boldFont, color: fontColor 
+        })
+        
+        // 2. Number of Pages
+        capaPage.drawText(String(translatedPages).padStart(2, '0'), { 
+            x: 157, y: 602, size: fontSize, font: boldFont, color: fontColor 
+        })
+        
+        // 3. Order Number
+        capaPage.drawText(`Order #${orderId + 1000}-USA`, { 
+            x: 105, y: 583, size: fontSize, font: boldFont, color: fontColor 
+        })
+        
+        // 4. Data Inferior
+        capaPage.drawText(dateStr, { 
+            x: 77, y: 108, size: fontSize, font: boldFont, color: fontColor 
+        })
+
         return capaPage
     } catch (err) {
-        console.error(`[DeliveryKit] Erro ao carregar capa preenchível ${fileName}:`, err)
+        console.error(`[DeliveryKit] Erro ao carregar capa ${fileName}:`, err)
         return null
     }
 }
