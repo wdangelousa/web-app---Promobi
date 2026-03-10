@@ -29,9 +29,9 @@ interface EditorProps {
     pdfUrl?: string;
     translatedPdfUrl?: string | null;
     onSave?: (translatedPageCount?: number) => void;
-    onPreviewKit?: (translatedPageCount?: number) => void;
+    onPreviewKit?: (translatedPageCount?: number, lang?: string) => void; // Atualizado
     onApprove?: () => void;
-    onUploadExternalPdf?: (file: File, language?: string) => Promise<void>;
+    onUploadExternalPdf?: (file: File) => Promise<void>; // Voltou ao normal
     onRemoveExternalPdf?: () => Promise<void>;
     isPreviewingKit?: boolean;
 }
@@ -40,12 +40,14 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
     const [showReference, setShowReference] = useState(false);
     const [isEditorReady, setIsEditorReady] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [showLangModal, setShowLangModal] = useState(false); // Novo Modal de Idioma
+
     const containerRef = useRef<DocumentEditorContainerComponent>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const lastInjectedContent = useRef('');
 
     useEffect(() => {
-        if (translatedPdfUrl) return; // External PDF active — skip Syncfusion injection
+        if (translatedPdfUrl) return;
         if (!isEditorReady || !content || !containerRef.current) return;
         if (content === lastInjectedContent.current) return;
 
@@ -53,7 +55,6 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
         if (!docEditor) return;
 
         try {
-            // Normaliza: Supabase pode retornar um objeto JS em vez de string
             const textContent = typeof content === 'object' ? JSON.stringify(content) : String(content);
             const isSFDT = textContent.includes('"optimizeSfdt"') || textContent.includes('"sections"') || textContent.includes('"sec":');
 
@@ -61,14 +62,11 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
                 docEditor.open(textContent);
                 lastInjectedContent.current = content;
             } else {
-                // É o HTML vindo da IA Gemini
-                // O Syncfusion React NÃO suporta a função insertHtml nativamente sem backend.
-                // Solução: Converte o HTML rico para Texto Puro mantendo os parágrafos.
                 let plainText = content
-                    .replace(/<br\s*[\/]?>/gi, '\n') // Troca tags <br> por quebra de linha real
-                    .replace(/<\/p>/gi, '\n\n')       // O fim do parágrafo dá dois "Enters"
-                    .replace(/<[^>]+>/g, '')          // Remove as tags HTML que sobraram
-                    .replace(/&nbsp;/g, ' ')          // Troca espaços vazios
+                    .replace(/<br\s*[\/]?>/gi, '\n')
+                    .replace(/<\/p>/gi, '\n\n')
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/&nbsp;/g, ' ')
                     .trim();
 
                 if (!plainText) plainText = "Falha ao extrair texto da IA.";
@@ -79,13 +77,10 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
 
                 setTimeout(() => {
                     if (docEditor.editor) {
-                        // USA O MÉTODO OFICIAL DE INJEÇÃO DE TEXTO DO SYNCFUSION
                         docEditor.editor.insertText(plainText);
-
                         docEditor.selection.moveToDocumentStart();
                         lastInjectedContent.current = content;
 
-                        // Salva silenciosamente o documento gerado em formato compatível com o Syncfusion
                         setTimeout(() => {
                             const newSfdt = docEditor.serialize();
                             if (newSfdt && newSfdt !== content) {
@@ -117,17 +112,26 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
         }
     };
 
+    // Abre o modal de escolha de idioma em vez de gerar direto
     const handlePreviewClick = () => {
-        if (translatedPdfUrl) { if (onPreviewKit) onPreviewKit(1); return; }
-        const pages = containerRef.current?.documentEditor?.pageCount;
-        if (onPreviewKit) onPreviewKit(pages);
+        setShowLangModal(true);
     };
+
+    // Confirma a escolha e envia para a Action gerar
+    const confirmPreview = (lang: string) => {
+        setShowLangModal(false);
+        if (translatedPdfUrl) {
+            if (onPreviewKit) onPreviewKit(1, lang);
+            return;
+        }
+        const pages = containerRef.current?.documentEditor?.pageCount;
+        if (onPreviewKit) onPreviewKit(pages, lang);
+    }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file && onUploadExternalPdf) {
             setIsUploading(true);
-            // Yield to main thread (INP) to show loading state before heavy work
             setTimeout(async () => {
                 try {
                     await onUploadExternalPdf(file);
@@ -148,7 +152,7 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
     };
 
     return (
-        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full">
+        <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full relative">
 
             <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-h-[60px]">
 
@@ -261,6 +265,41 @@ export default function Editor({ content, setContent, pdfUrl, translatedPdfUrl, 
                 </div>
 
             </div>
+
+            {/* MODAL DE SELEÇÃO DE IDIOMA DA CAPA (PREVIEW) */}
+            {showLangModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col items-center text-center transform transition-all">
+                        <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+                            <span className="text-xl">📄</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Capa de Certificação</h3>
+                        <p className="text-sm text-gray-500 mb-6">Qual deve ser o idioma da capa oficial para este documento específico?</p>
+
+                        <div className="flex gap-3 w-full">
+                            <button
+                                onClick={() => confirmPreview('PT_BR')}
+                                className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl border border-blue-200 hover:bg-blue-100 hover:shadow-md transition-all active:scale-95"
+                            >
+                                PT ➔ EN
+                            </button>
+                            <button
+                                onClick={() => confirmPreview('ES')}
+                                className="flex-1 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 hover:shadow-md transition-all active:scale-95"
+                            >
+                                ES ➔ EN
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => setShowLangModal(false)}
+                            className="mt-6 text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
