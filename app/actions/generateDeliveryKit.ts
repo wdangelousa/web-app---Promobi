@@ -6,7 +6,7 @@ import path from 'path'
 import prisma from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 
-// --- Utilitários de Texto ---
+// --- Utilitários de Limpeza ---
 function stripHtml(html: string): string {
     return html
         .replace(/<br\s*\/?>/gi, '\n')
@@ -21,7 +21,7 @@ function sanitizeForWinAnsi(text: string): string {
     return text.replace(/[^\x00-\xFF]/g, '')
 }
 
-// --- Carregamento e Preenchimento da Capa ---
+// --- Carregamento e Preenchimento da Capa de Certificação ---
 async function _loadCertificationCover(
     targetDoc: PDFDocument,
     params: { 
@@ -29,13 +29,13 @@ async function _loadCertificationCover(
         orderId: number; 
         translatedPages: number; 
         dateStr: string; 
-        customerName: string;
         sourceLanguage?: string | null 
     }
 ) {
-    const { docType, orderId, translatedPages, dateStr, customerName, sourceLanguage } = params
+    const { docType, orderId, translatedPages, dateStr, sourceLanguage } = params
     const publicDir = path.join(process.cwd(), 'public')
     
+    // Seleção da capa baseada no idioma detetado
     const fileName = sourceLanguage === 'ES' 
         ? 'capa certificacao es-en.pdf' 
         : 'capa certificacao pt-en.pdf'
@@ -50,53 +50,49 @@ async function _loadCertificationCover(
         const font = await targetDoc.embedFont(StandardFonts.Helvetica)
         const boldFont = await targetDoc.embedFont(StandardFonts.HelveticaBold)
         
-        const valueX = 225;
-        const startY = 582;
-        const spacing = 26;
+        // --- COORDENADAS RECALIBRADAS (Baseadas no MediaBox 792pt) ---
+        // Alinhamento horizontal dos valores à direita dos rótulos
+        const valueX = 225; 
+        // Y inicial ajustado para o topo do grid (Document Type)
+        const startY = 773; 
+        // Espaçamento vertical exato entre as linhas do template
+        const spacing = 26; 
         const fontSize = 10;
 
-        // Document Type
+        // 1. Document Type
         capaPage.drawText(docType.toUpperCase(), { x: valueX, y: startY, size: fontSize, font: boldFont })
         
-        // Source Language
+        // 2. Source Language
         const langStr = sourceLanguage === 'ES' ? 'Spanish' : 'Portuguese'
         capaPage.drawText(langStr, { x: valueX, y: startY - spacing, size: fontSize, font })
 
-        // Target Language
+        // 3. Target Language
         capaPage.drawText('English', { x: valueX, y: startY - (spacing * 2), size: fontSize, font })
 
-        // Number of Pages
-        const pageCountStr = String(translatedPages).padStart(2, '0')
-        capaPage.drawText(pageCountStr, { x: valueX, y: startY - (spacing * 3), size: fontSize, font })
+        // 4. Number of Pages (Apenas as traduzidas)
+        capaPage.drawText(String(translatedPages).padStart(2, '0'), { x: valueX, y: startY - (spacing * 3), size: fontSize, font })
 
-        // Order Number
-        const orderDisplay = `Order #${orderId + 1000}-USA`
-        capaPage.drawText(orderDisplay, { x: valueX, y: startY - (spacing * 4), size: fontSize, font: boldFont })
+        // 5. Order Number
+        capaPage.drawText(`Order #${orderId + 1000}-USA`, { x: valueX, y: startY - (spacing * 4), size: fontSize, font: boldFont })
 
-        // Nome do Cliente (Ajuste a coordenada conforme sua necessidade)
-        capaPage.drawText(`Client: ${customerName}`, { x: 75, y: 180, size: 10, font: boldFont })
-
-        // DATA US
-        capaPage.drawText(dateStr, { x: 75, y: 155, size: 10, font: boldFont })
+        // --- DATA (PARTE INFERIOR) ---
+        // Alinhado horizontalmente com o rótulo "Dated:"
+        capaPage.drawText(dateStr, { x: 75, y: 181, size: 10, font: boldFont })
 
         return capaPage
     } catch (err) {
-        console.error(`[DeliveryKit] Erro ao carregar capa:`, err)
+        console.error(`[DeliveryKit] Erro ao carregar capa ${fileName}:`, err)
         return null
     }
 }
 
+// --- Ação Principal ---
 export async function generateDeliveryKit(orderId: number, documentId: number, options?: { preview?: boolean }) {
     const isPreview = options?.preview ?? false
     try {
-        // CORREÇÃO: Adicionado include para buscar o usuário através do pedido
         const doc = await prisma.document.findUnique({
             where: { id: documentId },
-            include: { 
-                order: {
-                    include: { user: true }
-                } 
-            },
+            include: { order: true },
         })
 
         if (!doc) throw new Error('Documento não encontrado.')
@@ -104,6 +100,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
         const finalPdf = await PDFDocument.create()
         const publicDir = path.join(process.cwd(), 'public')
         
+        // 1. Gerar Páginas de Tradução (Usando papel timbrado)
         const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'))
         const timbradoPdf = await PDFDocument.load(timbradoBytes)
         const fontNormal = await finalPdf.embedFont(StandardFonts.Helvetica)
@@ -115,10 +112,13 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText))
             const [bgPage] = await translationPdf.copyPages(timbradoPdf, [0])
             translationPdf.addPage(bgPage)
+            // Define o contador como 1 (ajustar se houver quebra de página automática no futuro)
             actualTranslationPageCount = 1
+            
             bgPage.drawText(plainText, { x: 72, y: 650, size: 11, font: fontNormal, lineHeight: 15 })
         }
 
+        // 2. Páginas Originais
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             const originalRes = await fetch(doc.originalFileUrl)
             const originalBuf = Buffer.from(await originalRes.arrayBuffer())
@@ -127,28 +127,30 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
             copied.forEach(p => finalPdf.addPage(p))
         }
 
+        // 3. Formatação da Data Padrão USA (MM/DD/YYYY)
         const now = new Date();
-        const dateStr = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}/${now.getFullYear()}`;
+        const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+        const dd = now.getDate().toString().padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const dateStr = `${mm}/${dd}/${yyyy}`;
         
+        // 4. Inserir Capa na Posição 0
         const docType = doc.exactNameOnDoc || doc.docType || 'Official Document'
-        
-        // CORREÇÃO: Acessando fullName através do relacionamento carregado
-        const customerName = doc.order?.user?.fullName || 'N/A'
-
         const capaPage = await _loadCertificationCover(finalPdf, {
             docType,
             orderId,
             translatedPages: actualTranslationPageCount,
             dateStr,
-            customerName,
             sourceLanguage: doc.sourceLanguage || doc.order.sourceLanguage
         })
 
         if (capaPage) finalPdf.insertPage(0, capaPage)
 
+        // 5. Inserir Páginas de Tradução após a Capa
         const transPages = await finalPdf.copyPages(translationPdf, translationPdf.getPageIndices())
         transPages.forEach((p, i) => finalPdf.insertPage(1 + i, p))
 
+        // 6. Upload e Finalização
         const pdfBytes = await finalPdf.save()
         const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         const safeName = `kit_${orderId}_${documentId}_${Date.now()}.pdf`
@@ -166,7 +168,7 @@ export async function generateDeliveryKit(orderId: number, documentId: number, o
 
         return { success: true, deliveryUrl: urlData.publicUrl }
     } catch (error: any) {
-        console.error('[DeliveryKit] Erro:', error)
+        console.error('[DeliveryKit] Erro crítico:', error)
         return { success: false, error: error.message }
     }
 }
