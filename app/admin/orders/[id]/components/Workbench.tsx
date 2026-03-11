@@ -22,6 +22,7 @@ type Document = {
     delivery_pdf_url?: string | null
     isReviewed?: boolean
     pageRotations?: Record<string, number> | null
+    sourceLanguage?: string | null
 }
 
 type Order = {
@@ -53,7 +54,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
     const [editorContent, setEditorContent] = useState('')
     const [isResending, setIsResending] = useState(false)
-    const [aiEngine, setAiEngine] = useState('azure-deepl')
 
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
@@ -169,41 +169,34 @@ export default function Workbench({ order }: { order: Order }) {
     }
 
     const handleTranslateAI = async () => {
-        if (!selectedDoc) return
+        if (!selectedDoc || !selectedDoc.originalFileUrl) {
+            alert('Documento original indisponível.')
+            return
+        }
         setIsTranslating(true)
         try {
-            if (aiEngine === 'google-gemini') {
-                if (!selectedDoc.originalFileUrl) throw new Error("Documento original indisponível")
-                const res = await fetch('/api/translate/gemini', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fileUrl: selectedDoc.originalFileUrl, documentId: selectedDoc.id, orderId: order.id })
+            const res = await fetch('/api/translate/claude', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileUrl: selectedDoc.originalFileUrl,
+                    documentId: selectedDoc.id,
+                    orderId: order.id,
+                    sourceLanguage: selectedDoc.sourceLanguage || 'pt',
                 })
-                const data = await res.json()
-                if (!res.ok) throw new Error(data.error || 'Erro na API Gemini')
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Erro na API Claude')
 
-                const cleanedText = cleanAiHtml(data.translatedText)
-                justTranslatedRef.current = cleanedText
-                setEditorContent(cleanedText)
+            const cleanedText = cleanAiHtml(data.translatedText)
+            justTranslatedRef.current = cleanedText
+            setEditorContent(cleanedText)
 
-                router.refresh()
-            } else {
-                const { generateTranslationDraft } = await import('../../../../actions/generateTranslation')
-                const result = await generateTranslationDraft(order.id)
-                const newText = (result as any).text || (result as any).translatedText
-
-                if (result.success && newText) {
-                    const cleanedNewText = cleanAiHtml(newText)
-                    justTranslatedRef.current = cleanedNewText
-                    setEditorContent(cleanedNewText)
-                    router.refresh()
-                } else if (result.success) {
-                    alert('Tradução concluída, mas sem texto retornado. Recarregue a página.')
-                    router.refresh()
-                } else {
-                    alert('Erro na tradução: ' + ((result as any).error || 'desconhecido'))
-                }
+            if (data.qaReport?.flags?.length) {
+                console.log('[QA Report]', data.qaReport.flags)
             }
+
+            router.refresh()
         } catch (err: any) {
             alert('Erro ao acionar IA: ' + err.message)
         } finally {
@@ -497,11 +490,7 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <select value={aiEngine} onChange={(e) => setAiEngine(e.target.value)} disabled={isTranslating} className="text-[11px] border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 outline-none">
-                            <option value="azure-deepl">Azure + DeepL</option>
-                            <option value="google-gemini">Google Gemini</option>
-                        </select>
-                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><Zap className="h-3.5 w-3.5" /> IA</button>
+                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Zap className="h-3.5 w-3.5" /> IA Promobi</button>
 
                         <input type="file" ref={replaceFileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleReplaceOriginal} />
                         <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Trocar Original</button>
