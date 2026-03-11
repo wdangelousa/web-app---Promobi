@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import AdminSidebar from './components/AdminSidebar'
+import PageLoadingFallback from './components/PageLoadingFallback'
 import { getCurrentUser } from '@/app/actions/auth'
 import { createClient } from '@/lib/supabase'
 import { logout } from '@/app/actions/auth'
@@ -76,7 +77,9 @@ export default async function AdminLayout({
 
             {/* Main Content */}
             <main className="flex-1 ml-64 p-8">
-                {children}
+                <Suspense fallback={<PageLoadingFallback />}>
+                    {children}
+                </Suspense>
             </main>
         </div>
     )

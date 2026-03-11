@@ -73,6 +73,10 @@ function firstOffset(el: { spans?: { offset: number }[] }): number {
   return el.spans?.[0]?.offset ?? 0
 }
 
+function firstPageNumber(el: { boundingRegions?: { pageNumber: number }[] }): number {
+  return el.boundingRegions?.[0]?.pageNumber ?? 1
+}
+
 function buildHtml(analyzeResult: any): string {
   const paragraphs: any[] = analyzeResult.paragraphs ?? []
   const tables: any[] = analyzeResult.tables ?? []
@@ -87,7 +91,7 @@ function buildHtml(analyzeResult: any): string {
     return tableRanges.some(r => offset >= r.start && offset < r.end)
   }
 
-  type HtmlElement = { offset: number; html: string }
+  type HtmlElement = { offset: number; pageNumber: number; html: string }
   const elements: HtmlElement[] = []
 
   // Paragraphs → <p>
@@ -98,7 +102,7 @@ function buildHtml(analyzeResult: any): string {
     if (para.role === 'pageHeader' || para.role === 'pageFooter') continue
     const content = (para.content as string | undefined)?.trim()
     if (!content) continue
-    elements.push({ offset, html: `<p>${content}</p>` })
+    elements.push({ offset, pageNumber: firstPageNumber(para), html: `<p>${content}</p>` })
   }
 
   // Tables → <table>
@@ -123,12 +127,26 @@ function buildHtml(analyzeResult: any): string {
 
     elements.push({
       offset,
+      pageNumber: firstPageNumber(table),
       html: `<table style="border-collapse:collapse;width:100%;margin-bottom:1em;">${rowsHtml}</table>`,
     })
   }
 
-  elements.sort((a, b) => a.offset - b.offset)
-  return elements.map(e => e.html).join('\n')
+  // Sort by page first, then by offset within the page (1-to-1 pagination)
+  elements.sort((a, b) => a.pageNumber !== b.pageNumber ? a.pageNumber - b.pageNumber : a.offset - b.offset)
+
+  // Emit HTML with explicit page break markers between original document pages
+  const parts: string[] = []
+  let currentPage = 0
+  for (const el of elements) {
+    if (currentPage !== 0 && el.pageNumber > currentPage) {
+      parts.push('<div class="page-break"></div>')
+    }
+    currentPage = el.pageNumber
+    parts.push(el.html)
+  }
+
+  return parts.join('\n')
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────

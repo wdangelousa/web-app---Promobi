@@ -44,6 +44,7 @@
     "@syncfusion/ej2-react-documenteditor": "^32.2.8",
     "@syncfusion/ej2-splitbuttons": "^32.2.7",
     "@tinymce/tinymce-react": "^6.3.0",
+    "@tiptap/extension-table": "^3.20.1",
     "@tiptap/react": "^3.20.1",
     "@tiptap/starter-kit": "^3.20.1",
     "@types/jsonwebtoken": "^9.0.10",

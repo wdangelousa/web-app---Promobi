@@ -148,7 +148,7 @@ export async function generateDeliveryKit(
                 <meta charset="UTF-8">
                 <style>
                   /* @page margin: 0 — margens reais definidas pelos params do Gotenberg abaixo */
-                  @page { size: Letter; margin: 0; }
+                  @page { size: Letter; }
                   body {
                     font-family: "Times New Roman", Times, serif;
                     line-height: 1.2;
@@ -214,6 +214,9 @@ export async function generateDeliveryKit(
 
             const copiedPages = await translationPdf.copyPages(gotenbergPdf, gotenbergPdf.getPageIndices());
 
+            const now = new Date();
+            const transDateStr = `Date: ${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}/${now.getFullYear()}`;
+
             for (const p of copiedPages) {
                 const newPage = translationPdf.addPage(p);
                 newPage.drawImage(letterheadImage, {
@@ -221,7 +224,14 @@ export async function generateDeliveryKit(
                     y: 0,
                     width: PAGE_WIDTH,
                     height: PAGE_HEIGHT,
-                    blendMode: BlendMode.Multiply
+                    // blendMode: BlendMode.Multiply
+                });
+                newPage.drawText(transDateStr, {
+                    x: PAGE_WIDTH - 150,
+                    y: PAGE_HEIGHT - 65,
+                    size: 10,
+                    font: await translationPdf.embedFont(StandardFonts.Helvetica),
+                    color: rgb(0, 0, 0),
                 });
             }
             actualTranslationPageCount = copiedPages.length;

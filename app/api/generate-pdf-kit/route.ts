@@ -5,25 +5,12 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
 
-// ── Text utilities (Ported from generateDeliveryKit for consistency) ────────────────
+function isPdf(buffer: Buffer): boolean {
+    return buffer.length > 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
+}
 
-function stripHtml(html: string): string {
-    return html
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<\/div>/gi, '\n')
-        .replace(/<\/li>/gi, '\n')
-        .replace(/<\/h[1-6]>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\r\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+function isPng(buffer: Buffer): boolean {
+    return buffer.length > 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
 }
 
 function wrapLines(
@@ -57,24 +44,6 @@ function wrapLines(
     return lines;
 }
 
-function sanitizeForWinAnsi(text: string): string {
-    if (!text) return '';
-    return text
-        .replace(/→/g, '->')
-        .replace(/←/g, '<-')
-        .replace(/[\u2018\u2019]/g, "'")
-        .replace(/[\u201C\u201D]/g, '"')
-        .replace(/[\u2013\u2014]/g, '-')
-        .replace(/…/g, '...')
-        .replace(/•/g, '-')
-        .replace(/[^\x00-\xFF]/g, '');
-}
-
-function isImageUrl(url: string): boolean {
-    const lower = url.toLowerCase().split('?')[0];
-    return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png');
-}
-
 export async function POST(req: NextRequest) {
     try {
         const { orderId } = await req.json();
@@ -92,29 +61,52 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
-        // Initialize PDF Document
+        const PAGE_WIDTH = 612;
+        const PAGE_HEIGHT = 792;
+        const MARGIN = 70;
+
+        // ── DIAGNÓSTICO: TESTE B (Imagem está a carregar?) ─────────────
+        let lhBytes: Buffer;
+        try {
+            lhBytes = await fs.readFile(path.join(process.cwd(), 'letterhead.png'));
+        } catch (err1) {
+            try {
+                lhBytes = await fs.readFile(path.join(process.cwd(), 'public', 'letterhead.png'));
+            } catch (err2) {
+                throw new Error("ERRO CRÍTICO: Imagem 'letterhead.png' não encontrada.");
+            }
+        }
+
+        try {
+            const testDoc = await PDFDocument.create();
+            const testPage = testDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            const testImg = await testDoc.embedPng(lhBytes);
+            testPage.drawImage(testImg, { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
+            const testBytes = await testDoc.save();
+            await fs.writeFile(path.join(process.cwd(), 'debug-1-letterhead.pdf'), testBytes);
+            console.log('[DEBUG] debug-1-letterhead.pdf guardado na raiz do projeto.');
+        } catch (e) {
+            console.error('[DEBUG] Falha ao gerar o Teste B:', e);
+        }
+        // ──────────────────────────────────────────────────────────────
+
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
         const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
         const black = rgb(0, 0, 0);
         const grey = rgb(0.3, 0.3, 0.3);
 
-        const PAGE_WIDTH = 612;
-        const PAGE_HEIGHT = 792;
-        const MARGIN = 70;
+        const bgImage = await pdfDoc.embedPng(lhBytes);
 
-        // ── 1. Create Certificate Cover Page (Pure White) ─────────────────────────
+        // ── 1. Create Certificate Cover Page ─────────────────────────
         const coverPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-
-        // Load Assets
         const publicDir = path.join(process.cwd(), 'public');
 
-        // Main Logo: Scaled down by 30%
         const logoBytes = await fs.readFile(path.join(publicDir, 'logo-promobidocs.png'));
         const logoImg = await pdfDoc.embedPng(logoBytes);
-        const originalWidth = 140; // Estimated from current context
+        const originalWidth = 140;
         const originalHeight = (logoImg.height / logoImg.width) * originalWidth;
-        const scaledWidth = originalWidth * 0.7; // -30%
+        const scaledWidth = originalWidth * 0.7;
         const scaledHeight = originalHeight * 0.7;
 
         coverPage.drawImage(logoImg, {
@@ -124,7 +116,6 @@ export async function POST(req: NextRequest) {
             height: scaledHeight,
         });
 
-        // Title
         coverPage.drawText('CERTIFICATION OF TRANSLATION ACCURACY', {
             x: MARGIN,
             y: PAGE_HEIGHT - 160,
@@ -133,7 +124,6 @@ export async function POST(req: NextRequest) {
             color: black,
         });
 
-        // Metadata Grid (Strict Alignment)
         const labelX = 70;
         const valueX = 220;
         let currentY = PAGE_HEIGHT - 210;
@@ -152,12 +142,10 @@ export async function POST(req: NextRequest) {
         drawGridLine('Source Language:', sourceLang);
         drawGridLine('Target Language:', 'English');
 
-        // Count pages logic
-        const totalPagesCount = order.documents.length; // Approximate for metadata, or dynamic later
+        const totalPagesCount = order.documents.length;
         drawGridLine('Number of pages:', String(totalPagesCount).padStart(2, '0'));
         drawGridLine('Order #:', String(order.id + 1000).padStart(4, '0') + '-USA');
 
-        // Certification Body Text
         currentY -= 20;
         const certText = `I, the undersigned, hereby certify that I am fluent in English and the source language (${sourceLang}) of the attached documents, and that the attached translation is a true, accurate, and complete translation of the original document attached hereto.`;
 
@@ -168,7 +156,12 @@ export async function POST(req: NextRequest) {
             currentY -= 18;
         }
 
-        // Signature Section
+        currentY -= 20;
+
+        const dateString = `Dated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+        const dateWidth = font.widthOfTextAtSize(dateString, 11);
+        coverPage.drawText(dateString, { x: PAGE_WIDTH - MARGIN - dateWidth, y: currentY, size: 11, font });
+
         currentY -= 50;
         const signatureBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'));
         const signatureImg = await pdfDoc.embedJpg(signatureBytes);
@@ -179,7 +172,6 @@ export async function POST(req: NextRequest) {
             height: 45,
         });
 
-        // Discreet ATA Logo
         const ataLogoBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'));
         const ataImg = await pdfDoc.embedPng(ataLogoBytes);
         coverPage.drawImage(ataImg, {
@@ -193,10 +185,7 @@ export async function POST(req: NextRequest) {
         coverPage.drawText('___________________________________', { x: MARGIN, y: currentY, size: 12, font });
         currentY -= 20;
         coverPage.drawText('Promobi Certified Translator', { x: MARGIN, y: currentY, size: 11, font: boldFont });
-        currentY -= 15;
-        coverPage.drawText(`Dated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, { x: MARGIN, y: currentY, size: 10, font });
 
-        // Consolidated Footer
         const footerText = '13558 Village Park Dr, Orlando/FL, 32837 | +1 321 324-5851 | translator@promobidocs.com | www.promobidocs.com';
         const footerW = font.widthOfTextAtSize(footerText, 8.5);
         coverPage.drawText(footerText, {
@@ -207,59 +196,151 @@ export async function POST(req: NextRequest) {
             color: grey
         });
 
-        // ── 2. Add Document Pages with Advanced Hardware Logic ────────────────────
-
-        // Load Letterhead for internal pages
-        const timbradoBytes = await fs.readFile(path.join(publicDir, 'letterhead promobi.pdf'));
-        const timbradoPdf = await PDFDocument.load(timbradoBytes, { ignoreEncryption: true });
+        // ── 2. Add Document Pages ────────────────────
 
         for (const doc of order.documents) {
 
-            // A. Handle Translation
             if (doc.externalTranslationUrl) {
-                // External PDF
                 try {
                     const extRes = await fetch(doc.externalTranslationUrl);
                     if (extRes.ok) {
                         const extBuf = Buffer.from(await extRes.arrayBuffer());
+
+                        if (!isPdf(extBuf)) {
+                            throw new Error("O link de tradução externa não retornou um PDF válido.");
+                        }
+
                         const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true });
                         const embeddedPages = await pdfDoc.embedPages(extPdf.getPages());
 
                         for (const embeddedPage of embeddedPages) {
-                            const [bgPage] = await pdfDoc.copyPages(timbradoPdf, [0]);
-                            const p = pdfDoc.addPage(bgPage);
+                            const newPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+                            // DIAGNÓSTICO: TESTE C - Texto PRIMEIRO, Imagem 30% opacidade POR CIMA
                             const scale = Math.min(PAGE_WIDTH / embeddedPage.width, PAGE_HEIGHT / embeddedPage.height);
-                            p.drawPage(embeddedPage, {
+                            newPage.drawPage(embeddedPage, {
                                 x: (PAGE_WIDTH - embeddedPage.width * scale) / 2,
                                 y: (PAGE_HEIGHT - embeddedPage.height * scale) / 2,
                                 width: embeddedPage.width * scale,
                                 height: embeddedPage.height * scale,
+                            });
+
+                            newPage.drawImage(bgImage, {
+                                x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT,
+                                opacity: 0.3
                             });
                         }
                     }
                 } catch (e) {
                     console.error('Error appending external translation', e);
                 }
-            } else if (doc.translatedText) {
-                // Inline AI Translation
-                const plainText = sanitizeForWinAnsi(stripHtml(doc.translatedText));
-                const textLines = wrapLines(plainText, font, 11, wrapWidth);
-                const linesPerPage = 35;
-                const totalTextPages = Math.ceil(textLines.length / linesPerPage);
+            }
 
-                for (let i = 0; i < totalTextPages; i++) {
-                    const [bgPage] = await pdfDoc.copyPages(timbradoPdf, [0]);
-                    const p = pdfDoc.addPage(bgPage);
-                    const pageLines = textLines.slice(i * linesPerPage, (i + 1) * linesPerPage);
-                    let textY = PAGE_HEIGHT - 120;
-                    for (const line of pageLines) {
-                        p.drawText(line, { x: MARGIN, y: textY, size: 11, font, lineHeight: 15 });
-                        textY -= 15;
+            else if (doc.translatedText) {
+
+                const safeHtml = doc.translatedText.replace(/background-color\s*:\s*[^;"]+;?/gi, '');
+
+                const fullHtml = `
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <meta charset="UTF-8">
+                    <style>
+                      html, body {
+                        margin: 0;
+                        padding: 0;
+                        background: transparent !important;
+                        background-color: transparent !important;
+                        -webkit-print-color-adjust: exact;
+                      }
+                      *, *::before, *::after {
+                        background-color: transparent !important;
+                      }
+                      body {
+                        font-family: "Times New Roman", Times, serif;
+                        line-height: 1.2;
+                        color: black;
+                        font-size: 9.5pt;
+                      }
+                      .content-area {
+                        box-sizing: border-box;
+                        padding-top: 180px;
+                        padding-bottom: 100px;
+                        padding-left: 60px;
+                        padding-right: 60px;
+                      }
+                      .zoom-container { zoom: 0.82; }
+                      table { border-collapse: collapse; width: 100%; margin: 6pt 0; table-layout: fixed; }
+                      th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="content-area">
+                      <div class="zoom-container">
+                        ${safeHtml}
+                      </div>
+                    </div>
+                  </body>
+                  </html>
+                `;
+
+                const formData = new FormData();
+                formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
+                formData.append("omitBackground", "true");
+                formData.append("printBackground", "false");
+                formData.append("paperWidth", "8.5");
+                formData.append("paperHeight", "11");
+                formData.append("marginTop", "0");
+                formData.append("marginBottom", "0");
+                formData.append("marginLeft", "0");
+                formData.append("marginRight", "0");
+
+                try {
+                    const gotenbergRes = await fetch("http://localhost:3001/forms/chromium/convert/html", {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (gotenbergRes.ok) {
+                        const gotenbergBuffer = await gotenbergRes.arrayBuffer();
+                        const bufGotenberg = Buffer.from(gotenbergBuffer);
+
+                        // ── DIAGNÓSTICO: TESTE A (O Gotenberg está transparente?) ─────────────
+                        try {
+                            await fs.writeFile(path.join(process.cwd(), 'debug-2-gotenberg-raw.pdf'), bufGotenberg);
+                            console.log('[DEBUG] debug-2-gotenberg-raw.pdf guardado na raiz do projeto.');
+                        } catch (e) {
+                            console.error('[DEBUG] Falha ao guardar debug-2', e);
+                        }
+                        // ──────────────────────────────────────────────────────────────
+
+                        if (!isPdf(bufGotenberg)) {
+                            throw new Error("Gotenberg falhou em gerar o PDF.");
+                        }
+
+                        const gotenbergPdf = await PDFDocument.load(gotenbergBuffer);
+                        const gotenbergPages = gotenbergPdf.getPages();
+                        const embeddedPages = await pdfDoc.embedPages(gotenbergPages);
+
+                        for (let i = 0; i < embeddedPages.length; i++) {
+                            const newPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+                            // DIAGNÓSTICO: TESTE C - Texto PRIMEIRO, Imagem 30% opacidade POR CIMA
+                            newPage.drawPage(embeddedPages[i], { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
+
+                            newPage.drawImage(bgImage, {
+                                x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT,
+                                opacity: 0.3
+                            });
+                        }
+                    } else {
+                        console.error('[Kit] Gotenberg responded with status:', gotenbergRes.status);
                     }
+                } catch (err) {
+                    console.error('[Kit] Error calling Gotenberg:', err);
                 }
             }
 
-            // B. Handle Original Document (with metadata and rotations)
             if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
                 try {
                     const origRes = await fetch(doc.originalFileUrl);
@@ -267,24 +348,7 @@ export async function POST(req: NextRequest) {
                         const origBuf = Buffer.from(await origRes.arrayBuffer());
                         const rotationsMap = (doc.pageRotations as any) || {};
 
-                        if (isImageUrl(doc.originalFileUrl)) {
-                            const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-                            let image;
-                            if (doc.originalFileUrl.toLowerCase().includes('.png')) {
-                                image = await pdfDoc.embedPng(origBuf);
-                            } else {
-                                image = await pdfDoc.embedJpg(origBuf);
-                            }
-                            const scale = Math.min(PAGE_WIDTH / image.width, PAGE_HEIGHT / image.height);
-                            const rot = rotationsMap['0'] || 0;
-                            if (rot !== 0) page.setRotation(degrees(rot));
-                            page.drawImage(image, {
-                                x: (PAGE_WIDTH - image.width * scale) / 2,
-                                y: (PAGE_HEIGHT - image.height * scale) / 2,
-                                width: image.width * scale,
-                                height: image.height * scale,
-                            });
-                        } else {
+                        if (isPdf(origBuf)) {
                             const origPdf = await PDFDocument.load(origBuf, { ignoreEncryption: true });
                             const copiedPages = await pdfDoc.copyPages(origPdf, origPdf.getPageIndices());
                             copiedPages.forEach((p, idx) => {
@@ -292,6 +356,29 @@ export async function POST(req: NextRequest) {
                                 p.setRotation(degrees(rot));
                                 pdfDoc.addPage(p);
                             });
+                        } else {
+                            const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+                            let image;
+                            try {
+                                if (isPng(origBuf)) {
+                                    image = await pdfDoc.embedPng(origBuf);
+                                } else {
+                                    image = await pdfDoc.embedJpg(origBuf);
+                                }
+
+                                const scale = Math.min(PAGE_WIDTH / image.width, PAGE_HEIGHT / image.height);
+                                const rot = rotationsMap['0'] || 0;
+                                if (rot !== 0) page.setRotation(degrees(rot));
+
+                                page.drawImage(image, {
+                                    x: (PAGE_WIDTH - image.width * scale) / 2,
+                                    y: (PAGE_HEIGHT - image.height * scale) / 2,
+                                    width: image.width * scale,
+                                    height: image.height * scale,
+                                });
+                            } catch (imgError) {
+                                console.error('Erro ao ler imagem original:', imgError);
+                            }
                         }
                     }
                 } catch (e) {
@@ -300,7 +387,6 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // ── 3. Save & Upload ──────────────────────────────────────────────────────
         const pdfBytes = await pdfDoc.save();
 
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -319,7 +405,6 @@ export async function POST(req: NextRequest) {
 
         const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
 
-        // Update Order
         const updatedOrder = await prisma.order.update({
             where: { id: order.id },
             data: {

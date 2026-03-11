@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { TableKit } from '@tiptap/extension-table'
 import { BracketNotation } from './extensions/BracketNotation'
 import { TranslatorNote } from './extensions/TranslatorNote'
 
@@ -34,10 +35,11 @@ export default function Editor({
     const [showReference, setShowReference] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [showLangModal, setShowLangModal] = useState(false)
+    const [isExportingPdf, setIsExportingPdf] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const editor = useEditor({
-        extensions: [StarterKit, BracketNotation, TranslatorNote],
+        extensions: [StarterKit, TableKit, BracketNotation, TranslatorNote],
         content,
         immediatelyRender: false,
         onUpdate: ({ editor }) => {
@@ -54,6 +56,34 @@ export default function Editor({
 
     const handleSaveClick = () => {
         if (onSave) onSave(1)
+    }
+
+    const handleExportPDF = async () => {
+        if (!editor) return
+        setIsExportingPdf(true)
+        try {
+            const res = await fetch('/api/pdf/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ htmlContent: editor.getHTML(), fileName: 'traducao.pdf' }),
+            })
+            if (!res.ok) {
+                const err = await res.json()
+                alert(err.error || 'Erro ao gerar PDF')
+                return
+            }
+            const blob = await res.blob()
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'traducao.pdf'
+            a.click()
+            URL.revokeObjectURL(url)
+        } catch {
+            alert('Não foi possível conectar ao serviço de PDF. Verifique se o Docker está a correr.')
+        } finally {
+            setIsExportingPdf(false)
+        }
     }
 
     const handlePreviewClick = () => {
@@ -119,6 +149,21 @@ export default function Editor({
                         className="text-gray-600 hover:text-blue-600 px-4 py-2 text-sm font-semibold transition border border-transparent hover:border-gray-200 rounded"
                     >
                         💾 Salvar
+                    </button>
+
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={isExportingPdf}
+                        className="text-rose-700 bg-rose-50 border border-rose-200 px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                        {isExportingPdf ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-rose-700 border-t-transparent" />
+                                Gerando...
+                            </>
+                        ) : (
+                            <>📄 Download PDF</>
+                        )}
                     </button>
 
                     <button
