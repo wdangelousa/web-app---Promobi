@@ -462,18 +462,35 @@ export default function OrcamentoManual() {
                 const doc = docsWithFiles[i]
                 setUploadProgress(`Enviando documentos... (${i + 1}/${docsWithFiles.length})`)
                 console.log(`[GenerateProposal] Uploading doc ${i + 1}: ${doc.fileName}`)
-                const form = new FormData(); form.append('file', doc.file as File)
-                const res = await fetch('/api/upload', { method: 'POST', body: form })
-                if (res.ok) {
-                    const data = await res.json()
-                    uploadedDocs.push({ docIndex: selectedDocs.indexOf(doc), url: data.url, fileName: data.fileName, contentType: data.contentType })
-                    console.log(`[GenerateProposal] Success: ${doc.fileName} -> ${data.url}`)
-                } else {
-                    const errorData = await res.json().catch(() => ({}));
-                    console.error(`[GenerateProposal] Failed to upload ${doc.fileName}:`, errorData)
+
+                // Step 1: get a pre-signed upload URL (tiny JSON request — no 413)
+                const presignRes = await fetch('/api/upload/presign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: doc.fileName }),
+                })
+                if (!presignRes.ok) {
+                    const err = await presignRes.json().catch(() => ({}))
+                    console.error(`[GenerateProposal] Presign failed for ${doc.fileName}:`, err)
+                    toast.error(`Falha ao preparar envio: ${doc.fileName}`)
+                    throw new Error(`Presign failed for ${doc.fileName}`)
+                }
+                const { signedUrl, publicUrl, contentType } = await presignRes.json()
+
+                // Step 2: upload directly to Supabase (bypasses Next.js body limit)
+                const putRes = await fetch(signedUrl, {
+                    method: 'PUT',
+                    body: doc.file as File,
+                    headers: { 'Content-Type': contentType || (doc.file as File).type || 'application/octet-stream' },
+                })
+                if (!putRes.ok) {
+                    console.error(`[GenerateProposal] Direct upload failed for ${doc.fileName}: ${putRes.status}`)
                     toast.error(`Falha ao enviar arquivo: ${doc.fileName}`)
                     throw new Error(`Upload failed for ${doc.fileName}`)
                 }
+
+                uploadedDocs.push({ docIndex: selectedDocs.indexOf(doc), url: publicUrl, fileName: doc.fileName, contentType })
+                console.log(`[GenerateProposal] Success: ${doc.fileName} -> ${publicUrl}`)
             }
 
             setUploadProgress('Gerando proposta comercial...')
