@@ -1,113 +1,93 @@
-/**
- * lib/emails/delivery.ts
- * The FINAL email — certified documents are ready.
- * Must be the most premium, action-driving template we have.
- */
-import { wrapEmail, brand } from './base';
-
 export interface DeliveryProps {
-    orderId: number;
-    customerName: string;
-    deliveryUrl: string;
-    pageCount?: number;
-    serviceType?: 'translation' | 'notarization';
-    expiresInDays?: number; // optional: link expiry notice
+  orderId: string | number;
+  customerName: string;
+  deliveryUrl: string;
+  serviceType: 'translation' | 'notarization';
+  pageCount?: number;
 }
 
-export function renderDelivery({
-    orderId,
-    customerName,
-    deliveryUrl,
-    pageCount = 1,
-    serviceType = 'translation',
-    expiresInDays = 30,
-}: DeliveryProps): string {
-    const serviceLabel = serviceType === 'notarization' ? 'Notarization Certificate' : 'Certified Translation';
+export function renderDelivery(props: DeliveryProps) {
+  const { orderId, customerName, deliveryUrl, serviceType } = props;
+  const currentYear = new Date().getFullYear();
+  const serviceName = serviceType === 'notarization' ? 'Notarization' : 'Certified Translation';
+  // Note: pageCount is currently not in DeliveryProps, it could be added later if needed.
+  const pageCount = "1"; 
 
-    const inner = `
-<div class="hdr" style="background:linear-gradient(135deg, ${brand.dark} 0%, #1e1b4b 100%);">
-    <div class="hdr-logo">Promobi</div>
-    <div class="hdr-sub" style="color:#a5b4fc;">Your Documents Are Ready</div>
-</div>
-<div class="body">
-    <!-- Hero celebration -->
-    <div style="text-align:center;padding:8px 0 28px;">
-        <div style="font-size:56px;margin-bottom:16px;">🎉</div>
-        <p style="font-size:24px;font-weight:800;color:${brand.dark};line-height:1.2;margin-bottom:8px;">
-            Your ${serviceLabel}<br>is Ready!
-        </p>
-        <p style="font-size:14px;color:#64748b;">Order #${orderId} · ${pageCount} page${pageCount !== 1 ? 's' : ''}</p>
-    </div>
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Your ${serviceName} is Ready!</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f6f9; padding: 40px 0;">
+    <tr>
+      <td align="center">
+        <!-- Main Container -->
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+          
+          <!-- Header (Blue Banner) -->
+          <tr>
+            <td align="center" style="background-color: #0052cc; padding: 40px 20px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: bold; letter-spacing: -0.5px;">🎉 Your ${serviceName} is Ready!</h1>
+              <p style="color: #e0eaff; margin: 10px 0 0 0; font-size: 15px; opacity: 0.9;">Order #${orderId} · ${pageCount} pages</p>
+            </td>
+          </tr>
 
-    <p class="para" style="text-align:center;">
-        Hi <strong>${customerName}</strong>! Your certified document has passed our
-        rigorous quality review and is legally accepted by <strong>USCIS, federal courts,
-        and official institutions</strong> across the United States.
-    </p>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="margin: 0 0 20px 0; font-size: 18px; color: #333333;">Hi <strong>${customerName}</strong>!</p>
+              <p style="margin: 0 0 30px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+                We are pleased to inform you that your documents have been processed and are now available for download. You can access them directly through the secure link below.
+              </p>
 
-    <!-- Big download CTA -->
-    <div class="cta-wrap" style="margin:32px 0;">
-        <a href="${deliveryUrl}" class="btn" style="font-size:17px;padding:18px 44px;">
-            ⬇ Download Certified Documents
-        </a>
-        <p style="font-size:12px;color:#94a3b8;margin-top:14px;">
-            This secure link is active for ${expiresInDays} days.
-        </p>
-    </div>
+              <!-- CTA Button -->
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td align="center" style="padding: 10px 0 30px 0;">
+                    <a href="${deliveryUrl}" style="background-color: #0052cc; color: #ffffff; padding: 18px 30px; border-radius: 8px; font-weight: bold; text-decoration: none; display: inline-block; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 82, 204, 0.2);">⬇ View All Documents</a>
+                  </td>
+                </tr>
+              </table>
 
-    <!-- What's included -->
-    <div class="box" style="background:#f8fafc;border:1px solid #e2e8f0;">
-        <p style="font-size:13px;font-weight:700;color:${brand.dark};margin-bottom:12px;
-                  text-transform:uppercase;letter-spacing:1px;">
-            What's Included in Your Package
-        </p>
-        ${serviceType === 'translation' ? `
-        <div class="box-row">
-            <span style="font-size:14px;color:${brand.slate};">📄 Certified Translation (PDF)</span>
-            <span class="pill" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">✓ Included</span>
-        </div>
-        <div class="box-row">
-            <span style="font-size:14px;color:${brand.slate};">🏛️ Certification Letter</span>
-            <span class="pill" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">✓ Included</span>
-        </div>
-        <div class="box-row">
-            <span style="font-size:14px;color:${brand.slate};">⚖️ USCIS Compliance Seal</span>
-            <span class="pill" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">✓ Included</span>
-        </div>` : `
-        <div class="box-row">
-            <span style="font-size:14px;color:${brand.slate};">📜 Notarized Document (PDF)</span>
-            <span class="pill" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">✓ Included</span>
-        </div>
-        <div class="box-row">
-            <span style="font-size:14px;color:${brand.slate};">✍️ Notary Certificate & Seal</span>
-            <span class="pill" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">✓ Included</span>
-        </div>`}
-    </div>
+              <!-- Document Info Box -->
+              <div style="background-color: #f8f9fc; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+                <h3 style="margin: 0 0 12px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888888;">Order Details</h3>
+                <p style="margin: 5px 0; font-size: 15px; color: #333333;"><strong>Service:</strong> ${serviceName}</p>
+                <p style="margin: 5px 0; font-size: 15px; color: #333333;"><strong>Order ID:</strong> #${orderId}</p>
+                <p style="margin: 5px 0; font-size: 15px; color: #333333;"><strong>Delivery Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+              </div>
 
-    <!-- Social proof / referral nudge -->
-    <div style="background:linear-gradient(135deg,#fff7ed,#fff);border:1px solid #fed7aa;
-                border-radius:10px;padding:20px 24px;margin:20px 0;text-align:center;">
-        <p style="font-size:14px;font-weight:700;color:${brand.dark};margin-bottom:6px;">
-            Satisfied with your experience?
-        </p>
-        <p style="font-size:13px;color:#64748b;line-height:1.6;">
-            Share Promobidocs with friends who need certified translations.
-            Your referral means the world to our small business. 🙏
-        </p>
-        <a href="https://wa.me/?text=I%20used%20Promobidocs%20for%20my%20certified%20translation%20and%20it%20was%20amazing!%20Check%20them%20out%3A%20https%3A%2F%2Fpromobidocs.com"
-           style="display:inline-block;margin-top:14px;padding:10px 24px;background:${brand.primary};
-                  color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;">
-            Share on WhatsApp 📱
-        </a>
-    </div>
+              <!-- Important Note -->
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border-top: 1px solid #eeeeee; padding-top: 25px;">
+                <tr>
+                  <td style="font-size: 14px; color: #777777; line-height: 1.5;">
+                    <strong style="color: #333333;">Next Steps:</strong> Once you open the link, we recommend saving your documents to a secure location on your computer or cloud storage.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <div class="divider"></div>
-    <p class="para" style="font-size:12px;color:#94a3b8;text-align:center;">
-        <strong style="color:${brand.slate};">Need a copy in the future?</strong>
-        All delivered documents are securely archived for 12 months.
-        Simply contact us and we'll resend them at no cost.
-    </p>
-</div>`;
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 0 30px 40px 30px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; color: #999999;">
+                Thank you for choosing <strong>Promobi</strong> for your document services.<br>
+                Need help? <a href="mailto:support@promobidocs.com" style="color: #0052cc; text-decoration: none;">Contact our support team</a>
+              </p>
+              <div style="margin-top: 25px; border-top: 1px solid #eeeeee; padding-top: 20px;">
+                <p style="margin: 0; font-size: 12px; color: #bbbbbb;">&copy; ${currentYear} Promobi. All rights reserved.</p>
+              </div>
+            </td>
+          </tr>
 
-    return wrapEmail(inner);
+        </table>
+        <!-- End Main Container -->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }

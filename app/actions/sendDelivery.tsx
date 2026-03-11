@@ -28,7 +28,6 @@ export async function sendDelivery(orderId: number): Promise<DeliveryResponse> {
             customerName: order.user.fullName || 'Cliente',
             customerEmail: order.user.email,
             deliveryUrl: downloadLink,
-            pageCount: order.documents.length,
             serviceType: 'translation',
         })
 

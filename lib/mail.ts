@@ -8,6 +8,7 @@ import { renderOrderReceived, type OrderReceivedProps } from './emails/order-rec
 import { renderPaymentConfirmed, type PaymentConfirmedProps } from './emails/payment-confirmed';
 import { renderTranslationStarted, type TranslationStartedProps } from './emails/translation-started';
 import { renderDelivery, type DeliveryProps } from './emails/delivery';
+import { renderDeliveryActionRequired, type DeliveryActionRequiredProps } from './emails/delivery-action';
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
 
@@ -16,10 +17,16 @@ const FROM = 'Promobi <onboarding@resend.dev>';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'wdangelo81@gmail.com';
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
-async function send(to: string, subject: string, html: string) {
+async function send(to: string, subject: string, html: string, bcc?: string[]) {
     try {
-        const data = await resend.emails.send({ from: FROM, to: [to], subject, html });
-        console.log(`[mail] ✉ Sent to ${to}: "${subject}"`);
+        const data = await resend.emails.send({ 
+            from: FROM, 
+            to: [to], 
+            subject, 
+            html,
+            ...(bcc ? { bcc } : {})
+        });
+        console.log(`[mail] ✉ Sent to ${to}: "${subject}"${bcc ? ` (BCC: ${bcc.join(', ')})` : ''}`);
         return { success: true, data };
     } catch (error) {
         console.error(`[mail] ✗ Failed "${subject}" → ${to}:`, error);
@@ -62,9 +69,23 @@ export async function sendTranslationStartedEmail(
 // ── 4. Delivery ────────────────────────────────────────────────────────────────
 export async function sendDeliveryEmail(props: DeliveryProps & { customerEmail: string }) {
     const html = renderDelivery(props);
+    const serviceName = props.serviceType === 'notarization' ? 'Notarization' : 'Certified Translation';
     return send(
         props.customerEmail,
-        `🎉 Your Documents Are Ready — Order #${props.orderId} | Promobi`,
+        `🎉 Your ${serviceName} is Ready! — Order #${props.orderId}`,
+        html,
+        ['admin@promobi.docs']
+    );
+}
+
+// ── 5. Delivery Action Required ────────────────────────────────────────────────
+export async function sendDeliveryActionRequiredEmail(
+    props: DeliveryActionRequiredProps & { customerEmail: string }
+) {
+    const html = renderDeliveryActionRequired(props);
+    return send(
+        props.customerEmail,
+        `⚠️ Action Required: Documents Ready for Download — Order #${props.orderId} | Promobi`,
         html
     );
 }
