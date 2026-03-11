@@ -10,14 +10,15 @@ import {
   FileText, Loader2, ChevronRight, Bot,
   Send, RotateCcw, ExternalLink, Check, X, Copy,
 } from 'lucide-react'
-import { approveDocument, saveTranslationDraft, releaseToClient } from '@/app/actions/workbench'
+import { approveDocument, saveTranslationDraft } from '@/app/actions/workbench'
 import { retryTranslation } from '@/app/actions/retry-translation'
+import { sendDelivery } from '@/app/actions/sendDelivery'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Doc {
   id: number
-  exactNameOnDoc: string | null   // campo real no DB
+  exactNameOnDoc: string | null
   docType: string | null
   originalFileUrl: string | null
   translatedText: string | null
@@ -153,7 +154,8 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
   const handleRelease = () => {
     if (!allDone) return
     startRelease(async () => {
-      const r = await releaseToClient(order.id, currentUserName)
+      // Usando a nova rota de envio unificada do Resend
+      const r = await sendDelivery(order.id, currentUserName)
       if (r.success) {
         setReleased(true)
         showToast('Pedido liberado! E-mail enviado ao cliente ✅')
