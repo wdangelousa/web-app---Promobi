@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 import prisma from '@/lib/prisma'
+import { SourceLanguage } from '@prisma/client'
 import { createClient } from '@supabase/supabase-js'
 
 function stripHtml(html: string): string {
@@ -96,9 +97,9 @@ export async function generateDeliveryKit(
         if (options?.coverLanguage) {
             await prisma.document.update({
                 where: { id: documentId },
-                data: { sourceLanguage: options.coverLanguage }
+                data: { sourceLanguage: options.coverLanguage as SourceLanguage }
             });
-            doc.sourceLanguage = options.coverLanguage;
+            doc.sourceLanguage = options.coverLanguage as SourceLanguage;
         }
 
         const finalPdf = await PDFDocument.create()
