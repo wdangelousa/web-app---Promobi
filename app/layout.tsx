@@ -21,12 +21,12 @@ export default function RootLayout({
     children: React.ReactNode
 }) {
     return (
-        <html lang="pt-BR">
+        <html lang="pt-BR" suppressHydrationWarning>
             <head>
                 <link rel="icon" href="/favicon.png" type="image/png" />
                 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
             </head>
-            <body className={`${inter.className} overflow-x-hidden w-full max-w-[100vw]`}>
+            <body className={`${inter.className} overflow-x-hidden w-full max-w-[100vw]`} suppressHydrationWarning>
                 <LocaleProvider>
                     <WhatsAppProvider>
                         <UIFeedbackProvider>
