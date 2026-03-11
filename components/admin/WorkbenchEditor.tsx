@@ -158,7 +158,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
           showToast('E-mail enviado ao cliente ✅')
         } else {
           // Garante que o TS reconheça o fallback de erro de forma segura
-          showToast(response.error ?? 'Erro desconhecido ao enviar', 'err')
+          showToast(('error' in response ? response.error : undefined) ?? 'Erro desconhecido ao enviar', 'err')
         }
       } catch (err: any) {
         showToast('Erro interno no servidor', 'err')

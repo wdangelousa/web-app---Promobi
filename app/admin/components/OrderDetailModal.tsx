@@ -136,7 +136,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
             onUpdate({ ...order, status: 'COMPLETED' })
             onClose()
         } else {
-            alert("Erro ao enviar e-mail: " + result.error)
+            alert("Erro ao enviar e-mail: " + ('error' in result ? result.error : 'Desconhecido'))
         }
         setLoading(false)
     }
