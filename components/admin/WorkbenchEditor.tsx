@@ -1,7 +1,6 @@
 'use client'
 
 // components/admin/WorkbenchEditor.tsx
-// Mesa de trabalho: Isabele revisa tradução DeepL, faz upload do PDF e libera para o cliente.
 
 import { useState, useTransition, useRef, useCallback } from 'react'
 import Link from 'next/link'
@@ -67,14 +66,11 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
   const approved = docs.filter(d => d.translation_status === 'approved').length
   const total = docs.length
   const pct = total > 0 ? Math.round((approved / total) * 100) : 0
-  const allDone = approved === total && total > 0 && docs.every(d => !!d.delivery_pdf_url)
   const isCompleted = order.status === 'COMPLETED' || released
 
-  // Helper: get display text (edited > saved > '')
   const getText = (doc: Doc) =>
     edited[doc.id] !== undefined ? edited[doc.id] : (doc.translatedText ?? '')
 
-  // Helper: doc display name
   const docName = (doc: Doc) =>
     (doc.exactNameOnDoc ?? doc.docType ?? 'Documento').split(/[/\\]/).pop() ?? 'Documento'
 
@@ -152,15 +148,20 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
   // ── Release to client ─────────────────────────────────────────────────────
 
   const handleRelease = () => {
-    if (!allDone) return
     startRelease(async () => {
-      // Usando a nova rota de envio unificada do Resend
-      const r = await sendDelivery(order.id, currentUserName)
-      if (r.success) {
-        setReleased(true)
-        showToast('Pedido liberado! E-mail enviado ao cliente ✅')
-      } else {
-        showToast(r.error ?? 'Erro ao liberar', 'err')
+      try {
+        // Envia apenas o ID do pedido. Evita erros de múltiplos argumentos.
+        const response = await sendDelivery(order.id)
+
+        if (response.success) {
+          setReleased(true)
+          showToast('E-mail enviado ao cliente ✅')
+        } else {
+          // Garante que o TS reconheça o fallback de erro de forma segura
+          showToast(response.error ?? 'Erro desconhecido ao enviar', 'err')
+        }
+      } catch (err: any) {
+        showToast('Erro interno no servidor', 'err')
       }
     })
   }
@@ -168,10 +169,10 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
+    <div className="h-[100dvh] flex flex-col bg-slate-50 overflow-hidden relative">
 
       {/* ── Top bar ───────────────────────────────────────────── */}
-      <div className="bg-slate-900 border-b border-slate-800 shrink-0">
+      <div className="bg-slate-900 border-b border-slate-800 shrink-0 z-20">
         <div className="flex items-center justify-between px-5 py-3">
           <div className="flex items-center gap-4">
             <Link
@@ -222,14 +223,14 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
           </div>
         </div>
       </div>
-      <div className="h-0.5 bg-orange-500 shrink-0" />
+      <div className="h-0.5 bg-orange-500 shrink-0 z-20" />
 
       {/* ── Layout principal ──────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative z-10">
 
         {/* ── Sidebar: lista de documentos ──────────────────────── */}
         <aside className="w-68 bg-white border-r border-slate-200 flex flex-col overflow-hidden shrink-0" style={{ width: 272 }}>
-          <div className="px-4 py-3 border-b border-slate-100">
+          <div className="px-4 py-3 border-b border-slate-100 shrink-0">
             <p className="text-[10px] font-bold text-slate-500 tracking-wider">{total} DOCUMENTOS</p>
           </div>
 
@@ -311,7 +312,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
             </div>
 
             {/* Painel lado a lado */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex min-h-0 overflow-hidden">
 
               {/* ESQUERDA: original */}
               <div className="flex-1 flex flex-col border-r border-slate-200 overflow-hidden">
@@ -399,7 +400,6 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                       value={getText(selected)}
                       onChange={e => setEdited(prev => ({ ...prev, [selected.id]: e.target.value }))}
                       placeholder="Tradução aparecerá aqui..."
-                      disabled={isCompleted}
                     />
                   </>
                 )}
@@ -407,76 +407,74 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
             </div>
 
             {/* Barra de ações por documento */}
-            {!isCompleted && (
-              <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
-                <button
-                  onClick={handleSaveDraft}
-                  disabled={saving}
-                  className="flex items-center gap-2 text-sm border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-xl px-4 py-2 transition-all disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                  Salvar rascunho
-                </button>
+            <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+              <button
+                onClick={handleSaveDraft}
+                disabled={saving}
+                className="flex items-center gap-2 text-sm border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-xl px-4 py-2 transition-all disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                Salvar rascunho
+              </button>
 
-                <div className="flex items-center gap-3">
-                  {/* Upload PDF */}
-                  <div>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept=".pdf"
-                      onChange={handleUpload}
-                      className="hidden"
-                      id={`upload-${selected.id}`}
-                      disabled={uploading !== null}
-                    />
-                    <label
-                      htmlFor={`upload-${selected.id}`}
-                      className={`
-                        flex items-center gap-2 text-sm px-4 py-2 rounded-xl cursor-pointer transition-all
-                        ${selected.delivery_pdf_url
-                          ? 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100'
-                          : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}
-                        ${uploading === selected.id ? 'opacity-50 cursor-not-allowed' : ''}
-                      `}
+              <div className="flex items-center gap-3">
+                {/* Upload PDF */}
+                <div>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleUpload}
+                    className="hidden"
+                    id={`upload-${selected.id}`}
+                    disabled={uploading !== null}
+                  />
+                  <label
+                    htmlFor={`upload-${selected.id}`}
+                    className={`
+                      flex items-center gap-2 text-sm px-4 py-2 rounded-xl cursor-pointer transition-all
+                      ${selected.delivery_pdf_url
+                        ? 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100'
+                        : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}
+                      ${uploading === selected.id ? 'opacity-50 cursor-not-allowed' : ''}
+                    `}
+                  >
+                    {uploading === selected.id
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : selected.delivery_pdf_url
+                        ? <><Check className="w-4 h-4" /> PDF carregado</>
+                        : <><Upload className="w-4 h-4" /> Upload PDF traduzido</>
+                    }
+                  </label>
+                  {selected.delivery_pdf_url && (
+                    <a
+                      href={selected.delivery_pdf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-[10px] text-green-600 text-center mt-1 hover:underline"
                     >
-                      {uploading === selected.id
-                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : selected.delivery_pdf_url
-                          ? <><Check className="w-4 h-4" /> PDF carregado</>
-                          : <><Upload className="w-4 h-4" /> Upload PDF traduzido</>
-                      }
-                    </label>
-                    {selected.delivery_pdf_url && (
-                      <a
-                        href={selected.delivery_pdf_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-[10px] text-green-600 text-center mt-1 hover:underline"
-                      >
-                        Ver PDF ↗
-                      </a>
-                    )}
-                  </div>
-
-                  {/* Aprovar */}
-                  {selected.translation_status === 'approved' ? (
-                    <div className="flex items-center gap-2 text-sm font-bold text-green-700 bg-green-100 px-4 py-2 rounded-xl border border-green-300">
-                      <CheckCircle2 className="w-4 h-4" /> Aprovado
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleApprove}
-                      disabled={!selected.delivery_pdf_url}
-                      className="flex items-center gap-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed px-5 py-2 rounded-xl transition-all shadow-sm"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Aprovar documento
-                    </button>
+                      Ver PDF ↗
+                    </a>
                   )}
                 </div>
+
+                {/* Aprovar */}
+                {selected.translation_status === 'approved' ? (
+                  <div className="flex items-center gap-2 text-sm font-bold text-green-700 bg-green-100 px-4 py-2 rounded-xl border border-green-300">
+                    <CheckCircle2 className="w-4 h-4" /> Aprovado
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleApprove}
+                    disabled={!selected.delivery_pdf_url}
+                    className="flex items-center gap-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed px-5 py-2 rounded-xl transition-all shadow-sm"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Aprovar documento
+                  </button>
+                )}
               </div>
-            )}
+            </div>
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-400">
@@ -485,56 +483,35 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
         )}
       </div>
 
-      {/* ── Barra inferior: liberar para o cliente ────────────── */}
-      {!isCompleted && (
-        <div className={`
-          shrink-0 border-t px-6 py-4 flex items-center justify-between transition-colors duration-300
-          ${allDone ? 'bg-green-600 border-green-700' : 'bg-white border-slate-200'}
-        `}>
-          <div>
-            <p className={`text-sm font-bold ${allDone ? 'text-white' : 'text-slate-700'}`}>
-              {allDone
-                ? '✅ Todos os documentos aprovados — pronto para liberar!'
-                : `${approved} de ${total} documentos aprovados`}
-            </p>
-            <p className={`text-xs mt-0.5 ${allDone ? 'text-green-100' : 'text-slate-400'}`}>
-              {allDone
-                ? 'Clique para enviar os PDFs ao cliente por e-mail.'
-                : 'Faça o upload do PDF e aprove cada documento para liberar.'}
-            </p>
-          </div>
-          <button
-            onClick={handleRelease}
-            disabled={!allDone || releasing}
-            className={`
-              flex items-center gap-2.5 font-bold px-7 py-3 rounded-xl text-sm transition-all shadow-lg
-              ${allDone
-                ? 'bg-white text-green-700 hover:bg-green-50 active:scale-95'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'}
-            `}
-          >
-            {releasing
-              ? <><Loader2 className="w-5 h-5 animate-spin" /> Liberando...</>
-              : <><Send className="w-5 h-5" /> Liberar para o Cliente</>
-            }
-          </button>
+      {/* ── Barra inferior SEMPRE VISÍVEL para forçar a entrega ────────────── */}
+      <div className={`
+        shrink-0 border-t px-6 py-4 flex items-center justify-between shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-50 relative bottom-0 w-full
+        ${isCompleted ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200'}
+      `}>
+        <div>
+          <p className={`text-sm font-bold ${isCompleted ? 'text-green-800' : 'text-slate-700'}`}>
+            {isCompleted ? '✅ Pedido já entregue!' : 'Pronto para liberar o pedido?'}
+          </p>
+          <p className={`text-xs mt-0.5 ${isCompleted ? 'text-green-600' : 'text-slate-500'}`}>
+            {isCompleted
+              ? 'Você pode reenviar o e-mail de entrega se o cliente não o tiver recebido.'
+              : 'Você pode enviar os documentos ao cliente agora mesmo.'}
+          </p>
         </div>
-      )}
-
-      {isCompleted && (
-        <div className="shrink-0 bg-green-600 border-t border-green-700 px-6 py-4 flex items-center justify-between">
-          <div className="text-white">
-            <p className="font-bold">✅ Pedido #{order.id} entregue ao cliente!</p>
-            <p className="text-green-100 text-xs mt-0.5">E-mail de entrega enviado automaticamente.</p>
-          </div>
-          <Link
-            href="/admin/workbench"
-            className="bg-white text-green-700 font-bold px-5 py-2.5 rounded-xl text-sm hover:bg-green-50 transition-all"
-          >
-            Próximo pedido →
-          </Link>
-        </div>
-      )}
+        <button
+          onClick={handleRelease}
+          disabled={releasing}
+          className={`
+            flex items-center gap-2.5 font-bold px-7 py-3 rounded-xl text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50
+            ${isCompleted ? 'bg-green-700 text-white hover:bg-green-800' : 'bg-green-600 text-white hover:bg-green-700'}
+          `}
+        >
+          {releasing
+            ? <><Loader2 className="w-5 h-5 animate-spin" /> {isCompleted ? 'Reenviando...' : 'Liberando...'}</>
+            : <><Send className="w-5 h-5" /> {isCompleted ? 'Reenviar Entrega' : 'Liberar para o Cliente'}</>
+          }
+        </button>
+      </div>
 
       {/* ── Toast ────────────────────────────────────────────── */}
       {toast && (

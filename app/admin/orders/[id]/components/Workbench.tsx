@@ -131,7 +131,6 @@ export default function Workbench({ order }: { order: Order }) {
         setIsSavingDraft(true)
         try {
             const { saveTranslationDraft } = await import('../../../../actions/workbench')
-            // Removido o 3º argumento causador do bug!
             const result = await saveTranslationDraft(selectedDoc.id, editorContent)
             if (!result.success) alert('Erro ao salvar: ' + result.error)
             else router.refresh()
@@ -148,7 +147,6 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             if (!selectedDoc.externalTranslationUrl) {
                 const { saveTranslationDraft } = await import('../../../../actions/workbench')
-                // Removido o 3º argumento causador do bug!
                 await saveTranslationDraft(selectedDoc.id, editorContent)
             }
 
@@ -210,7 +208,6 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             const { saveTranslationDraft, setDocumentReviewed } = await import('../../../../actions/workbench')
             if (!selectedDoc.externalTranslationUrl) {
-                // Removido o 3º argumento causador do bug!
                 const saveResult = await saveTranslationDraft(selectedDoc.id, editorContent)
                 if (!saveResult.success) {
                     alert('Erro ao salvar rascunho antes de aprovar: ' + saveResult.error)
@@ -341,7 +338,6 @@ export default function Workbench({ order }: { order: Order }) {
         try {
             if (selectedDoc && selectedDocsForDelivery.includes(selectedDoc.id) && !selectedDoc.externalTranslationUrl) {
                 const { saveTranslationDraft } = await import('../../../../actions/workbench')
-                // Removido o 3º argumento causador do bug!
                 await saveTranslationDraft(selectedDoc.id, editorContent)
             }
 
@@ -478,6 +474,21 @@ export default function Workbench({ order }: { order: Order }) {
                         </button>
                     </div>
                 )}
+
+                {/* --- NOVO BOTÃO DE ENTREGA ADICIONADO AQUI --- */}
+                <div className="p-3 border-t border-gray-800 bg-gray-900 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.2)] z-10">
+                    <button
+                        onClick={() => setShowDeliveryModal(true)}
+                        disabled={!someSelected}
+                        className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-sm font-bold transition-all ${someSelected
+                                ? 'bg-[#f58220] hover:bg-orange-500 text-white shadow-lg active:scale-95'
+                                : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                            }`}
+                    >
+                        <Send className="w-4 h-4" />
+                        {someSelected ? `Entregar Kit(s) (${selectedDocsForDelivery.length})` : 'Selecione para Entregar'}
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 flex flex-col min-w-0 bg-white relative">

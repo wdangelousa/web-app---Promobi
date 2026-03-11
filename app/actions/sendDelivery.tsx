@@ -1,132 +1,55 @@
-/**
- * lib/mail.ts
- * Centralised Resend email sender.
- * All business logic lives in lib/emails/*.ts templates.
- */
-import { Resend } from 'resend';
-import { renderOrderReceived, type OrderReceivedProps } from './emails/order-received';
-import { renderPaymentConfirmed, type PaymentConfirmedProps } from './emails/payment-confirmed';
-import { renderTranslationStarted, type TranslationStartedProps } from './emails/translation-started';
-import { renderDelivery, type DeliveryProps } from './emails/delivery';
+'use server'
 
-const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
+import prisma from '@/lib/prisma'
+import { sendDeliveryEmail } from '@/lib/mail'
+import { revalidatePath } from 'next/cache'
 
-// Endereços remetentes oficiais
-const FROM_DEFAULT = 'Promobidocs <desk@promobidocs.com>';
-const FROM_DELIVERY = 'Promobidocs <delivery@promobidocs.com>';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'wdangelo81@gmail.com';
+// Tipagem estrita
+export type DeliveryResponse =
+    | { success: true }
+    | { success: false; error: string }
 
-// ── Helper ─────────────────────────────────────────────────────────────────────
-async function send(to: string, subject: string, html: string, fromAddress: string = FROM_DEFAULT) {
+export async function sendDelivery(orderId: number): Promise<DeliveryResponse> {
     try {
-        const data = await resend.emails.send({ from: fromAddress, to: [to], subject, html });
-        console.log(`[mail] ✉ Sent to ${to}: "${subject}" (From: ${fromAddress})`);
-        return { success: true, data };
-    } catch (error) {
-        console.error(`[mail] ✗ Failed "${subject}" → ${to}:`, error);
-        return { success: false, error };
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { user: true, documents: true }
+        })
+
+        if (!order || !order.user || !order.user.email) {
+            return { success: false, error: "Pedido, usuário ou e-mail não encontrado." }
+        }
+
+        const downloadLink = `${process.env.NEXT_PUBLIC_APP_URL}/delivery/${order.id}`
+
+        // Chama a função real de e-mail
+        const emailResult = await sendDeliveryEmail({
+            orderId: order.id,
+            customerName: order.user.fullName || 'Cliente',
+            customerEmail: order.user.email,
+            deliveryUrl: downloadLink,
+            pageCount: order.documents.length,
+            serviceType: 'translation',
+        })
+
+        if (!emailResult.success) {
+            console.error("Erro do Resend:", emailResult.error)
+            return { success: false, error: "Falha ao enviar e-mail pelo Resend." }
+        }
+
+        // Atualiza banco de dados
+        await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'COMPLETED' }
+        })
+
+        revalidatePath('/admin')
+        revalidatePath(`/admin/orders/${orderId}`)
+
+        return { success: true }
+
+    } catch (error: any) {
+        console.error("Send Delivery Error:", error)
+        return { success: false, error: error.message || "Falha interna ao tentar enviar." }
     }
-}
-
-// ── 1. Order Received (pending payment) ───────────────────────────────────────
-export async function sendOrderReceivedEmail(props: OrderReceivedProps) {
-    const html = renderOrderReceived(props);
-    return send(
-        props.customerEmail as string,
-        `Order #${props.orderId} Received — Promobi`,
-        html
-    );
-}
-
-// ── 2. Payment Confirmed ───────────────────────────────────────────────────────
-export async function sendPaymentConfirmedEmail(props: PaymentConfirmedProps) {
-    const html = renderPaymentConfirmed(props);
-    return send(
-        props.customerEmail,
-        `✅ Payment Confirmed — Order #${props.orderId} | Promobi`,
-        html
-    );
-}
-
-// ── 3. Translation Started ─────────────────────────────────────────────────────
-export async function sendTranslationStartedEmail(
-    props: TranslationStartedProps & { customerEmail: string }
-) {
-    const html = renderTranslationStarted(props);
-    return send(
-        props.customerEmail,
-        `⚙️ We've Started Your Order #${props.orderId} — Promobi`,
-        html
-    );
-}
-
-// ── 4. Delivery (Usa o alias delivery@) ─────────────────────────────────────────
-export async function sendDeliveryEmail(props: DeliveryProps & { customerEmail: string }) {
-    const html = renderDelivery(props);
-    return send(
-        props.customerEmail,
-        `🎉 Your Documents Are Ready — Order #${props.orderId} | Promobi`,
-        html,
-        FROM_DELIVERY // Aqui forçamos o uso do alias delivery@promobidocs.com
-    );
-}
-
-// ── Admin: Translation ready for review ───────────────────────────────────────
-interface AdminReviewEmailProps {
-    orderId: number;
-    customerName: string;
-    adminEmail?: string;
-}
-
-export async function sendAdminReviewEmail({
-    orderId,
-    customerName,
-    adminEmail = ADMIN_EMAIL,
-}: AdminReviewEmailProps) {
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promobidocs.com';
-    const dashboardUrl = `${APP_URL}/admin/orders/${orderId}`;
-
-    const html = `<!DOCTYPE html><html><head><style>
-        body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f8fafc;margin:0;padding:0;}
-        .card{max-width:560px;margin:40px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);}
-        .hdr{background:#1e293b;padding:24px 32px;text-align:center;}
-        .hdr h2{color:#f59e0b;margin:0;font-size:18px;}
-        .body{padding:36px 32px;color:#334155;line-height:1.6;}
-        .details{background:#eff6ff;border-left:4px solid #3b82f6;border-radius:8px;padding:18px 22px;margin:20px 0;}
-        .btn{display:inline-block;background:#3b82f6;color:#fff!important;text-decoration:none;
-             padding:14px 28px;border-radius:8px;font-weight:700;font-size:15px;}
-    </style></head><body>
-    <div class="card">
-        <div class="hdr"><h2>⚡ Admin Action Required</h2></div>
-        <div class="body">
-            <p><strong>A translation is ready for your review:</strong></p>
-            <div class="details">
-                <p style="margin:0"><strong>Order:</strong> #${orderId}</p>
-                <p style="margin:6px 0 0"><strong>Client:</strong> ${customerName}</p>
-                <p style="margin:6px 0 0"><strong>Status:</strong> Awaiting Review</p>
-            </div>
-            <p style="text-align:center;margin-top:28px;">
-                <a href="${dashboardUrl}" class="btn">Review Now →</a>
-            </p>
-        </div>
-    </div></body></html>`;
-
-    // Notificações internas vão pelo desk@
-    return send(adminEmail, `[Action Required] Review Translation #${orderId}`, html);
-}
-
-// ── Order confirmation (legacy alias kept for existing callers) ────────────────
-export async function sendOrderConfirmationEmail({
-    orderId, customerName, customerEmail, hasTranslation, hasNotary
-}: {
-    orderId: number; customerName: string; customerEmail: string;
-    hasTranslation: boolean; hasNotary: boolean;
-}) {
-    return sendPaymentConfirmedEmail({
-        orderId,
-        customerName,
-        customerEmail,
-        serviceType: hasNotary ? 'notarization' : 'translation',
-        totalAmount: 0,
-    });
 }
