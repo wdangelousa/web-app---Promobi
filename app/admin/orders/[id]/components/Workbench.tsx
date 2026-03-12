@@ -346,7 +346,6 @@ export default function Workbench({ order }: { order: Order }) {
             const errors: string[] = []
 
             for (const docId of selectedDocsForDelivery) {
-                // @ts-ignore
                 const result = await generateDeliveryKit(order.id, docId, {})
                 if (result.success) generatedCount++
                 else errors.push(`"${order.documents.find((d) => d.id === docId)?.exactNameOnDoc || `#${docId}`}": ${result.error}`)

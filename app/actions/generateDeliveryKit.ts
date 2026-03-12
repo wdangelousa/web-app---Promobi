@@ -12,16 +12,17 @@ import { revalidatePath } from "next/cache";
 // ─────────────────────────────────────────────
 interface DeliveryKitResult {
     success: boolean;
+    deliveryUrl?: string;
     pdfUrl?: string;
     pdfBase64?: string;
     fileName?: string;
+    isPreview?: boolean;
     error?: string;
 }
 
 interface GenerateOptions {
-    orderId: number;
-    template?: "marriage_certificate" | "generic";
-    returnBase64?: boolean;
+    preview?: boolean;
+    coverLanguage?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -329,18 +330,19 @@ function buildFooterHtml(orderId: number | string): string {
 // 6. MAIN ACTION
 // ─────────────────────────────────────────────
 export async function generateDeliveryKit(
-    options: GenerateOptions
+    orderId: number,
+    documentId: number,
+    options: GenerateOptions = {}
 ): Promise<DeliveryKitResult> {
-    const { orderId, template = "generic", returnBase64 = false } = options;
+    const { preview = false } = options;
 
     try {
-        // ── Fetch order with documents ──
-        // Schema: Order.id = Int, Document.translation_status = String, no "position" field
+        // ── Fetch order with the specific document ──
         const order = await prisma.order.findUnique({
             where: { id: orderId },
             include: {
                 documents: {
-                    where: { translation_status: "translated" },
+                    where: { id: documentId },
                     orderBy: { id: "asc" },
                 },
             },
@@ -353,7 +355,7 @@ export async function generateDeliveryKit(
         if (order.documents.length === 0) {
             return {
                 success: false,
-                error: "No translated documents found for this order.",
+                error: `Document ${documentId} not found in order ${orderId}.`,
             };
         }
 
@@ -419,18 +421,9 @@ export async function generateDeliveryKit(
         }
 
         const pdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
-        const fileName = `promobidocs-order-${order.id}.pdf`;
+        const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
 
-        // ── Option A: Return base64 (for preview / email) ──
-        if (returnBase64) {
-            return {
-                success: true,
-                pdfBase64: pdfBuffer.toString("base64"),
-                fileName,
-            };
-        }
-
-        // ── Option B: Store in Supabase Storage & return URL ──
+        // ── Store in Supabase Storage & return URL ──
         try {
             const { createClient } = await import("@supabase/supabase-js");
             const supabase = createClient(
@@ -438,7 +431,9 @@ export async function generateDeliveryKit(
                 process.env.SUPABASE_SERVICE_ROLE_KEY!
             );
 
-            const storagePath = `deliveries/${orderId}/${fileName}`;
+            const storagePath = preview
+                ? `orders/previews/${fileName}`
+                : `orders/completed/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
                 .from("translations")
@@ -450,9 +445,8 @@ export async function generateDeliveryKit(
             if (uploadError) {
                 console.error("[DeliveryKit] Storage upload error:", uploadError);
                 return {
-                    success: true,
-                    pdfBase64: pdfBuffer.toString("base64"),
-                    fileName,
+                    success: false,
+                    error: `Storage upload failed: ${uploadError.message}`,
                 };
             }
 
@@ -460,30 +454,32 @@ export async function generateDeliveryKit(
                 .from("translations")
                 .getPublicUrl(storagePath);
 
-            // ── Update order: save delivery URL ──
-            // Schema: Order.deliveryUrl = String?, Order.status = OrderStatus enum
-            await prisma.order.update({
-                where: { id: orderId },
-                data: {
-                    status: "COMPLETED",
-                    deliveryUrl: urlData.publicUrl,
-                },
-            });
+            if (!preview) {
+                // ── Update document: save delivery URL and mark approved ──
+                await prisma.document.update({
+                    where: { id: documentId },
+                    data: {
+                        delivery_pdf_url: urlData.publicUrl,
+                        translation_status: "approved",
+                    },
+                });
 
-            revalidatePath(`/admin/orders/${orderId}`);
-            revalidatePath("/admin/orders");
+                revalidatePath(`/admin/orders/${orderId}`);
+                revalidatePath("/admin/orders");
+            }
 
             return {
                 success: true,
+                deliveryUrl: urlData.publicUrl,
                 pdfUrl: urlData.publicUrl,
                 fileName,
+                isPreview: preview,
             };
         } catch (storageError) {
-            console.error("[DeliveryKit] Storage error, returning base64:", storageError);
+            console.error("[DeliveryKit] Storage error:", storageError);
             return {
-                success: true,
-                pdfBase64: pdfBuffer.toString("base64"),
-                fileName,
+                success: false,
+                error: storageError instanceof Error ? storageError.message : String(storageError),
             };
         }
     } catch (error) {
