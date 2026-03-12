@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
-const anthropic = new Anthropic({ apiKey: apiKey || "", defaultHeaders: { "anthropic-beta": "pdfs-2024-09-25" } });
+const anthropic = new Anthropic({ apiKey: apiKey || "" });
 const MODEL_NAME = "claude-haiku-4-5-20251001";
 
 const STAGE_1_SYSTEM_PROMPT = `
