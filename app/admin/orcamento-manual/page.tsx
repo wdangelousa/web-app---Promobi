@@ -484,9 +484,10 @@ export default function OrcamentoManual() {
                     headers: { 'Content-Type': contentType || (doc.file as File).type || 'application/octet-stream' },
                 })
                 if (!putRes.ok) {
-                    console.error(`[GenerateProposal] Direct upload failed for ${doc.fileName}: ${putRes.status}`)
+                    const errBody = await putRes.text().catch(() => '(no body)')
+                    console.error(`[GenerateProposal] Direct upload failed for ${doc.fileName}: ${putRes.status}`, errBody)
                     toast.error(`Falha ao enviar arquivo: ${doc.fileName}`)
-                    throw new Error(`Upload failed for ${doc.fileName}`)
+                    throw new Error(`Upload failed for ${doc.fileName}: ${putRes.status} ${errBody}`)
                 }
 
                 uploadedDocs.push({ docIndex: selectedDocs.indexOf(doc), url: publicUrl, fileName: doc.fileName, contentType })
