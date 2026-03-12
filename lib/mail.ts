@@ -12,24 +12,27 @@ import { renderDeliveryActionRequired, type DeliveryActionRequiredProps } from '
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
 
-// Sender address – change to your verified domain once set up
-const FROM = 'Promobi <onboarding@resend.dev>';
+// Alterado para o domínio verificado da Promobidocs
+const FROM = process.env.EMAIL_FROM || 'Promobidocs <desk@promobidocs.com>';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'wdangelo81@gmail.com';
 
-// ── Helper ─────────────────────────────────────────────────────────────────────
-async function send(to: string, subject: string, html: string, bcc?: string[]) {
+// ── Helper (Atualizado para suportar Array de Destinatários) ───────────────────
+async function send(to: string | string[], subject: string, html: string, bcc?: string[]) {
+    // Garante que 'to' seja sempre um array para o Resend não falhar
+    const toArray = Array.isArray(to) ? to : [to];
+
     try {
-        const data = await resend.emails.send({ 
-            from: FROM, 
-            to: [to], 
-            subject, 
+        const data = await resend.emails.send({
+            from: FROM,
+            to: toArray,
+            subject,
             html,
             ...(bcc ? { bcc } : {})
         });
-        console.log(`[mail] ✉ Sent to ${to}: "${subject}"${bcc ? ` (BCC: ${bcc.join(', ')})` : ''}`);
+        console.log(`[mail] ✉ Sent to ${toArray.join(', ')}: "${subject}"${bcc ? ` (BCC: ${bcc.join(', ')})` : ''}`);
         return { success: true, data };
     } catch (error) {
-        console.error(`[mail] ✗ Failed "${subject}" → ${to}:`, error);
+        console.error(`[mail] ✗ Failed "${subject}" → ${toArray.join(', ')}:`, error);
         return { success: false, error };
     }
 }
@@ -66,16 +69,63 @@ export async function sendTranslationStartedEmail(
     );
 }
 
-// ── 4. Delivery ────────────────────────────────────────────────────────────────
-export async function sendDeliveryEmail(props: DeliveryProps & { customerEmail: string }) {
-    const html = renderDelivery(props);
-    const serviceName = props.serviceType === 'notarization' ? 'Notarization' : 'Certified Translation';
-    return send(
+// ── 4. Delivery (ATUALIZADO: HTML s/ Flexbox e E-mails do Tradutor inclusos) ───
+export async function sendDeliveryEmail(props: {
+    orderId: number;
+    customerName: string;
+    customerEmail: string;
+    deliveryUrl: string;
+    serviceType?: string;
+}) {
+    // Adiciona o cliente e os e-mails obrigatórios do tradutor/admin no array de envio
+    const toEmails = [
         props.customerEmail,
-        `🎉 Your ${serviceName} is Ready! — Order #${props.orderId}`,
-        html,
-        ['admin@promobi.docs']
-    );
+        'belebmd@gmail.com',
+        'desk@promobidocs.com'
+    ];
+
+    const subject = `📩 [VALIDAÇÃO] Sua tradução certificada está pronta — Pedido #${props.orderId}`;
+
+    // HTML blindado com Tabelas (sem flexbox) gerado diretamente aqui
+    const html = `<!DOCTYPE html>
+    <html>
+    <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <tr>
+          <td style="background: #0F1117; padding: 30px; text-align: center;">
+            <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;" />
+            <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBIDOCS · TRADUÇÃO CERTIFICADA</p>
+            <h1 style="color: white; font-size: 22px; margin: 0; font-weight: bold;">Sua tradução está pronta! 🎉</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 40px; background: #ffffff;">
+            <h2 style="color: #111827; margin-top: 0;">Kit de Tradução Disponível</h2>
+            <p style="margin: 0 0 12px; color: #374151;">Olá, <strong>${props.customerName}</strong>,</p>
+            <p style="margin: 0 0 12px; line-height: 1.6; color: #374151;">Temos o prazer de entregar o seu Kit de Tradução Oficial, processado e revisado por nossa equipe especializada.</p>
+
+            <div style="margin: 24px 0;">
+              <table width="100%" cellpadding="12" cellspacing="0" style="border:1px solid #E5E7EB; border-radius:8px; margin-bottom:8px; background:#F9FAFB;">
+                <tr>
+                  <td style="font-size:13px; color:#374151; font-weight:600;">📄 Acessar Documentos do Pedido #${props.orderId}</td>
+                  <td align="right">
+                    <a href="${props.deliveryUrl}" style="background:#f5b000; color:#111827; text-decoration:none; padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold; display:inline-block;">Baixar Kit</a>
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
+              <p style="margin: 0 0 4px; color: #374151; font-size: 14px;">Atenciosamente,</p>
+              <p style="margin: 0; color: #111827; font-weight: bold; font-size: 15px;">Equipe Promobidocs</p>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>`;
+
+    return send(toEmails, subject, html);
 }
 
 // ── 5. Delivery Action Required ────────────────────────────────────────────────
