@@ -65,7 +65,6 @@ export async function POST(req: NextRequest) {
         const PAGE_HEIGHT = 792;
         const MARGIN = 70;
 
-        // ── DIAGNÓSTICO: TESTE B (Imagem está a carregar?) ─────────────
         let lhBytes: Buffer;
         try {
             lhBytes = await fs.readFile(path.join(process.cwd(), 'letterhead.png'));
@@ -76,19 +75,6 @@ export async function POST(req: NextRequest) {
                 throw new Error("ERRO CRÍTICO: Imagem 'letterhead.png' não encontrada.");
             }
         }
-
-        try {
-            const testDoc = await PDFDocument.create();
-            const testPage = testDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-            const testImg = await testDoc.embedPng(lhBytes);
-            testPage.drawImage(testImg, { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
-            const testBytes = await testDoc.save();
-            await fs.writeFile(path.join(process.cwd(), 'debug-1-letterhead.pdf'), testBytes);
-            console.log('[DEBUG] debug-1-letterhead.pdf guardado na raiz do projeto.');
-        } catch (e) {
-            console.error('[DEBUG] Falha ao gerar o Teste B:', e);
-        }
-        // ──────────────────────────────────────────────────────────────
 
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -163,23 +149,22 @@ export async function POST(req: NextRequest) {
         coverPage.drawText(dateString, { x: PAGE_WIDTH - MARGIN - dateWidth, y: currentY, size: 11, font });
 
         currentY -= 50;
-        const signatureBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'));
-        const signatureImg = await pdfDoc.embedJpg(signatureBytes);
-        coverPage.drawImage(signatureImg, {
-            x: MARGIN,
-            y: currentY,
-            width: 150,
-            height: 45,
-        });
+        let signatureBytes;
+        try {
+            signatureBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'));
+            const signatureImg = await pdfDoc.embedJpg(signatureBytes);
+            coverPage.drawImage(signatureImg, { x: MARGIN, y: currentY, width: 150, height: 45 });
+        } catch (e) {
+            console.warn("Assinatura não encontrada");
+        }
 
-        const ataLogoBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'));
-        const ataImg = await pdfDoc.embedPng(ataLogoBytes);
-        coverPage.drawImage(ataImg, {
-            x: MARGIN + 180,
-            y: currentY + 5,
-            width: 40,
-            height: 40,
-        });
+        try {
+            const ataLogoBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'));
+            const ataImg = await pdfDoc.embedPng(ataLogoBytes);
+            coverPage.drawImage(ataImg, { x: MARGIN + 180, y: currentY + 5, width: 40, height: 40 });
+        } catch (e) {
+            console.warn("Logo ATA não encontrado");
+        }
 
         currentY -= 15;
         coverPage.drawText('___________________________________', { x: MARGIN, y: currentY, size: 12, font });
@@ -188,87 +173,33 @@ export async function POST(req: NextRequest) {
 
         const footerText = '13558 Village Park Dr, Orlando/FL, 32837 | +1 321 324-5851 | translator@promobidocs.com | www.promobidocs.com';
         const footerW = font.widthOfTextAtSize(footerText, 8.5);
-        coverPage.drawText(footerText, {
-            x: (PAGE_WIDTH - footerW) / 2,
-            y: 35,
-            size: 8.5,
-            font,
-            color: grey
-        });
+        coverPage.drawText(footerText, { x: (PAGE_WIDTH - footerW) / 2, y: 35, size: 8.5, font, color: grey });
 
         // ── 2. Add Document Pages ────────────────────
 
         for (const doc of order.documents) {
+            if (doc.translatedText) {
+                // Lavanderia HTML para segurança
+                const cleanHtml = doc.translatedText
+                    .replace(/<!DOCTYPE[^>]*>/gi, '')
+                    .replace(/<html[^>]*>/gi, '')
+                    .replace(/<\/html>/gi, '')
+                    .replace(/<head>[\s\S]*?<\/head>/gi, '')
+                    .replace(/<body[^>]*>/gi, '')
+                    .replace(/<\/body>/gi, '')
+                    .replace(/```html/gi, '')
+                    .replace(/```/gi, '')
+                    .trim();
 
-            if (doc.externalTranslationUrl) {
-                try {
-                    const extRes = await fetch(doc.externalTranslationUrl);
-                    if (extRes.ok) {
-                        const extBuf = Buffer.from(await extRes.arrayBuffer());
-
-                        if (!isPdf(extBuf)) {
-                            throw new Error("O link de tradução externa não retornou um PDF válido.");
-                        }
-
-                        const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true });
-                        const embeddedPages = await pdfDoc.embedPages(extPdf.getPages());
-
-                        for (const embeddedPage of embeddedPages) {
-                            const newPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-
-                            // DIAGNÓSTICO: TESTE C - Texto PRIMEIRO, Imagem 30% opacidade POR CIMA
-                            const scale = Math.min(PAGE_WIDTH / embeddedPage.width, PAGE_HEIGHT / embeddedPage.height);
-                            newPage.drawPage(embeddedPage, {
-                                x: (PAGE_WIDTH - embeddedPage.width * scale) / 2,
-                                y: (PAGE_HEIGHT - embeddedPage.height * scale) / 2,
-                                width: embeddedPage.width * scale,
-                                height: embeddedPage.height * scale,
-                            });
-
-                            newPage.drawImage(bgImage, {
-                                x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT,
-                                opacity: 0.3
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error appending external translation', e);
-                }
-            }
-
-            else if (doc.translatedText) {
-
-                const safeHtml = doc.translatedText.replace(/background-color\s*:\s*[^;"]+;?/gi, '');
-
-                const fullHtml = `
-                  <!DOCTYPE html>
+                const fullHtml = `<!DOCTYPE html>
                   <html>
                   <head>
                     <meta charset="UTF-8">
                     <style>
-                      html, body {
-                        margin: 0;
-                        padding: 0;
-                        background: transparent !important;
-                        background-color: transparent !important;
-                        -webkit-print-color-adjust: exact;
-                      }
-                      *, *::before, *::after {
-                        background-color: transparent !important;
-                      }
-                      body {
-                        font-family: "Times New Roman", Times, serif;
-                        line-height: 1.2;
-                        color: black;
-                        font-size: 9.5pt;
-                      }
-                      .content-area {
-                        box-sizing: border-box;
-                        padding-top: 180px;
-                        padding-bottom: 100px;
-                        padding-left: 60px;
-                        padding-right: 60px;
-                      }
+                      html, body { margin: 0; padding: 0; background: transparent !important; background-color: transparent !important; -webkit-print-color-adjust: exact; }
+                      *, *::before, *::after { background-color: transparent !important; }
+                      body { font-family: "Times New Roman", Times, serif; line-height: 1.2; color: black; font-size: 9.5pt; }
+                      .content-area { box-sizing: border-box; padding-top: 180px; padding-bottom: 100px; padding-left: 60px; padding-right: 60px; }
                       .zoom-container { zoom: 0.82; }
                       table { border-collapse: collapse; width: 100%; margin: 6pt 0; table-layout: fixed; }
                       th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
@@ -276,16 +207,14 @@ export async function POST(req: NextRequest) {
                   </head>
                   <body>
                     <div class="content-area">
-                      <div class="zoom-container">
-                        ${safeHtml}
-                      </div>
+                      <div class="zoom-container">${cleanHtml}</div>
                     </div>
                   </body>
-                  </html>
-                `;
+                  </html>`;
 
                 const formData = new FormData();
-                formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
+                const file = new File([fullHtml], "index.html", { type: "text/html" });
+                formData.append("files", file);
                 formData.append("omitBackground", "true");
                 formData.append("printBackground", "false");
                 formData.append("paperWidth", "8.5");
@@ -294,9 +223,11 @@ export async function POST(req: NextRequest) {
                 formData.append("marginBottom", "0");
                 formData.append("marginLeft", "0");
                 formData.append("marginRight", "0");
+                formData.append("skipNetworkIdleEvent", "true");
 
                 try {
-                    const gotenbergRes = await fetch("http://localhost:3001/forms/chromium/convert/html", {
+                    // MÁGICA: Redirecionando para a porta 3005
+                    const gotenbergRes = await fetch("http://localhost:3005/forms/chromium/convert/html", {
                         method: "POST",
                         body: formData,
                     });
@@ -304,15 +235,6 @@ export async function POST(req: NextRequest) {
                     if (gotenbergRes.ok) {
                         const gotenbergBuffer = await gotenbergRes.arrayBuffer();
                         const bufGotenberg = Buffer.from(gotenbergBuffer);
-
-                        // ── DIAGNÓSTICO: TESTE A (O Gotenberg está transparente?) ─────────────
-                        try {
-                            await fs.writeFile(path.join(process.cwd(), 'debug-2-gotenberg-raw.pdf'), bufGotenberg);
-                            console.log('[DEBUG] debug-2-gotenberg-raw.pdf guardado na raiz do projeto.');
-                        } catch (e) {
-                            console.error('[DEBUG] Falha ao guardar debug-2', e);
-                        }
-                        // ──────────────────────────────────────────────────────────────
 
                         if (!isPdf(bufGotenberg)) {
                             throw new Error("Gotenberg falhou em gerar o PDF.");
@@ -324,17 +246,12 @@ export async function POST(req: NextRequest) {
 
                         for (let i = 0; i < embeddedPages.length; i++) {
                             const newPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-
-                            // DIAGNÓSTICO: TESTE C - Texto PRIMEIRO, Imagem 30% opacidade POR CIMA
                             newPage.drawPage(embeddedPages[i], { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
-
-                            newPage.drawImage(bgImage, {
-                                x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT,
-                                opacity: 0.3
-                            });
+                            newPage.drawImage(bgImage, { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT, opacity: 0.3 });
                         }
                     } else {
-                        console.error('[Kit] Gotenberg responded with status:', gotenbergRes.status);
+                        const errorText = await gotenbergRes.text();
+                        console.error('[Kit] Gotenberg responded with status:', gotenbergRes.status, errorText);
                     }
                 } catch (err) {
                     console.error('[Kit] Error calling Gotenberg:', err);
@@ -359,26 +276,20 @@ export async function POST(req: NextRequest) {
                         } else {
                             const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
                             let image;
-                            try {
-                                if (isPng(origBuf)) {
-                                    image = await pdfDoc.embedPng(origBuf);
-                                } else {
-                                    image = await pdfDoc.embedJpg(origBuf);
-                                }
-
-                                const scale = Math.min(PAGE_WIDTH / image.width, PAGE_HEIGHT / image.height);
-                                const rot = rotationsMap['0'] || 0;
-                                if (rot !== 0) page.setRotation(degrees(rot));
-
-                                page.drawImage(image, {
-                                    x: (PAGE_WIDTH - image.width * scale) / 2,
-                                    y: (PAGE_HEIGHT - image.height * scale) / 2,
-                                    width: image.width * scale,
-                                    height: image.height * scale,
-                                });
-                            } catch (imgError) {
-                                console.error('Erro ao ler imagem original:', imgError);
+                            if (isPng(origBuf)) {
+                                image = await pdfDoc.embedPng(origBuf);
+                            } else {
+                                image = await pdfDoc.embedJpg(origBuf);
                             }
+                            const scale = Math.min(PAGE_WIDTH / image.width, PAGE_HEIGHT / image.height);
+                            const rot = rotationsMap['0'] || 0;
+                            if (rot !== 0) page.setRotation(degrees(rot));
+                            page.drawImage(image, {
+                                x: (PAGE_WIDTH - image.width * scale) / 2,
+                                y: (PAGE_HEIGHT - image.height * scale) / 2,
+                                width: image.width * scale,
+                                height: image.height * scale,
+                            });
                         }
                     }
                 } catch (e) {

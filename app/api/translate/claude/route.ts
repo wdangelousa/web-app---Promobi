@@ -1,105 +1,105 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-import prisma from "@/lib/prisma";
-
-export const dynamic = "force-dynamic";
-export const maxDuration = 120;
-
-const apiKey = process.env.ANTHROPIC_API_KEY;
-const anthropic = new Anthropic({ apiKey: apiKey || "", defaultHeaders: { "anthropic-beta": "pdfs-2024-09-25" } });
-const MODEL_NAME = "claude-haiku-4-5-20251001";
-
-const STAGE_1_SYSTEM_PROMPT = `
-You are PROMOBI-VISION, an expert at analyzing foreign legal and vital documents.
-Your task is to analyze the provided document and output a structured DocumentMap JSON.
-Do not translate. Just map the original structure.
-`;
-
-function getStage2Prompt(sourceLanguage: string = "pt") {
-  const isSpanish = sourceLanguage === "es";
-  const languageName = isSpanish ? "Spanish" : "Brazilian Portuguese";
-
-  return `
-You are an expert Sworn Translator and HTML Layout Engineer producing certified translations from ${languageName} to American English.
-
-CRITICAL LAYOUT COMMANDS:
-The source document is a Brazilian Certificate (Birth, Marriage, Death). These are highly structured grids.
-You are STRICTLY FORBIDDEN from using plain paragraphs or inline text for the certificate fields.
-You MUST build an exact replica of the grid using HTML <table> tags.
-
-RULES FOR TABLES:
-1. Use <th> for the small field labels (e.g., "Name", "Nationality", "CPF").
-2. Use <td> for the actual values (e.g., "JOHN DOE", "Brazilian", "123.456").
-3. Group side-by-side fields into the same <tr> using multiple <th> and <td> pairs.
-4. Create separate <table> blocks for separate sections (e.g., one table for "1st Spouse", another for "2nd Spouse").
-
-REQUIRED HTML TEMPLATE EXAMPLE:
-<h3 style="text-align:center;">1st Spouse</h3>
-<table>
-  <tr>
-    <th>Name at the time of marriage application</th>
-    <td colspan="3"><strong>JOHN DOE</strong></td>
-  </tr>
-  <tr>
-    <th>Nationality</th>
-    <td>Brazilian</td>
-    <th>Marital Status</th>
-    <td>Single</td>
-  </tr>
-</table>
-
-PAGINATION RULE: Insert <div class="page-break"></div> exactly where pages end in the original document.
-
-Output ONLY raw HTML. No markdown fences. Do not wrap in \`\`\`html. No explanations.
-`;
-}
-
-async function fetchPdfAsBase64(fileUrl: string) {
-  const res = await fetch(fileUrl);
-  if (!res.ok) throw new Error("Failed to fetch document");
-  const buffer = Buffer.from(await res.arrayBuffer());
-  return buffer.toString("base64");
-}
+import path from "path";
+import fs from "fs";
 
 export async function POST(req: Request) {
   try {
-    const { fileUrl, documentId, sourceLanguage = "pt" } = await req.json();
+    const { htmlContent, fileName = "translation.pdf" } = await req.json();
 
-    if (!apiKey) return NextResponse.json({ error: "Chave ANTHROPIC_API_KEY não encontrada" }, { status: 500 });
+    if (!htmlContent) return NextResponse.json({ error: "HTML content is required" }, { status: 400 });
 
-    const pdfBase64 = await fetchPdfAsBase64(fileUrl);
-    const documentContent: any = {
-      type: "document",
-      source: { type: "base64", media_type: "application/pdf", data: pdfBase64 }
-    };
+    // PROTEÇÃO 1: "Lavanderia" de HTML. 
+    // Remove tags globais e marcações de Markdown que a IA possa ter gerado, evitando HTML duplo que trava o Gotenberg.
+    let safeHtml = htmlContent
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<html[^>]*>/gi, '')
+      .replace(/<\/html>/gi, '')
+      .replace(/<head>[\s\S]*?<\/head>/gi, '')
+      .replace(/<body[^>]*>/gi, '')
+      .replace(/<\/body>/gi, '')
+      .replace(/```html/gi, '')
+      .replace(/```/gi, '')
+      .trim();
 
-    await anthropic.messages.create({
-      model: MODEL_NAME,
-      max_tokens: 4096,
-      temperature: 0,
-      system: STAGE_1_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: [documentContent, { type: "text", text: "Analyze and produce DocumentMap JSON." }] }],
+    let letterheadBase64 = "";
+    try {
+      const letterheadPath = path.join(process.cwd(), 'public', 'letterhead.png');
+      const imageBuffer = fs.readFileSync(letterheadPath);
+      letterheadBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
+    } catch (e) {
+      console.warn("letterhead.png não encontrada. O PDF será gerado sem fundo.");
+    }
+
+    // PROTEÇÃO 2: Só adiciona a regra de background se o timbrado realmente existir em base64.
+    const bgStyle = letterheadBase64
+      ? `background-image: url("${letterheadBase64}"); background-size: 100% 100%; background-repeat: no-repeat;`
+      : "";
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          @page { size: Letter; margin: 0; }
+          body {
+            font-family: "Times New Roman", Times, serif;
+            line-height: 1.2;
+            color: black;
+            text-align: left;
+            margin: 0;
+            padding: 0;
+            ${bgStyle}
+            font-size: 9.5pt;
+          }
+          /* MARGENS CORRIGIDAS - Zona segura do Papel Timbrado */
+          .content-wrapper {
+            box-sizing: border-box;
+            padding-top: 1.8in;
+            padding-bottom: 1.2in;
+            padding-left: 0.8in;
+            padding-right: 0.8in;
+            min-height: 11in;
+          }
+          h1, h2, h3 { text-align: center; text-transform: uppercase; font-size: 11pt; margin: 4pt 0; font-weight: bold; }
+          p { margin-top: 0; margin-bottom: 3pt; }
+
+          /* LAYOUT OFICIAL DE CERTIDÕES EM TABELAS */
+          table { width: 100%; border-collapse: collapse; margin: 6pt 0; table-layout: fixed; }
+          th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
+          th { background-color: #f9fafb; text-align: left; font-weight: normal; font-size: 7.5pt; color: #555; text-transform: uppercase; }
+          td strong { font-size: 9.5pt; display: block; margin-top: 2pt; color: #000; }
+
+          .bracket-notation { color: #555; font-style: italic; background: #f0f0f0; border: 0.5pt solid #ccc; padding: 1px 3px; font-size: 8pt; }
+          .translator-note { color: #003366; font-style: italic; background: #e6f2ff; border: 0.5pt solid #b3d1ff; padding: 1px 3px; font-size: 8pt; }
+          .page-break { page-break-after: always; display: block; height: 0; border: none; margin: 0; padding: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="content-wrapper">${safeHtml}</div>
+      </body>
+      </html>
+    `;
+
+    const formData = new FormData();
+    formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
+    formData.append("scale", "0.82");
+
+    const response = await fetch("http://localhost:3001/forms/chromium/convert/html", {
+      method: "POST",
+      body: formData,
     });
 
-    const stage2Response = await anthropic.messages.create({
-      model: MODEL_NAME,
-      max_tokens: 4096,
-      temperature: 0,
-      system: getStage2Prompt(sourceLanguage),
-      messages: [{ role: "user", content: [documentContent, { type: "text", text: "Translate this document to HTML strictly using tables for fields according to the template." }] }],
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gotenberg error: ${response.statusText} - ${errorText}`);
+    }
+
+    const pdfBuffer = await response.arrayBuffer();
+    return new NextResponse(pdfBuffer, {
+      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${fileName}"` },
     });
-
-    let translatedHtml = stage2Response.content.filter(b => b.type === "text").map((b: any) => b.text).join("");
-    translatedHtml = translatedHtml.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
-
-    await prisma.document.update({
-      where: { id: documentId },
-      data: { translatedText: translatedHtml, translation_status: "ai_draft" },
-    });
-
-    return NextResponse.json({ success: true, translatedText: translatedHtml });
   } catch (error: any) {
-    console.error("[Claude Agent] Falha na API:", error);
-    return NextResponse.json({ error: error.message, details: error.stack }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

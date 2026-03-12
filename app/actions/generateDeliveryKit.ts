@@ -86,158 +86,116 @@ export async function generateDeliveryKit(
         const PAGE_WIDTH = 612;
         const PAGE_HEIGHT = 792;
 
-        // ── SCANNER DO TIMBRADO ─────────────────────────
         const publicDir = path.resolve(process.cwd(), 'public');
         const rootDir = process.cwd();
         let timbradoBytes: Buffer | null = null;
-        let foundPath = '';
 
         const possiblePaths = [
             path.join(rootDir, 'letterhead.png'),
             path.join(publicDir, 'letterhead.png'),
             path.join(publicDir, 'letterhead promobi.png'),
-            path.join(rootDir, 'letterhead promobi.png'),
         ];
 
         for (const p of possiblePaths) {
             try {
                 timbradoBytes = await fs.readFile(p);
-                foundPath = p;
                 break;
             } catch (e) { }
         }
 
-        if (!timbradoBytes) {
-            throw new Error(`ERRO: Imagem do timbrado não encontrada em lado nenhum.`);
-        }
-
+        if (!timbradoBytes) throw new Error(`Timbrado não encontrado.`);
         const letterheadImage = await translationPdf.embedPng(timbradoBytes);
 
-        // A. TRADUÇÃO EXTERNA
-        if (doc.externalTranslationUrl) {
-            const extRes = await fetch(doc.externalTranslationUrl)
-            const extBuf = Buffer.from(await extRes.arrayBuffer())
-            if (!isPdf(extBuf)) throw new Error("PDF externo inválido.");
+        if (doc.translatedText) {
+            let cleanHtml = doc.translatedText
+                .replace(/```html/gi, '')
+                .replace(/```/gi, '')
+                .trim();
 
-            const extPdf = await PDFDocument.load(extBuf, { ignoreEncryption: true })
-            const embeddedPages = await translationPdf.embedPages(extPdf.getPages())
-
-            for (const embeddedPage of embeddedPages) {
-                const newPage = translationPdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-                const scale = Math.min(PAGE_WIDTH / embeddedPage.width, PAGE_HEIGHT / embeddedPage.height);
-                newPage.drawPage(embeddedPage, {
-                    x: (PAGE_WIDTH - embeddedPage.width * scale) / 2,
-                    y: (PAGE_HEIGHT - embeddedPage.height * scale) / 2,
-                    width: embeddedPage.width * scale,
-                    height: embeddedPage.height * scale,
-                });
-                newPage.drawImage(letterheadImage, {
-                    x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT, blendMode: BlendMode.Multiply
-                });
-            }
-            actualTranslationPageCount = embeddedPages.length
-        }
-
-        // B. TRADUÇÃO INTERNA (GOTENBERG) — PAGINAÇÃO 1-PARA-1 + TIMBRADO (MULTIPLY)
-        else if (doc.translatedText && !doc.translatedText.startsWith('{"sections"') && !doc.translatedText.includes('"blocks"')) {
-
-            const fullHtml = `
-              <!DOCTYPE html>
-              <html lang="en">
-              <head>
-                <meta charset="UTF-8">
-                <style>
-                  /* @page margin: 0 — margens reais definidas pelos params do Gotenberg abaixo */
-                  @page { size: Letter; }
-                  body {
-                    font-family: "Times New Roman", Times, serif;
-                    line-height: 1.2;
-                    color: black;
-                    background-color: white !important;
-                    margin: 0; padding: 0;
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
-                    font-size: 9.5pt;
-                  }
-                  /* Paginação 1-para-1: gerado pela IA Claude (<div class="page-break">) ou manualmente (<hr>) */
-                  .page-break {
-                    break-after: page;
-                    page-break-after: always;
-                    height: 0;
-                    visibility: hidden;
-                    margin: 0; padding: 0;
-                    display: block;
-                  }
-                  hr {
-                    break-after: page;
-                    page-break-after: always;
-                    height: 0;
-                    border: none;
-                    margin: 0; padding: 0;
-                  }
-                  table { width: 100%; border-collapse: collapse; margin: 6pt 0; table-layout: fixed; }
-                  th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
-                  th { background-color: #f9fafb; text-align: left; font-weight: normal; font-size: 7.5pt; color: #555; text-transform: uppercase; }
-                  td strong { font-size: 9.5pt; display: block; margin-top: 2pt; color: #000; }
-                  h1, h2, h3 { text-align: center; text-transform: uppercase; font-size: 11pt; margin: 4pt 0; font-weight: bold; }
-                  p { margin-top: 0; margin-bottom: 3pt; }
-                </style>
-              </head>
-              <body>
-                ${doc.translatedText}
-              </body>
-              </html>
-            `;
+            const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: Letter; margin: 0; }
+    body {
+      margin: 0; padding: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 11pt;
+      line-height: 1.4;
+      color: #000;
+      background: white;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      font-family: "Times New Roman", Times, serif !important;
+      text-align: center !important;
+      text-transform: uppercase !important;
+      font-weight: bold !important;
+      font-size: 11pt !important;
+      margin: 8px 0 2px 0 !important;
+    }
+    p {
+      font-family: "Times New Roman", Times, serif !important;
+      font-size: 11pt !important;
+      margin: 2px 0;
+      line-height: 1.4;
+    }
+    strong, b { font-weight: bold !important; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 4px 0;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1pt solid black;
+      padding: 4px 6px;
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-family: "Times New Roman", Times, serif !important;
+      font-size: 10pt !important;
+    }
+  </style>
+</head>
+<body>${cleanHtml}</body>
+</html>`;
 
             const formData = new FormData();
-            formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
+            formData.append("files", new File([fullHtml], "index.html", { type: "text/html" }));
+
+            // CONFIGURAÇÃO DE ALTA PRECISÃO GOTENBERG
             formData.append("paperWidth", "8.5");
             formData.append("paperHeight", "11");
-            // Margens em polegadas = zonas seguras do timbrado (topo: logo, baixo: rodapé)
-            formData.append("marginTop", "1.8");
-            formData.append("marginBottom", "1.2");
+            formData.append("marginTop", "1.8");    // Margem superior para o logo
+            formData.append("marginBottom", "1.2"); // Margem inferior para o rodapé
             formData.append("marginLeft", "0.8");
             formData.append("marginRight", "0.8");
+            formData.append("printBackground", "true"); // Ativa bordas e cores de fundo
+            formData.append("scale", "0.85");           // Ajuste de escala para evitar transbordo
+            formData.append("skipNetworkIdleEvent", "true");
 
-            const gotenbergRes = await fetch("http://localhost:3001/forms/chromium/convert/html", {
-                method: "POST",
-                body: formData,
-            });
+            const gotenbergUrl = "http://127.0.0.1:3005/forms/chromium/convert/html";
+            const gotenbergRes = await fetch(gotenbergUrl, { method: "POST", body: formData });
 
-            if (!gotenbergRes.ok) {
-                const errBody = await gotenbergRes.text().catch(() => '(sem corpo)');
-                throw new Error(`Falha no Gotenberg: Status ${gotenbergRes.status} — ${errBody}`);
-            }
+            if (!gotenbergRes.ok) throw new Error(`Gotenberg Error: ${gotenbergRes.status}`);
 
             const gotenbergBuffer = await gotenbergRes.arrayBuffer();
             const gotenbergPdf = await PDFDocument.load(gotenbergBuffer);
-
             const copiedPages = await translationPdf.copyPages(gotenbergPdf, gotenbergPdf.getPageIndices());
-
-            const now = new Date();
-            const transDateStr = `Date: ${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}/${now.getFullYear()}`;
 
             for (const p of copiedPages) {
                 const newPage = translationPdf.addPage(p);
                 newPage.drawImage(letterheadImage, {
-                    x: 0,
-                    y: 0,
-                    width: PAGE_WIDTH,
-                    height: PAGE_HEIGHT,
-                    // blendMode: BlendMode.Multiply
-                });
-                newPage.drawText(transDateStr, {
-                    x: PAGE_WIDTH - 150,
-                    y: PAGE_HEIGHT - 65,
-                    size: 10,
-                    font: await translationPdf.embedFont(StandardFonts.Helvetica),
-                    color: rgb(0, 0, 0),
+                    x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT, blendMode: BlendMode.Multiply
                 });
             }
             actualTranslationPageCount = copiedPages.length;
         }
 
-        // CAPA
         const now = new Date();
         const dateStr = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}/${now.getFullYear()}`;
 
@@ -256,7 +214,6 @@ export async function generateDeliveryKit(
             transPages.forEach(p => finalPdf.addPage(p))
         }
 
-        // ORIGINAL FILE
         if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
             const originalRes = await fetch(doc.originalFileUrl)
             const originalBuf = Buffer.from(await originalRes.arrayBuffer())

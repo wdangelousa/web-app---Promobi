@@ -14,9 +14,9 @@ model User {
   fullName  String
   email     String   @unique
   phone     String?
-  address   String?
   role      Role     @default(CLIENT)
   createdAt DateTime @default(now())
+  address   String?
   orders    Order[]
 }
 
@@ -37,31 +37,32 @@ model Order {
   hasTranslation       Boolean         @default(true)
   hasNotary            Boolean         @default(false)
   sentAt               DateTime?
-  discountPercentage   Float?          @default(0)
   discountAmount       Float?          @default(0)
+  discountPercentage   Float?          @default(0)
   extraDiscount        Float?          @default(0)
   finalPaidAmount      Float?
   sourceLanguage       SourceLanguage  @default(PT_BR)
+  cancellation_reason  String?
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }
 
 model Document {
-  id                     Int      @id @default(autoincrement())
+  id                     Int             @id @default(autoincrement())
   orderId                Int
   docType                String
   originalFileUrl        String
   translatedFileUrl      String?
   translatedText         String?
   exactNameOnDoc         String?
-  createdAt              DateTime @default(now())
-  translation_status     String   @default("pending")
+  createdAt              DateTime        @default(now())
+  translation_status     String          @default("pending")
   delivery_pdf_url       String?
-  isReviewed             Boolean  @default(false)
+  isReviewed             Boolean         @default(false)
   externalTranslationUrl String?
   pageRotations          Json?
   sourceLanguage         SourceLanguage?
-  order                  Order    @relation(fields: [orderId], references: [id])
+  order                  Order           @relation(fields: [orderId], references: [id])
 }
 
 model Setting {

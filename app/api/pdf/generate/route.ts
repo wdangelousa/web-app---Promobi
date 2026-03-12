@@ -6,79 +6,87 @@ export async function POST(req: Request) {
   try {
     const { htmlContent, fileName = "translation.pdf" } = await req.json();
 
-    if (!htmlContent) return NextResponse.json({ error: "HTML content is required" }, { status: 400 });
+    if (!htmlContent) return NextResponse.json({ error: "HTML required" }, { status: 400 });
 
-    let letterheadBase64 = "";
-    try {
-      const letterheadPath = path.join(process.cwd(), 'public', 'letterhead.png');
-      const imageBuffer = fs.readFileSync(letterheadPath);
-      letterheadBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
-    } catch (e) {
-      console.warn("letterhead.png não encontrada.");
+    let safeHtml = htmlContent
+      .replace(/```html/gi, '')
+      .replace(/```/gi, '')
+      .trim();
+
+    const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: Letter; margin: 0; }
+    body {
+      margin: 0; padding: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 11pt;
+      line-height: 1.4;
+      color: #000;
+      background: white;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
-
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          @page { size: Letter; margin: 0; }
-          body {
-            font-family: "Times New Roman", Times, serif;
-            line-height: 1.2;
-            color: black;
-            text-align: left;
-            margin: 0;
-            padding: 0;
-            background-image: url("${letterheadBase64}");
-            background-size: 100% 100%;
-            background-repeat: no-repeat;
-            font-size: 9.5pt;
-          }
-          /* MARGENS CORRIGIDAS - Zona segura do Papel Timbrado */
-          .content-wrapper {
-            box-sizing: border-box;
-            padding-top: 1.8in;
-            padding-bottom: 1.2in;
-            padding-left: 0.8in;
-            padding-right: 0.8in;
-            min-height: 11in;
-          }
-          h1, h2, h3 { text-align: center; text-transform: uppercase; font-size: 11pt; margin: 4pt 0; font-weight: bold; }
-          p { margin-top: 0; margin-bottom: 3pt; }
-
-          /* LAYOUT OFICIAL DE CERTIDÕES EM TABELAS */
-          table { width: 100%; border-collapse: collapse; margin: 6pt 0; table-layout: fixed; }
-          th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
-          th { background-color: #f9fafb; text-align: left; font-weight: normal; font-size: 7.5pt; color: #555; text-transform: uppercase; }
-          td strong { font-size: 9.5pt; display: block; margin-top: 2pt; color: #000; }
-
-          .bracket-notation { color: #555; font-style: italic; background: #f0f0f0; border: 0.5pt solid #ccc; padding: 1px 3px; font-size: 8pt; }
-          .translator-note { color: #003366; font-style: italic; background: #e6f2ff; border: 0.5pt solid #b3d1ff; padding: 1px 3px; font-size: 8pt; }
-          .page-break { page-break-after: always; display: block; height: 0; border: none; margin: 0; padding: 0; }
-        </style>
-      </head>
-      <body>
-        <div class="content-wrapper">${htmlContent}</div>
-      </body>
-      </html>
-    `;
+    h1, h2, h3, h4, h5, h6 {
+      font-family: "Times New Roman", Times, serif !important;
+      text-align: center !important;
+      text-transform: uppercase !important;
+      font-weight: bold !important;
+      font-size: 11pt !important;
+      margin: 8px 0 2px 0 !important;
+    }
+    p {
+      font-family: "Times New Roman", Times, serif !important;
+      font-size: 11pt !important;
+      margin: 2px 0;
+      line-height: 1.4;
+    }
+    strong, b { font-weight: bold !important; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 4px 0;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1pt solid black;
+      padding: 4px 6px;
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-family: "Times New Roman", Times, serif !important;
+      font-size: 10pt !important;
+    }
+  </style>
+</head>
+<body>${safeHtml}</body>
+</html>`;
 
     const formData = new FormData();
-    formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
-    formData.append("scale", "0.82");
+    formData.append("files", new File([fullHtml], "index.html", { type: "text/html" }));
 
-    const response = await fetch("http://localhost:3001/forms/chromium/convert/html", {
-      method: "POST",
-      body: formData,
-    });
+    // CONFIGURAÇÃO RESTRITA PARA REPLICAR O PADRÃO ANEXO
+    formData.append("paperWidth", "8.5");
+    formData.append("paperHeight", "11");
+    formData.append("marginTop", "1.8");
+    formData.append("marginBottom", "1.2");
+    formData.append("marginLeft", "0.8");
+    formData.append("marginRight", "0.8");
+    formData.append("printBackground", "true");
+    formData.append("scale", "0.85");
+    formData.append("skipNetworkIdleEvent", "true");
 
-    if (!response.ok) throw new Error(`Gotenberg error: ${response.statusText}`);
+    const gotenbergUrl = "http://127.0.0.1:3005/forms/chromium/convert/html";
+    const response = await fetch(gotenbergUrl, { method: "POST", body: formData });
+
+    if (!response.ok) throw new Error(`Gotenberg error: ${response.status}`);
 
     const pdfBuffer = await response.arrayBuffer();
     return new NextResponse(pdfBuffer, {
-      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${fileName}"` },
+      headers: { "Content-Type": "application/pdf" },
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
