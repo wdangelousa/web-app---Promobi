@@ -1,105 +1,126 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import fs from "fs";
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
+  PT_BR: "Brazilian Portuguese",
+  pt: "Portuguese",
+  ES: "Spanish",
+  es: "Spanish",
+  FR: "French",
+  fr: "French",
+};
 
 export async function POST(req: Request) {
   try {
-    const { htmlContent, fileName = "translation.pdf" } = await req.json();
+    const { fileUrl, documentId, orderId, sourceLanguage = "pt" } = await req.json();
 
-    if (!htmlContent) return NextResponse.json({ error: "HTML content is required" }, { status: 400 });
-
-    // PROTEÇÃO 1: "Lavanderia" de HTML. 
-    // Remove tags globais e marcações de Markdown que a IA possa ter gerado, evitando HTML duplo que trava o Gotenberg.
-    let safeHtml = htmlContent
-      .replace(/<!DOCTYPE[^>]*>/gi, '')
-      .replace(/<html[^>]*>/gi, '')
-      .replace(/<\/html>/gi, '')
-      .replace(/<head>[\s\S]*?<\/head>/gi, '')
-      .replace(/<body[^>]*>/gi, '')
-      .replace(/<\/body>/gi, '')
-      .replace(/```html/gi, '')
-      .replace(/```/gi, '')
-      .trim();
-
-    let letterheadBase64 = "";
-    try {
-      const letterheadPath = path.join(process.cwd(), 'public', 'letterhead.png');
-      const imageBuffer = fs.readFileSync(letterheadPath);
-      letterheadBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
-    } catch (e) {
-      console.warn("letterhead.png não encontrada. O PDF será gerado sem fundo.");
+    if (!fileUrl) {
+      return NextResponse.json({ error: "fileUrl is required" }, { status: 400 });
     }
 
-    // PROTEÇÃO 2: Só adiciona a regra de background se o timbrado realmente existir em base64.
-    const bgStyle = letterheadBase64
-      ? `background-image: url("${letterheadBase64}"); background-size: 100% 100%; background-repeat: no-repeat;`
-      : "";
+    const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
 
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          @page { size: Letter; margin: 0; }
-          body {
-            font-family: "Times New Roman", Times, serif;
-            line-height: 1.2;
-            color: black;
-            text-align: left;
-            margin: 0;
-            padding: 0;
-            ${bgStyle}
-            font-size: 9.5pt;
-          }
-          /* MARGENS CORRIGIDAS - Zona segura do Papel Timbrado */
-          .content-wrapper {
-            box-sizing: border-box;
-            padding-top: 1.8in;
-            padding-bottom: 1.2in;
-            padding-left: 0.8in;
-            padding-right: 0.8in;
-            min-height: 11in;
-          }
-          h1, h2, h3 { text-align: center; text-transform: uppercase; font-size: 11pt; margin: 4pt 0; font-weight: bold; }
-          p { margin-top: 0; margin-bottom: 3pt; }
-
-          /* LAYOUT OFICIAL DE CERTIDÕES EM TABELAS */
-          table { width: 100%; border-collapse: collapse; margin: 6pt 0; table-layout: fixed; }
-          th, td { border: 0.75pt solid black; padding: 4pt; font-size: 8.5pt; vertical-align: top; word-wrap: break-word; }
-          th { background-color: #f9fafb; text-align: left; font-weight: normal; font-size: 7.5pt; color: #555; text-transform: uppercase; }
-          td strong { font-size: 9.5pt; display: block; margin-top: 2pt; color: #000; }
-
-          .bracket-notation { color: #555; font-style: italic; background: #f0f0f0; border: 0.5pt solid #ccc; padding: 1px 3px; font-size: 8pt; }
-          .translator-note { color: #003366; font-style: italic; background: #e6f2ff; border: 0.5pt solid #b3d1ff; padding: 1px 3px; font-size: 8pt; }
-          .page-break { page-break-after: always; display: block; height: 0; border: none; margin: 0; padding: 0; }
-        </style>
-      </head>
-      <body>
-        <div class="content-wrapper">${safeHtml}</div>
-      </body>
-      </html>
-    `;
-
-    const formData = new FormData();
-    formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
-    formData.append("scale", "0.82");
-
-    const response = await fetch("http://localhost:3001/forms/chromium/convert/html", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gotenberg error: ${response.statusText} - ${errorText}`);
+    // Fetch the source file
+    const fileRes = await fetch(fileUrl);
+    if (!fileRes.ok) {
+      return NextResponse.json(
+        { error: `Failed to fetch source file: ${fileRes.status}` },
+        { status: 400 }
+      );
     }
 
-    const pdfBuffer = await response.arrayBuffer();
-    return new NextResponse(pdfBuffer, {
-      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${fileName}"` },
+    const fileBuffer = await fileRes.arrayBuffer();
+    const base64Data = Buffer.from(fileBuffer).toString("base64");
+    const contentType = fileRes.headers.get("content-type") || "application/pdf";
+
+    // Determine media type for Anthropic
+    const isPdf = contentType.includes("pdf") || fileUrl.toLowerCase().includes(".pdf");
+    const isImage =
+      contentType.includes("image/") ||
+      /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
+
+    const systemPrompt = `You are a professional certified translator specializing in legal and civil document translation from ${sourceLangLabel} to English (United States).
+
+Your output must be clean HTML suitable for a certified translation document. Follow these rules exactly:
+- Use <p> tags for paragraphs
+- Use <table>, <tr>, <th>, <td> for any tables or form fields
+- Use <h2> or <h3> for section headings
+- Preserve ALL information from the original — names, dates, document numbers, addresses, signatures, seals, stamps, and notary language
+- Use [ILLEGIBLE] for text that cannot be read
+- Use [SEAL] or [STAMP] as placeholders for official stamps/seals
+- Use [SIGNATURE] for handwritten signatures
+- Do NOT add commentary, notes, or explanations
+- Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags
+- Output only the translated HTML content`;
+
+    const userMessage = isPdf
+      ? `Translate this ${sourceLangLabel} document to English. Output clean HTML only.`
+      : `Translate this ${sourceLangLabel} document image to English. Output clean HTML only.`;
+
+    let messageContent: Anthropic.MessageParam["content"];
+
+    if (isPdf) {
+      messageContent = [
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: base64Data,
+          },
+        } as any,
+        { type: "text", text: userMessage },
+      ];
+    } else if (isImage) {
+      const imageMediaType = contentType.includes("png")
+        ? "image/png"
+        : contentType.includes("gif")
+        ? "image/gif"
+        : contentType.includes("webp")
+        ? "image/webp"
+        : "image/jpeg";
+
+      messageContent = [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: imageMediaType,
+            data: base64Data,
+          },
+        },
+        { type: "text", text: userMessage },
+      ];
+    } else {
+      // Fallback: treat as plain text
+      const textContent = Buffer.from(fileBuffer).toString("utf-8");
+      messageContent = [
+        {
+          type: "text",
+          text: `${userMessage}\n\n<source_document>\n${textContent}\n</source_document>`,
+        },
+      ];
+    }
+
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: "user", content: messageContent }],
     });
+
+    const translatedText =
+      response.content[0].type === "text" ? response.content[0].text : "";
+
+    if (!translatedText) {
+      return NextResponse.json({ error: "Claude returned empty translation" }, { status: 500 });
+    }
+
+    return NextResponse.json({ translatedText });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[/api/translate/claude] Error:", error);
+    return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
   }
 }

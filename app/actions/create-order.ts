@@ -39,6 +39,7 @@ type CreateOrderInput = {
     serviceType?: 'translation' | 'notarization'; // drives hasTranslation
     status?: any; // Allow custom initial status (e.g. PENDING_PAYMENT)
     sourceLanguage?: 'PT_BR' | 'ES';
+    extraDiscount?: number;
 }
 
 export async function createOrder(data: CreateOrderInput) {
@@ -124,6 +125,7 @@ export async function createOrder(data: CreateOrderInput) {
                     }),
                     discountPercentage,
                     discountAmount,
+                    extraDiscount: data.extraDiscount || 0,
                     documents: {
                         create: data.documents.map((doc) => ({
                             docType: doc.fileName?.split('.').pop() ?? 'file',
@@ -218,6 +220,7 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     }),
                     discountPercentage,
                     discountAmount,
+                    extraDiscount: data.extraDiscount || 0,
                     documents: {
                         create: data.documents.map((doc) => ({
                             docType: doc.fileName?.split('.').pop() ?? 'file',

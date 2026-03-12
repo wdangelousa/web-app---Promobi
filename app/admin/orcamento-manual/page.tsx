@@ -446,7 +446,7 @@ export default function OrcamentoManual() {
     }, [documents, urgency, serviceType, globalSettings])
 
     // --- ORDER CREATION ---
-    const handleGenerateProposal = async (finalTotalOverride?: number, manualDiscountAmount?: number) => {
+    const handleGenerateProposal = async (finalTotalOverride?: number, manualDiscountAmount?: number, discountType?: 'nominal' | 'percent') => {
         const selectedDocs = documents.filter(d => d.isSelected)
         if (!clientName || !clientEmail) { toast.error('Preencha pelo menos Nome e Email do cliente.'); return }
         if (selectedDocs.length === 0) { toast.error('Selecione pelo menos um documento.'); return }
@@ -508,12 +508,21 @@ export default function OrcamentoManual() {
                 }
             })
 
+            const isNominalDiscount = discountType === 'nominal' && manualDiscountAmount && manualDiscountAmount > 0;
             const payload: any = {
                 user: { fullName: clientName, email: clientEmail, phone: clientPhone },
                 documents: orderDocuments,
                 urgency, docCategory: 'standard', notaryMode: 'none',
                 zipCode: '00000', grandTotalOverride: effectiveTotal,
-                breakdown: { ...breakdown, serviceType, manualDiscountAmount: manualDiscountAmount },
+                breakdown: {
+                    ...breakdown,
+                    serviceType,
+                    ...(isNominalDiscount
+                        ? { volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
+                        : { manualDiscountAmount: manualDiscountAmount }
+                    ),
+                },
+                extraDiscount: isNominalDiscount ? manualDiscountAmount : 0,
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT'
@@ -980,7 +989,7 @@ export default function OrcamentoManual() {
                                             subtotal={totalPrice}
                                             totalDocs={breakdown.totalDocs}
                                             totalPages={breakdown.totalCount}
-                                            onGenerateProposal={(final, disc) => handleGenerateProposal(final, disc)}
+                                            onGenerateProposal={(final, disc, type) => handleGenerateProposal(final, disc, type)}
                                         />
                                     </div>
                                 )}

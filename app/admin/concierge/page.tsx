@@ -452,7 +452,7 @@ export default function ConciergePage() {
 
     // ─── Order creation ───────────────────────────────────────────────────────
 
-    const handleCreateConciergeOrder = async (finalTotalOverride?: number, manualDiscountAmount?: number) => {
+    const handleCreateConciergeOrder = async (finalTotalOverride?: number, manualDiscountAmount?: number, discountType?: 'nominal' | 'percent') => {
         if (!fullName || !email || !phone) { toast.error('Preencha os dados do cliente.'); return }
         if (documents.length === 0) { toast.error('Adicione pelo menos um documento.'); return }
 
@@ -482,12 +482,21 @@ export default function ConciergePage() {
                         : d.externalLink ? { url: d.externalLink, fileName: d.fileName, contentType: 'link/external' } : undefined,
                 }
             })
+            const isNominalDiscount = discountType === 'nominal' && manualDiscountAmount && manualDiscountAmount > 0;
             const result = await createOrder({
                 user: { fullName, email, phone },
                 documents: orderDocuments as any,
                 urgency, docCategory: 'standard', notaryMode: 'none',
                 zipCode: '00000', grandTotalOverride: effectiveTotal,
-                breakdown: { ...breakdown, serviceType, manualDiscountAmount: manualDiscountAmount },
+                breakdown: {
+                    ...breakdown,
+                    serviceType,
+                    ...(isNominalDiscount
+                        ? { volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
+                        : { manualDiscountAmount: manualDiscountAmount }
+                    ),
+                },
+                extraDiscount: isNominalDiscount ? manualDiscountAmount : 0,
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT',
@@ -876,7 +885,7 @@ export default function ConciergePage() {
                                 subtotal={totalPrice}
                                 totalDocs={breakdown.totalDocs}
                                 totalPages={breakdown.totalCount}
-                                onGenerateProposal={(final, disc) => handleCreateConciergeOrder(final, disc)}
+                                onGenerateProposal={(final, disc, type) => handleCreateConciergeOrder(final, disc, type)}
                             />
                         )}
                     </div>
