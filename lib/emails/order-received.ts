@@ -37,16 +37,16 @@ export function renderOrderReceived({
     const brlEstimate = (totalAmount * 5.2).toFixed(2);
 
     const paymentInstructions = isWhatsApp
-        ? `<div class="box" style="background:#f0fdf4;border-left:4px solid #22c55e;">
-            <p style="font-size:14px;font-weight:700;color:#166534;margin-bottom:8px;">📱 Next Step: Complete Your Payment</p>
-            <p style="font-size:13px;color:#15803d;line-height:1.6;">
+        ? `<div class="box" style="background:#f0fdf4;border-left:4px solid #22c55e;padding:15px;margin-bottom:20px;">
+            <p style="font-size:14px;font-weight:700;color:#166534;margin:0 0 8px 0;">📱 Next Step: Complete Your Payment</p>
+            <p style="font-size:13px;color:#15803d;line-height:1.6;margin:0;">
                 Your consultant will send you a Pix or installment payment link via WhatsApp shortly.
                 Once confirmed, we will begin processing your documents immediately.
             </p>
            </div>`
-        : `<div class="box" style="background:#eff6ff;border-left:4px solid #3b82f6;">
-            <p style="font-size:14px;font-weight:700;color:#1e40af;margin-bottom:8px;">💳 Complete Your Stripe Payment</p>
-            <p style="font-size:13px;color:#1d4ed8;line-height:1.6;">
+        : `<div class="box" style="background:#eff6ff;border-left:4px solid #3b82f6;padding:15px;margin-bottom:20px;">
+            <p style="font-size:14px;font-weight:700;color:#1e40af;margin:0 0 8px 0;">💳 Complete Your Stripe Payment</p>
+            <p style="font-size:13px;color:#1d4ed8;line-height:1.6;margin:0;">
                 If you haven't been redirected yet, use the button below to complete checkout.
             </p>
            </div>`;
@@ -63,8 +63,7 @@ export function renderOrderReceived({
         Here's a summary of what you requested:
     </p>
 
-    <!-- Order details box -->
-    <div class="box" style="background:#f8fafc;border:1px solid #e2e8f0;">
+    <div class="box" style="background:#f8fafc;border:1px solid #e2e8f0;padding:15px;margin-bottom:20px;">
         <div class="box-row">
             <span class="box-label">Order ID</span>
             <span class="box-value">#${orderId}</span>
@@ -83,19 +82,17 @@ export function renderOrderReceived({
         </div>
         <div class="box-row">
             <span class="box-label">Total</span>
-            <span class="box-value" style="color:${brand.primary};font-size:16px;">
+            <span class="box-value" style="color:${brand.primary};font-size:16px;font-weight:bold;">
                 $${totalAmount.toFixed(2)} USD
-                ${isWhatsApp ? `<span style="font-size:11px;color:#64748b;"> (≈ R$ ${brlEstimate})</span>` : ''}
+                ${isWhatsApp ? `<span style="font-size:11px;color:#64748b;font-weight:normal;"> (≈ R$ ${brlEstimate})</span>` : ''}
             </span>
         </div>
     </div>
 
     ${paymentInstructions}
 
-    ${isWhatsApp ? '' : ''}
-
     <div class="divider"></div>
-    <p class="para" style="font-size:13px;color:#94a3b8;">
+    <p class="para" style="font-size:13px;color:#94a3b8;margin-top:20px;">
         <strong style="color:${brand.slate};">Questions?</strong> Simply reply to this email or
         reach us on WhatsApp at +1 (407) 639-6154. We typically respond within 30 minutes during business hours.
     </p>

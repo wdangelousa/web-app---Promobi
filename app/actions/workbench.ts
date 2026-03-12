@@ -192,11 +192,16 @@ export async function releaseToClient(
 async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean }) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
-  const translatorEmail = 'belebmd@gmail.com'
 
   const recipients: string[] = []
-  if (options.sendToClient && clientEmail) recipients.push(clientEmail)
-  if (options.sendToTranslator) recipients.push(translatorEmail)
+
+  if (options.sendToClient && clientEmail) {
+    recipients.push(clientEmail)
+  }
+  if (options.sendToTranslator) {
+    recipients.push('belebmd@gmail.com')
+    recipients.push('desk@promobidocs.com')
+  }
 
   if (recipients.length === 0) return
 
@@ -204,47 +209,42 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
 
-  // Build download links list
+  // Build download links list substituindo Flexbox por Tabelas
   const docLinks = docs
     .filter(d => d.delivery_pdf_url)
     .map((d, i) => {
       const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
       return `
-        <div style="display:flex; align-items:center; justify-content:space-between;
-                    border:1px solid #E5E7EB; border-radius:8px; padding:12px 16px;
-                    margin-bottom:8px; background:#F9FAFB;">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:18px;">📄</span>
-            <span style="font-size:13px; color:#374151; font-weight:600;">${name}</span>
-          </div>
-          <a href="${d.delivery_pdf_url}"
-             style="background:#f5b000; color:#111827; text-decoration:none;
-                    padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold;">
-            Baixar PDF
-          </a>
-        </div>
+        <table width="100%" cellpadding="12" cellspacing="0" style="border:1px solid #E5E7EB; border-radius:8px; margin-bottom:8px; background:#F9FAFB;">
+          <tr>
+            <td width="30" style="font-size:18px; text-align:center; padding-right:0;">📄</td>
+            <td style="font-size:13px; color:#374151; font-weight:600;">${name}</td>
+            <td align="right">
+              <a href="${d.delivery_pdf_url}"
+                 style="background:#f5b000; color:#111827; text-decoration:none;
+                        padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold; display:inline-block;">
+                Baixar PDF
+              </a>
+            </td>
+          </tr>
+        </table>
       `
     })
     .join('')
 
-  // SANDBOX MODE: single verified recipient only — Resend rejects multiple unverified recipients.
-  console.log(`[sendDeliveryEmail] !!! SANDBOX: destinatário único → wdangelo81@gmail.com !!!`)
-  console.log(`[sendDeliveryEmail] API_KEY_PREFIX=${process.env.RESEND_API_KEY?.substring(0, 7)}... | isRetry=${options.isRetry}`)
-
   const { data, error } = await resend.emails.send({
     from: 'Promobidocs <desk@promobidocs.com>',
-    to: 'wdangelo81@gmail.com',
+    to: recipients,
     subject: `📩 [VALIDAÇÃO] Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
     html: `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
-        <table width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-          <!-- Header -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: #0F1117; padding: 30px; text-align: center;">
               <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;" />
-              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBIDOCSDOCS · TRADUÇÃO CERTIFICADA</p>
+              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBIDOCS · TRADUÇÃO CERTIFICADA</p>
               <h1 style="color: white; font-size: 22px; margin: 0; font-weight: bold;">Sua tradução está pronta! 🎉</h1>
             </td>
           </tr>
@@ -256,7 +256,6 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
                 Temos o prazer de entregar o seu Kit de Tradução Oficial, processado e revisado por nossa equipe especializada.
               </p>
 
-              <!-- Document download links -->
               <div style="margin: 24px 0;">
                 <p style="font-size: 11px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">
                   ${docs.filter(d => d.delivery_pdf_url).length} Documento(s) Liberado(s)
@@ -271,7 +270,6 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
               </div>
             </td>
           </tr>
-          <!-- Footer -->
           <tr>
             <td style="background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #f3f4f6;">
               © 2026 Promobidocs Services · Orlando, FL · Tradução e Notarização

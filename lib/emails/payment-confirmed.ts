@@ -38,25 +38,27 @@ export function renderPaymentConfirmed({
     <div class="hdr-sub">Payment Confirmed</div>
 </div>
 <div class="body">
-    <!-- Big success indicator -->
-    <div style="text-align:center;margin-bottom:28px;">
-        <div style="display:inline-flex;align-items:center;justify-content:center;
-                    width:64px;height:64px;border-radius:50%;
-                    background:linear-gradient(135deg,#bbf7d0,#4ade80);">
-            <span style="font-size:32px;line-height:1;">✓</span>
-        </div>
-        <p style="font-size:22px;font-weight:800;color:${brand.dark};margin-top:14px;">
-            Payment Received!
-        </p>
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+        <tr>
+            <td align="center">
+                <table width="64" height="64" cellpadding="0" cellspacing="0" border="0" style="background:#4ade80; border-radius:50%;">
+                    <tr>
+                        <td align="center" valign="middle" style="font-size:32px; color:#ffffff; line-height:1;">✓</td>
+                    </tr>
+                </table>
+                <p style="font-size:22px;font-weight:800;color:${brand.dark};margin:14px 0 0 0;">
+                    Payment Received!
+                </p>
+            </td>
+        </tr>
+    </table>
 
     <p class="para" style="text-align:center;">
         Hi <strong>${customerName}</strong>, your payment has been confirmed and your order
         is now <strong>officially in our queue</strong>. Our expert linguists are being assigned right now.
     </p>
 
-    <!-- Order summary -->
-    <div class="box" style="background:#f8fafc;border:1px solid #e2e8f0;">
+    <div class="box" style="background:#f8fafc;border:1px solid #e2e8f0;padding:15px;margin-bottom:28px;">
         <div class="box-row">
             <span class="box-label">Order</span>
             <span class="box-value">#${orderId}</span>
@@ -71,48 +73,46 @@ export function renderPaymentConfirmed({
         </div>
         <div class="box-row">
             <span class="box-label">Estimated Delivery</span>
-            <span class="box-value" style="color:${brand.primary};">
+            <span class="box-value" style="color:${brand.primary};font-weight:bold;">
                 ${eta}
             </span>
         </div>
         <div class="box-row">
             <span class="box-label">Amount Paid</span>
-            <span class="box-value" style="color:#16a34a;font-size:16px;">
+            <span class="box-value" style="color:#16a34a;font-size:16px;font-weight:bold;">
                 $${totalAmount.toFixed(2)} USD ✓
             </span>
         </div>
     </div>
 
-    <!-- Process timeline -->
     <div style="margin:28px 0;">
-        <p style="font-size:13px;font-weight:700;color:${brand.dark};margin-bottom:14px;
-                  text-transform:uppercase;letter-spacing:1px;">What Happens Next</p>
-        <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="font-size:13px;font-weight:700;color:${brand.dark};margin:0 0 14px 0; text-transform:uppercase;letter-spacing:1px;">What Happens Next</p>
+        
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
             ${[
             ['🔍', 'Document Analysis', 'Our linguists review your files for complexity and context.'],
             ['✍️', 'Certified Translation', 'Your documents are translated by a certified ATA-member translator.'],
             ['⚖️', 'Quality Review', 'A second expert proofreads and certifies the final version.'],
             ['📧', 'Secure Delivery', 'You receive a certified PDF directly in your inbox.'],
         ].map(([icon, title, desc]) => `
-            <div style="display:flex;gap:14px;align-items:flex-start;">
-                <div style="flex-shrink:0;width:36px;height:36px;border-radius:50%;
-                            background:#fff7ed;display:flex;align-items:center;
-                            justify-content:center;font-size:18px;border:1px solid #fed7aa;">
-                    ${icon}
-                </div>
-                <div>
-                    <p style="font-size:14px;font-weight:700;color:${brand.dark};margin-bottom:2px;">${title}</p>
-                    <p style="font-size:13px;color:#64748b;line-height:1.5;">${desc}</p>
-                </div>
-            </div>`).join('')}
-        </div>
+            <tr>
+                <td width="50" valign="top" style="padding-bottom:16px;">
+                    <table width="36" height="36" cellpadding="0" cellspacing="0" border="0" style="background:#fff7ed;border-radius:50%;border:1px solid #fed7aa;">
+                        <tr>
+                            <td align="center" valign="middle" style="font-size:18px;">${icon}</td>
+                        </tr>
+                    </table>
+                </td>
+                <td valign="top" style="padding-bottom:16px;">
+                    <p style="font-size:14px;font-weight:700;color:${brand.dark};margin:0 0 4px 0;">${title}</p>
+                    <p style="font-size:13px;color:#64748b;line-height:1.5;margin:0;">${desc}</p>
+                </td>
+            </tr>`).join('')}
+        </table>
     </div>
 
-    <!-- Process timeline -->
-    <div style="margin:28px 0;">
-
     <div class="divider"></div>
-    <p class="para" style="font-size:13px;color:#94a3b8;text-align:center;">
+    <p class="para" style="font-size:13px;color:#94a3b8;text-align:center;margin-top:20px;">
         You'll receive another email as soon as your documents are ready for download.
     </p>
 </div>`;
