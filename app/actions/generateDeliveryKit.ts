@@ -4,7 +4,7 @@
 
 "use server";
 
-import { prisma } from "@/lib/i18n/prisma";
+import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 // ─────────────────────────────────────────────
@@ -19,9 +19,9 @@ interface DeliveryKitResult {
 }
 
 interface GenerateOptions {
-    orderId: string;
+    orderId: number;
     template?: "marriage_certificate" | "generic";
-    returnBase64?: boolean; // If true, returns base64 instead of URL
+    returnBase64?: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -257,9 +257,9 @@ const CARTORIO_CSS = `
 // 4. SOURCE LANGUAGE MAP
 // ─────────────────────────────────────────────
 const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
-    "PT_BR": "Portuguese (Brazil)",
-    "ES": "Spanish",
-    "EN": "English",
+    PT_BR: "Portuguese (Brazil)",
+    ES: "Spanish",
+    EN: "English",
 };
 
 // ─────────────────────────────────────────────
@@ -276,14 +276,14 @@ function wrapFullHtml(body: string): string {
 </html>`;
 }
 
-function buildHeaderHtml(orderNumber: string): string {
+function buildHeaderHtml(orderId: number | string): string {
     return `
     <div class="header">
       <div class="logo-line">Certified Translation Services</div>
       <div class="company-name">Promobidocs</div>
       <div class="tagline">Official Certified Translations &mdash; USCIS &bull; DMV &bull; Academic</div>
       <div class="credentials">
-        ATA Associate Member &bull; Florida Notary Public &bull; Order #${orderNumber}
+        ATA Associate Member &bull; Florida Notary Public &bull; Order #${orderId}
       </div>
     </div>
   `;
@@ -315,11 +315,11 @@ function buildCertificationHtml(sourceLanguage: string): string {
   `;
 }
 
-function buildFooterHtml(orderNumber: string): string {
+function buildFooterHtml(orderId: number | string): string {
     return `
     <div class="footer">
       Promobidocs &mdash; Certified Translation &amp; Notarization Services
-      &bull; Order #${orderNumber}
+      &bull; Order #${orderId}
       &bull; This document is not valid without the translator&rsquo;s signature and notarial seal.
     </div>
   `;
@@ -335,12 +335,13 @@ export async function generateDeliveryKit(
 
     try {
         // ── Fetch order with documents ──
+        // Schema: Order.id = Int, Document.translation_status = String, no "position" field
         const order = await prisma.order.findUnique({
             where: { id: orderId },
             include: {
                 documents: {
-                    where: { status: "TRANSLATED" }, // Only include finished docs
-                    orderBy: { position: "asc" },
+                    where: { translation_status: "translated" },
+                    orderBy: { id: "asc" },
                 },
             },
         });
@@ -356,19 +357,19 @@ export async function generateDeliveryKit(
             };
         }
 
-        const orderNumber = order.orderNumber ?? order.id.slice(0, 8).toUpperCase();
-        const sourceLanguage = (order as any).sourceLanguage ?? "PT_BR";
+        // Schema: Order.sourceLanguage = SourceLanguage enum (PT_BR | ES)
+        const sourceLanguage = order.sourceLanguage ?? "PT_BR";
         const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
 
         // ── Build per-document pages ──
         const documentPages = order.documents.map((doc, idx) => {
-            const docType = (doc as any).documentType ?? "Document";
-            // translatedContent is the HTML from Tiptap editor saved in the DB
-            const translatedHtml = (doc as any).translatedContent ?? (doc as any).translationHtml ?? "";
+            // Schema: Document.docType = String, Document.translatedText = String?
+            const docType = doc.docType ?? "Document";
+            const translatedHtml = doc.translatedText ?? "";
 
             return `
         <div class="page">
-          ${buildHeaderHtml(orderNumber)}
+          ${buildHeaderHtml(order.id)}
 
           <div class="doc-title">
             Certified Translation &mdash; ${docType}
@@ -383,7 +384,7 @@ export async function generateDeliveryKit(
           </div>
 
           ${buildCertificationHtml(sourceLanguage)}
-          ${buildFooterHtml(orderNumber)}
+          ${buildFooterHtml(order.id)}
         </div>
       `;
         });
@@ -418,7 +419,7 @@ export async function generateDeliveryKit(
         }
 
         const pdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
-        const fileName = `promobidocs-${orderNumber}.pdf`;
+        const fileName = `promobidocs-order-${order.id}.pdf`;
 
         // ── Option A: Return base64 (for preview / email) ──
         if (returnBase64) {
@@ -430,7 +431,6 @@ export async function generateDeliveryKit(
         }
 
         // ── Option B: Store in Supabase Storage & return URL ──
-        // Adjust this to your actual storage setup
         try {
             const { createClient } = await import("@supabase/supabase-js");
             const supabase = createClient(
@@ -441,7 +441,7 @@ export async function generateDeliveryKit(
             const storagePath = `deliveries/${orderId}/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
-                .from("translations") // Your bucket name
+                .from("translations")
                 .upload(storagePath, pdfBuffer, {
                     contentType: "application/pdf",
                     upsert: true,
@@ -449,7 +449,6 @@ export async function generateDeliveryKit(
 
             if (uploadError) {
                 console.error("[DeliveryKit] Storage upload error:", uploadError);
-                // Fallback to base64 if storage fails
                 return {
                     success: true,
                     pdfBase64: pdfBuffer.toString("base64"),
@@ -461,13 +460,13 @@ export async function generateDeliveryKit(
                 .from("translations")
                 .getPublicUrl(storagePath);
 
-            // ── Update order status ──
+            // ── Update order: save delivery URL ──
+            // Schema: Order.deliveryUrl = String?, Order.status = OrderStatus enum
             await prisma.order.update({
                 where: { id: orderId },
                 data: {
-                    status: "DELIVERED",
-                    deliveryPdfUrl: urlData.publicUrl,
-                    deliveredAt: new Date(),
+                    status: "COMPLETED",
+                    deliveryUrl: urlData.publicUrl,
                 },
             });
 
@@ -500,7 +499,7 @@ export async function generateDeliveryKit(
 // 7. PREVIEW ACTION (for Workbench "Preview PDF")
 // ─────────────────────────────────────────────
 export async function previewDocumentPdf(
-    documentId: string,
+    documentId: number,
     translatedHtml: string,
     documentType: string = "Document",
     sourceLanguage: string = "PT_BR"

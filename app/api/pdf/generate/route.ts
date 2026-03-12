@@ -550,7 +550,7 @@ export async function POST(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="promobidocs-${body.data?.orderNumber ?? "document"}.pdf"`,
+        "Content-Disposition": `inline; filename="promobidocs-order-${body.data?.orderId ?? "document"}.pdf"`,
         "Cache-Control": "no-store",
       },
     });
