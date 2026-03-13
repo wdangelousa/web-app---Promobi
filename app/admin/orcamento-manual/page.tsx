@@ -509,6 +509,9 @@ export default function OrcamentoManual() {
             })
 
             const isNominalDiscount = discountType === 'nominal' && manualDiscountAmount && manualDiscountAmount > 0;
+            // For nominal discounts, the admin saw `subtotal` as base; replace basePrice with that
+            // so the proposal shows: Base $subtotal → Desconto -$X → Total $final
+            const nominalSubtotal = isNominalDiscount ? effectiveTotal + manualDiscountAmount : undefined;
             const payload: any = {
                 user: { fullName: clientName, email: clientEmail, phone: clientPhone },
                 documents: orderDocuments,
@@ -518,7 +521,7 @@ export default function OrcamentoManual() {
                     ...breakdown,
                     serviceType,
                     ...(isNominalDiscount
-                        ? { volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
+                        ? { basePrice: nominalSubtotal, volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
                         : { manualDiscountAmount: manualDiscountAmount }
                     ),
                 },

@@ -483,6 +483,7 @@ export default function ConciergePage() {
                 }
             })
             const isNominalDiscount = discountType === 'nominal' && manualDiscountAmount && manualDiscountAmount > 0;
+            const nominalSubtotal = isNominalDiscount ? effectiveTotal + manualDiscountAmount : undefined;
             const result = await createOrder({
                 user: { fullName, email, phone },
                 documents: orderDocuments as any,
@@ -492,7 +493,7 @@ export default function ConciergePage() {
                     ...breakdown,
                     serviceType,
                     ...(isNominalDiscount
-                        ? { volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
+                        ? { basePrice: nominalSubtotal, volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
                         : { manualDiscountAmount: manualDiscountAmount }
                     ),
                 },
