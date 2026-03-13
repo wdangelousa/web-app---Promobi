@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 // 1. GOTENBERG ENGINE CONFIG
 // ─────────────────────────────────────────────
 const GOTENBERG_URL =
-  "http://127.0.0.1:3005/forms/chromium/convert/html";
+  "http://127.0.0.1:3001/forms/chromium/convert/html";
 
 const PDF_CONFIG = {
   paperWidth: "8.5",
@@ -36,7 +36,6 @@ const CARTORIO_CSS = `
 
   @page {
     size: letter;
-    margin: 0;
   }
 
   html, body {
@@ -53,7 +52,7 @@ const CARTORIO_CSS = `
   /* ── Page Container ── */
   .page {
     width: 100%;
-    padding: 0;
+    padding: 1.8in 0.8in 1.2in 0.8in;
     page-break-after: always;
     position: relative;
   }
@@ -253,6 +252,42 @@ const CARTORIO_CSS = `
   .mb-4  { margin-bottom: 4pt; }
   .mb-8  { margin-bottom: 8pt; }
   .no-break { page-break-inside: avoid; }
+
+  /* ── Compact Translation Body (AI-generated content) ── */
+  .translation-body h1,
+  .translation-body h2,
+  .translation-body h3 {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 6pt 0 3pt;
+    padding: 0;
+    border: none;
+  }
+  .translation-body p {
+    margin-bottom: 3pt;
+    text-align: justify;
+    line-height: 1.35;
+  }
+  .translation-body p strong {
+    font-weight: bold;
+  }
+  .translation-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4pt 0;
+    font-size: 9.5pt;
+  }
+  .translation-body table td,
+  .translation-body table th {
+    border: 0.5pt solid #999;
+    padding: 2px 4px;
+  }
+  .translation-body ul, .translation-body ol {
+    margin-left: 16pt;
+    margin-bottom: 4pt;
+  }
 `;
 
 // ─────────────────────────────────────────────
@@ -429,49 +464,9 @@ interface GenericTranslationData {
 function buildGenericTranslationHtml(data: GenericTranslationData): string {
   return `
     <div class="page">
-      <div class="header">
-        <div class="logo-line">Certified Translation Services</div>
-        <div class="company-name">Promobidocs</div>
-        <div class="tagline">Official Certified Translations &mdash; USCIS &bull; DMV &bull; Academic</div>
-        <div class="credentials">
-          ATA Associate Member &bull; Florida Notary Public &bull; Order #${data.orderNumber}
-        </div>
-      </div>
-
-      <div class="doc-title">Certified Translation &mdash; ${data.documentType}</div>
-      <div class="doc-subtitle">
-        Translated from ${data.sourceLanguage} into ${data.targetLanguage}
-      </div>
-
       <!-- Translated content injected from workbench -->
       <div class="translation-body">
         ${data.translatedContent}
-      </div>
-
-      <div class="certification-block">
-        <p>
-          <strong>TRANSLATOR&rsquo;S CERTIFICATION:</strong> I, Isabele Bandeira de Moraes D&rsquo;Angelo,
-          ATA Associate Member (Credential M-194918), do hereby certify that the foregoing is a true
-          and accurate translation of the original document in ${data.sourceLanguage} into
-          ${data.targetLanguage}, to the best of my knowledge and ability.
-        </p>
-        <p class="text-small">
-          Sworn and subscribed before me, a Notary Public in and for the State of Florida,
-          on this _____ day of ______________, 20____.
-        </p>
-      </div>
-
-      <div class="signature-area">
-        <div class="notarial-seal">[SEAL]</div>
-        <div class="signature-line">
-          <div class="signature-name">Isabele Bandeira de Moraes D&rsquo;Angelo</div>
-          <div class="signature-title">ATA Associate &bull; Florida Notary Public</div>
-        </div>
-      </div>
-
-      <div class="footer">
-        Promobidocs &mdash; Certified Translation &amp; Notarization Services
-        &bull; Order #${data.orderNumber}
       </div>
     </div>
   `;
@@ -500,8 +495,8 @@ export async function POST(request: NextRequest) {
         break;
       default:
         // Fallback: if raw HTML is sent, wrap it directly
-        if (body.rawHtml) {
-          innerHtml = body.rawHtml;
+        if (body.rawHtml || body.htmlContent) {
+          innerHtml = body.rawHtml ?? body.htmlContent;
         } else {
           return NextResponse.json(
             { error: `Unknown template: "${template}"` },

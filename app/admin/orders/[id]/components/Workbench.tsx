@@ -525,6 +525,9 @@ export default function Workbench({ order }: { order: Order }) {
                         translatedPdfUrl={optimisticExternalUrl}
                         onUploadExternalPdf={handleUploadExternalFile}
                         onRemoveExternalPdf={handleRemoveExternal}
+                        orderId={order.id}
+                        documentType={selectedDoc.docType ?? undefined}
+                        sourceLanguage={selectedDoc.sourceLanguage ?? undefined}
                     />
                 </div>
             </div>

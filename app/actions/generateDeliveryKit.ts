@@ -29,7 +29,7 @@ interface GenerateOptions {
 // 2. GOTENBERG CONFIG
 // ─────────────────────────────────────────────
 const GOTENBERG_URL =
-    "http://127.0.0.1:3005/forms/chromium/convert/html";
+    "http://127.0.0.1:3001/forms/chromium/convert/html";
 
 const PDF_ENGINE = {
     paperWidth: "8.5",
@@ -55,7 +55,7 @@ const CARTORIO_CSS = `
     padding: 0;
   }
 
-  @page { size: letter; margin: 0; }
+  @page { size: letter; }
 
   html, body {
     width: 100%;
@@ -69,6 +69,7 @@ const CARTORIO_CSS = `
 
   .page {
     width: 100%;
+    padding: 1.8in 0.8in 1.2in 0.8in;
     page-break-after: always;
   }
   .page:last-child { page-break-after: auto; }
@@ -228,25 +229,35 @@ const CARTORIO_CSS = `
   .translation-body h2,
   .translation-body h3 {
     font-family: "Times New Roman", Times, serif;
-    margin: 10pt 0 6pt;
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 6pt 0 3pt;
+    padding: 0;
+    border: none;
   }
   .translation-body p {
-    margin-bottom: 6pt;
+    margin-bottom: 3pt;
     text-align: justify;
+    line-height: 1.35;
+  }
+  .translation-body p strong {
+    font-weight: bold;
   }
   .translation-body table {
     width: 100%;
     border-collapse: collapse;
-    margin: 8pt 0;
+    margin: 4pt 0;
+    font-size: 9.5pt;
   }
   .translation-body table td,
   .translation-body table th {
-    border: 1pt solid #000;
-    padding: 6px;
+    border: 0.5pt solid #999;
+    padding: 2px 4px;
   }
   .translation-body ul, .translation-body ol {
-    margin-left: 20pt;
-    margin-bottom: 8pt;
+    margin-left: 16pt;
+    margin-bottom: 4pt;
   }
 
   .text-center { text-align: center; }

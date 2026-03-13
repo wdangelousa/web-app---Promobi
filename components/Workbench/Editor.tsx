@@ -18,6 +18,9 @@ interface EditorProps {
     onUploadExternalPdf?: (file: File) => Promise<void>
     onRemoveExternalPdf?: () => Promise<void>
     isPreviewingKit?: boolean
+    orderId?: number
+    documentType?: string
+    sourceLanguage?: string
 }
 
 export default function Editor({
@@ -31,6 +34,9 @@ export default function Editor({
     onUploadExternalPdf,
     onRemoveExternalPdf,
     isPreviewingKit,
+    orderId,
+    documentType,
+    sourceLanguage,
 }: EditorProps) {
     const [showReference, setShowReference] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
@@ -62,10 +68,23 @@ export default function Editor({
         if (!editor) return
         setIsExportingPdf(true)
         try {
+            const body = orderId
+                ? {
+                    template: 'generic',
+                    data: {
+                        orderNumber: String(orderId),
+                        documentType: documentType ?? 'Document',
+                        sourceLanguage: sourceLanguage ?? 'Portuguese (Brazil)',
+                        targetLanguage: 'English (United States)',
+                        translatedContent: editor.getHTML(),
+                    },
+                }
+                : { htmlContent: editor.getHTML(), fileName: 'traducao.pdf' }
+
             const res = await fetch('/api/pdf/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ htmlContent: editor.getHTML(), fileName: 'traducao.pdf' }),
+                body: JSON.stringify(body),
             })
             if (!res.ok) {
                 const err = await res.json()

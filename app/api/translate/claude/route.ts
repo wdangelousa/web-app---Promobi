@@ -1,7 +1,34 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { sanitizeTranslationHtml } from "@/lib/translationHtmlSanitizer";
+import { buildTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Allow up to 5 minutes for translation (large PDFs + retries on overload)
+export const maxDuration = 300;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promobidocs — Claude Translation API Route
+//
+// Architecture (clean separation of concerns):
+//
+//   Layer 1: translationPrompt.ts  → WHAT to translate (USCIS rules, bracket
+//            notation, domain expertise). Pure translation, zero HTML awareness.
+//
+//   Layer 2: this route (route.ts)  → HOW to call Claude (fetch file, build
+//            message, invoke API, pass through sanitizer).
+//
+//   Layer 3: translationHtmlSanitizer.ts → HOW to format the output for
+//            Gotenberg (flatten headings, compact tables, strip whitespace).
+//
+//   Layer 4: CARTORIO_CSS in generateDeliveryKit.ts → HOW the PDF looks
+//            (fonts, margins, spacing — all in CSS, not in the prompt).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  maxRetries: 4,   // retries on 529 (overloaded) and 529-class errors
+  timeout: 120_000, // 2 min — large PDFs can be slow
+});
 
 const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
   PT_BR: "Brazilian Portuguese",
@@ -22,7 +49,7 @@ export async function POST(req: Request) {
 
     const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
 
-    // Fetch the source file
+    // ── Fetch the source file ──
     const fileRes = await fetch(fileUrl);
     if (!fileRes.ok) {
       return NextResponse.json(
@@ -35,30 +62,16 @@ export async function POST(req: Request) {
     const base64Data = Buffer.from(fileBuffer).toString("base64");
     const contentType = fileRes.headers.get("content-type") || "application/pdf";
 
-    // Determine media type for Anthropic
     const isPdf = contentType.includes("pdf") || fileUrl.toLowerCase().includes(".pdf");
     const isImage =
       contentType.includes("image/") ||
       /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
 
-    const systemPrompt = `You are a professional certified translator specializing in legal and civil document translation from ${sourceLangLabel} to English (United States).
+    // ── Layer 1: Pure translation prompt (no HTML awareness) ──
+    const systemPrompt = buildTranslationPrompt(sourceLanguage as TranslationLanguage);
+    const userMessage = buildUserMessage(sourceLangLabel, isPdf);
 
-Your output must be clean HTML suitable for a certified translation document. Follow these rules exactly:
-- Use <p> tags for paragraphs
-- Use <table>, <tr>, <th>, <td> for any tables or form fields
-- Use <h2> or <h3> for section headings
-- Preserve ALL information from the original — names, dates, document numbers, addresses, signatures, seals, stamps, and notary language
-- Use [ILLEGIBLE] for text that cannot be read
-- Use [SEAL] or [STAMP] as placeholders for official stamps/seals
-- Use [SIGNATURE] for handwritten signatures
-- Do NOT add commentary, notes, or explanations
-- Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags
-- Output only the translated HTML content`;
-
-    const userMessage = isPdf
-      ? `Translate this ${sourceLangLabel} document to English. Output clean HTML only.`
-      : `Translate this ${sourceLangLabel} document image to English. Output clean HTML only.`;
-
+    // ── Build message content based on file type ──
     let messageContent: Anthropic.MessageParam["content"];
 
     if (isPdf) {
@@ -94,7 +107,6 @@ Your output must be clean HTML suitable for a certified translation document. Fo
         { type: "text", text: userMessage },
       ];
     } else {
-      // Fallback: treat as plain text
       const textContent = Buffer.from(fileBuffer).toString("utf-8");
       messageContent = [
         {
@@ -104,6 +116,7 @@ Your output must be clean HTML suitable for a certified translation document. Fo
       ];
     }
 
+    // ── Call Claude ──
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
@@ -111,16 +124,32 @@ Your output must be clean HTML suitable for a certified translation document. Fo
       messages: [{ role: "user", content: messageContent }],
     });
 
-    const translatedText =
+    const rawTranslation =
       response.content[0].type === "text" ? response.content[0].text : "";
 
-    if (!translatedText) {
+    if (!rawTranslation) {
       return NextResponse.json({ error: "Claude returned empty translation" }, { status: 500 });
     }
+
+    // ── Layer 3: Sanitize for Gotenberg (format HTML, compact layout) ──
+    const translatedText = sanitizeTranslationHtml(rawTranslation);
+
+    console.log(
+      `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
+      `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction)`
+    );
 
     return NextResponse.json({ translatedText });
   } catch (error: any) {
     console.error("[/api/translate/claude] Error:", error);
-    return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
+    const anthropicStatus = error?.status ?? 0;
+    const isTransient = anthropicStatus === 529 || anthropicStatus === 500 || anthropicStatus === 503
+      || error?.message?.includes("overloaded") || error?.message?.includes("Internal server error");
+    const status = isTransient ? 503 : 500;
+    const message = isTransient
+      ? "Serviço de IA temporariamente indisponível. Aguarde alguns segundos e tente novamente."
+      : (error.message || String(error));
+    return NextResponse.json({ error: message }, { status });
   }
 }
