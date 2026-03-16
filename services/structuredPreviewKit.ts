@@ -58,6 +58,7 @@ const GOTENBERG_URL =
   process.env.GOTENBERG_URL ?? 'http://127.0.0.1:3001/forms/chromium/convert/html';
 
 const LETTERHEAD_PATH = join(process.cwd(), 'public', 'letterhead.png');
+const LETTERHEAD_LANDSCAPE_PATH = join(process.cwd(), 'public', 'letterhead-landscape.png');
 
 // Local fallback: .artifacts/structured-preview-kits/ at project root.
 const LOCAL_ARTIFACTS_DIR = join(process.cwd(), '.artifacts', 'structured-preview-kits');
@@ -627,7 +628,11 @@ function buildCertificationCoverHtml(
 
 // ── Translated document HTML wrapper ─────────────────────────────────────────
 
-export function buildTranslatedDocumentHtml(translatedText: string): string {
+export function buildTranslatedDocumentHtml(
+  translatedText: string,
+  orientation?: 'portrait' | 'landscape',
+): string {
+  const isLandscape = orientation === 'landscape';
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -638,8 +643,8 @@ export function buildTranslatedDocumentHtml(translatedText: string): string {
     html, body {
       font-family: Arial, Helvetica, sans-serif;
       font-size: 11pt;
-      line-height: 1.5;
-      background: transparent;
+      line-height: 1.55;
+      background: #fff;
       color: #111;
       margin: 0;
       padding: 0;
@@ -651,22 +656,70 @@ export function buildTranslatedDocumentHtml(translatedText: string): string {
       overflow-wrap: break-word;
     }
 
-    p   { margin: 0 0 8pt 0; }
-    h1, h2, h3 { font-size: 11pt; font-weight: bold; margin: 0 0 8pt 0; }
+    /* Landscape: constrain line length for readability */
+    .content-body {
+      ${isLandscape ? 'max-width: 7in; margin: 0 auto;' : ''}
+    }
+
+    p {
+      margin: 0 0 8pt 0;
+    }
+
+    /* Heading hierarchy — distinct sizes, not flat 11pt */
+    h1 {
+      font-size: 13pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 14pt 0 6pt 0;
+      padding-bottom: 4pt;
+      border-bottom: 0.75pt solid #aaa;
+    }
+
+    h2 {
+      font-size: 12pt;
+      font-weight: bold;
+      margin: 10pt 0 5pt 0;
+    }
+
+    h3 {
+      font-size: 11pt;
+      font-weight: bold;
+      font-style: italic;
+      margin: 8pt 0 4pt 0;
+    }
+
+    strong, b { font-weight: bold; }
+
+    /* Page-break / section dividers */
+    hr {
+      border: none;
+      border-top: 0.75pt solid #ccc;
+      margin: 10pt 0;
+    }
+
     table {
       border-collapse: collapse;
       width: 100%;
       margin-bottom: 10pt;
       table-layout: fixed;
     }
+
     td, th {
-      padding: 4pt 8pt;
+      padding: 5pt 8pt;
       border: 1px solid #ccc;
       font-size: 10pt;
       vertical-align: top;
       word-break: break-word;
       overflow-wrap: break-word;
     }
+
+    th {
+      background: #f5f5f5;
+      font-weight: bold;
+      text-align: left;
+    }
+
     img {
       max-width: 100%;
       height: auto;
@@ -674,16 +727,18 @@ export function buildTranslatedDocumentHtml(translatedText: string): string {
   </style>
 </head>
 <body>
-  ${translatedText}
+  <div class="content-body">
+    ${translatedText}
+  </div>
 </body>
 </html>`;
 }
 
 // ── PDF overlay helper ────────────────────────────────────────────────────────
 
-function loadLetterheadBuffer(): Buffer | null {
+function loadLetterheadBuffer(path: string): Buffer | null {
   try {
-    return readFileSync(LETTERHEAD_PATH);
+    return readFileSync(path);
   } catch {
     return null;
   }
@@ -795,25 +850,28 @@ export async function assembleStructuredPreviewKit(
     const coverVariant = input.coverVariant ?? deriveCoverVariant(input.sourceLanguage);
     log(`cover variant selected: ${coverVariant}`);
 
-    // ── Detect letterhead for translated pages ────────────────────────────────
-    try {
-      result.letterheadDetected = existsSync(LETTERHEAD_PATH);
-    } catch {
-      result.letterheadDetected = false;
-    }
-
-    const letterheadBuffer = result.letterheadDetected ? loadLetterheadBuffer() : null;
-
-    if (letterheadBuffer) {
-      log(`translated letterhead source detected: yes (${LETTERHEAD_PATH})`);
-    } else {
-      log(`translated letterhead source detected: no (${LETTERHEAD_PATH})`);
-    }
-
     // ── Part 2: Translated document PDF (orientation-aware) ──────────────────
     const isLandscape = input.orientation === 'landscape';
     const paperSettings = isLandscape ? GOTENBERG_LANDSCAPE : GOTENBERG_PORTRAIT;
     log(`translated section orientation: ${input.orientation ?? 'portrait (default)'}`);
+
+    // ── Detect letterhead for translated pages (orientation-aware) ────────────
+    // Portrait → letterhead.png; Landscape → letterhead-landscape.png
+    // Never stretch the portrait asset onto landscape pages.
+    const targetLhPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
+    try {
+      result.letterheadDetected = existsSync(targetLhPath);
+    } catch {
+      result.letterheadDetected = false;
+    }
+
+    const letterheadBuffer = result.letterheadDetected ? loadLetterheadBuffer(targetLhPath) : null;
+
+    if (letterheadBuffer) {
+      log(`translated letterhead source detected: yes (${targetLhPath})`);
+    } else {
+      log(`translated letterhead source detected: no (${targetLhPath})`);
+    }
 
     const translatedPdfBaseBuffer = await callGotenberg(
       input.structuredHtml,

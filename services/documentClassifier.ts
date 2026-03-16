@@ -9,9 +9,15 @@
  *   2. Source file URL/filename  — fallback when translation is unavailable
  *
  * Current supported types:
- *   - marriage_certificate_brazil  (certidão de casamento)
- *   - birth_certificate_brazil     (certidão de nascimento)
- *   - unknown                      (anything else, or insufficient signals)
+ *   - marriage_certificate_brazil    (certidão de casamento)
+ *   - birth_certificate_brazil       (certidão de nascimento)
+ *   - academic_diploma_certificate   (diplomas, degree certificates from universities)
+ *   - academic_transcript            (grade records, school histories, histórico escolar)
+ *   - course_certificate_landscape   (course/training/participation/completion certificates)
+ *   - unknown                        (anything else, or insufficient signals)
+ *
+ * Classification order matters — more-specific families are checked first:
+ *   marriage → birth → academic_diploma → academic_transcript → course_certificate → unknown
  *
  * Integration note:
  *   This classifier is AUXILIARY — it never modifies translation behavior.
@@ -24,6 +30,8 @@
 export type DocumentType =
   | 'marriage_certificate_brazil'    // Certidão de Casamento
   | 'birth_certificate_brazil'       // Certidão de Nascimento
+  | 'academic_diploma_certificate'   // University diplomas, degree certificates
+  | 'academic_transcript'            // Grade transcripts, school records, histórico escolar
   | 'course_certificate_landscape'   // Course/training/participation/completion certificates
   | 'unknown';
 
@@ -117,22 +125,261 @@ function classifyFromTranslatedText(text: string): ClassificationResult {
       /certid[aã]o de nascimento/i,   // sometimes present untranslated
       /name of (?:the )?child/i,
       /date and place of birth/i,
+      /place of birth[:\s]/i,         // more specific than generic "father:"
+      /declarant[:\s]/i,              // person who registered the birth — birth-cert-specific
+      /birth registration/i,
+      /child'?s? name[:\s]/i,
       /father[:\s]/i,
       /mother[:\s]/i,
     ];
 
     const birthHits = birthSignals.filter(rx => rx.test(text)).length;
 
-    if (birthHits >= 3) {
+    // Combination rules for birth cert — stronger confidence from semantic clusters
+    const hasBirthCertTitle = /birth certificate/i.test(text) || /certid[aã]o de nascimento/i.test(text);
+    const hasChildInfo = /name of (?:the )?child/i.test(text) || /child'?s? name[:\s]/i.test(text);
+    const hasBirthDate = /date (?:and (?:place )?)?of birth/i.test(text);
+    const hasBothParents = /father[:\s]/i.test(text) && /mother[:\s]/i.test(text);
+
+    // Rule 1: explicit birth cert title + child information
+    const birthCombo1 = hasBirthCertTitle && hasChildInfo;
+    // Rule 2: explicit birth cert title + birth date
+    const birthCombo2 = hasBirthCertTitle && hasBirthDate;
+    // Rule 3: both parents listed + birth date (without marriage markers already excluded above)
+    const birthCombo3 = hasBothParents && hasBirthDate;
+
+    const matchesBirthCombo = birthCombo1 || birthCombo2 || birthCombo3;
+
+    if (birthHits >= 4 || matchesBirthCombo) {
       return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-high' };
     }
-    if (birthHits >= 1) {
+    if (birthHits >= 2) {
       return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-low' };
     }
   }
 
+  // ── Academic Diploma / Degree Certificate ─────────────────────────────────
+  // Checked BEFORE academic_transcript and course_certificate_landscape because
+  // academic diplomas have the most specific language (conferral, rector, degree).
+  //
+  // Anti-overlap:
+  //   Marriage cert markers (spouse, property regime) → already returned above.
+  //   Birth cert markers (child name, date/place of birth) → already returned above.
+  //   Guard against transcript overlap: diploma has "confers" + "rector" + "degree of".
+  //     Transcripts never have conferral-verb language, so the diploma signals are
+  //     cleanly distinct.
+  //
+  // Two detection paths — combined with OR:
+  //   Path 1 (flat count): canonical degree-conferral phrases, ≥3 → high, ≥2 → low.
+  //   Path 2 (combination rules): semantic clusters, AND-combined.
+
+  // ── Path 1: flat signal count for academic diplomas ──────────────────────
+  const diplomaSignals: RegExp[] = [
+    // Degree-conferral language (most distinctive)
+    /confers? (?:upon|to|on) .{0,60}(?:degree|diploma)/i,
+    /hereby confer[rs]? (?:upon|to|on)/i,
+    /confer[rs]? the (?:academic )?degree/i,
+    /awarded? the degree of/i,
+    // Specific academic degrees
+    /\b(?:bachelor(?:'s)?|bacharel) (?:of|in|degree)/i,
+    /\bdegree of bachelor/i,
+    /\bmaster(?:'s)? (?:of|in|degree)/i,
+    /\bdegree of master/i,
+    /\bdocto(?:r(?:ate)?|ral) (?:degree|of|in)/i,
+    /\bdegree of docto(?:r|ral)/i,
+    /\blicentiate (?:degree|of|in)/i,
+    /\btechnologist in\b/i,
+    /\b(?:undergraduate|graduate|postgraduate) degree\b/i,
+    // Institutional officers specific to academic degree granting
+    /\brector\b/i,
+    /\bvice[-\s]rector\b/i,
+    /\bpro[-\s]rector\b/i,
+    /\bpró[-\s]reitor\b/i,                // sometimes left untranslated
+    // Academic registration/authentication numbers (diploma-specific)
+    /diploma (?:number|no\.?|register|book|folio)/i,
+    /register(?:ed)? (?:in )?(?:book|diploma|volume)/i,
+    /diploma (?:book|register|record)/i,
+    // Graduation/degree-conferral context
+    /graduation diploma/i,
+    /academic diploma/i,
+    /graduation (?:ceremony|class|date)/i,
+    /having (?:taken|fulfilled|completed) (?:the )?(?:required )?(?:oath|commitment|pledge)/i,
+  ];
+
+  const diplomaHits = diplomaSignals.filter(rx => rx.test(text)).length;
+
+  // ── Path 2: combination rules for academic diplomas ───────────────────────
+  // Each dimension covers a distinct aspect of the academic conferral context.
+
+  // Dimension A: degree-conferral verb
+  const hasDiplomaConferral =
+    /confers? (?:upon|to|on)/i.test(text) ||
+    /hereby confer[rs]?/i.test(text) ||
+    /awarded? the degree/i.test(text);
+
+  // Dimension B: named academic degree (bachelor, master, doctorate, etc.)
+  const hasDegreeName =
+    /\b(?:bachelor(?:'s)?|bacharel)\b/i.test(text) ||
+    /\bmaster(?:'s)?\b/i.test(text) ||
+    /\bdoctorate?\b/i.test(text) ||
+    /\bdoctor of\b/i.test(text) ||
+    /\blicentiate\b/i.test(text) ||
+    /\btechnologist in\b/i.test(text) ||
+    /\bdegree of\b/i.test(text) ||
+    /\bacademic degree\b/i.test(text);
+
+  // Dimension C: academic institutional officer (rector/dean level)
+  const hasAcademicOfficer =
+    /\brector\b/i.test(text) ||
+    /\bvice[-\s]rector\b/i.test(text) ||
+    /\bpro[-\s]rector\b/i.test(text) ||
+    /\bdean of\b/i.test(text);
+
+  // Dimension D: diploma registration identifier
+  const hasDiplomaRegistration =
+    /diploma (?:number|no\.?|register|book)/i.test(text) ||
+    /register(?:ed)? in book/i.test(text) ||
+    /diploma book/i.test(text);
+
+  // Dimension E: the word "diploma" used as main document title
+  const hasDiplomaTitle =
+    /\bdiploma\b/i.test(text) &&
+    !/participation diploma/i.test(text) &&   // anti-overlap: participation diplomas → course cert
+    !/training diploma/i.test(text);           // anti-overlap: training diplomas → course cert
+
+  // Rule 1: conferral + degree name → core academic degree-granting language
+  const diplomaComboRule1 = hasDiplomaConferral && hasDegreeName;
+  // Rule 2: academic officer + degree name → institutional degree document
+  const diplomaComboRule2 = hasAcademicOfficer && hasDegreeName;
+  // Rule 3: diploma title + registration → official registered diploma
+  const diplomaComboRule3 = hasDiplomaTitle && hasDiplomaRegistration;
+  // Rule 4: diploma title + conferral → diploma with granting language
+  const diplomaComboRule4 = hasDiplomaTitle && hasDiplomaConferral;
+
+  const matchesDiplomaCombo = diplomaComboRule1 || diplomaComboRule2 || diplomaComboRule3 || diplomaComboRule4;
+
+  // ── Logging ─────────────────────────────────────────────────────────────────
+  if (diplomaHits > 0 || matchesDiplomaCombo) {
+    const activeRules = [
+      diplomaComboRule1 && 'conferral+degree',
+      diplomaComboRule2 && 'officer+degree',
+      diplomaComboRule3 && 'diploma+registration',
+      diplomaComboRule4 && 'diploma+conferral',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] academic diploma signals matched: ${diplomaHits}` +
+      (matchesDiplomaCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  // ── Decision ─────────────────────────────────────────────────────────────────
+  if (diplomaHits >= 3 || matchesDiplomaCombo) {
+    return { documentType: 'academic_diploma_certificate', confidence: 'heuristic-high' };
+  }
+  if (diplomaHits >= 2) {
+    return { documentType: 'academic_diploma_certificate', confidence: 'heuristic-low' };
+  }
+
+  // ── Academic Transcript / School Record ───────────────────────────────────
+  // Checked BEFORE course_certificate_landscape.
+  // Transcripts record subjects + grades for a student across an academic career.
+  // Key distinguishing features:
+  //   - document title: "academic transcript", "school record", "grade report"
+  //   - grade data: GPA, approved/failed status, grade values
+  //   - student identity: registration/enrollment number
+  //   - subject table header: "subjects and grades", "course code ... subject name"
+  //
+  // Anti-overlap guards:
+  //   - Diploma signals (conferral, rector, degree) → already returned above.
+  //   - Course cert signals (participated in, this is to certify) → not in transcripts.
+  //
+  // Two detection paths — combined with OR:
+  //   Path 1 (flat count): distinctive transcript phrases, ≥3 → high, ≥2 → low.
+  //   Path 2 (combination rules): semantic dimensions, AND-combined.
+
+  // ── Path 1: flat signal count for transcripts ─────────────────────────────
+  const transcriptSignals: RegExp[] = [
+    /academic transcript/i,
+    /transcript of records?/i,
+    /school record/i,
+    /grade (?:report|record|history)/i,
+    /histórico escolar/i,               // sometimes left untranslated
+    /student (?:registration|id|number)[:\s]/i,
+    /grade point average/i,
+    /\bgpa[:\s]/i,
+    /weighted (?:average|mean)/i,
+    /total (?:course )?workload[:\s]/i, // differs from cert: no "of training"
+    /academic (?:record|history|register)/i,
+    /enrollment (?:date|period|number)[:\s]/i,
+    /subject(?:s)? and grades?/i,       // common column header
+    /transcript of academic/i,
+    /\bsemester\b.*\b(?:grade|approved|failed)/i,
+    /course code.*subject name/i,       // table header pattern
+    /academic (?:period|calendar)[:\s]/i,
+  ];
+
+  const transcriptHits = transcriptSignals.filter(rx => rx.test(text)).length;
+
+  // ── Path 2: combination rules for transcripts ─────────────────────────────
+  // Dimension A: document title explicitly says "transcript" or "record"
+  const hasTranscriptTitle =
+    /academic transcript/i.test(text) ||
+    /transcript of records?/i.test(text) ||
+    /school record/i.test(text) ||
+    /grade report/i.test(text) ||
+    /histórico escolar/i.test(text);
+
+  // Dimension B: grade performance data (approved/failed, GPA, average)
+  const hasGradeData =
+    /\b(?:approved|failed|exempt|reprovado|aprovado)\b/i.test(text) ||
+    /grade point average/i.test(text) ||
+    /\bgpa[:\s]/i.test(text) ||
+    /weighted (?:average|mean)/i.test(text);
+
+  // Dimension C: student identity info (registration number, enrollment)
+  const hasStudentIdentity =
+    /student (?:registration|id|number|name)[:\s]/i.test(text) ||
+    /enrollment (?:date|period|number)[:\s]/i.test(text) ||
+    /registration (?:number|no\.?)[:\s]/i.test(text);
+
+  // Dimension D: subject/grade table header structure
+  const hasSubjectTable =
+    /subject(?:s)? and grades?/i.test(text) ||
+    /course code.*subject/i.test(text) ||
+    /\bsubject(?:s)?[:\s].{0,40}(?:grade|credit|hour)/i.test(text);
+
+  // Rule 1: transcript title + grade data → clear transcript
+  const transcriptCombo1 = hasTranscriptTitle && hasGradeData;
+  // Rule 2: student identity + grade data → student academic record
+  const transcriptCombo2 = hasStudentIdentity && hasGradeData;
+  // Rule 3: subject table header + grade data → subject-grade table
+  const transcriptCombo3 = hasSubjectTable && hasGradeData;
+
+  const matchesTranscriptCombo = transcriptCombo1 || transcriptCombo2 || transcriptCombo3;
+
+  // ── Logging ─────────────────────────────────────────────────────────────────
+  if (transcriptHits > 0 || matchesTranscriptCombo) {
+    const activeRules = [
+      transcriptCombo1 && 'title+grade',
+      transcriptCombo2 && 'student-id+grade',
+      transcriptCombo3 && 'subject-table+grade',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] academic transcript signals matched: ${transcriptHits}` +
+      (matchesTranscriptCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  // ── Decision ─────────────────────────────────────────────────────────────────
+  if (transcriptHits >= 3 || matchesTranscriptCombo) {
+    return { documentType: 'academic_transcript', confidence: 'heuristic-high' };
+  }
+  if (transcriptHits >= 2) {
+    return { documentType: 'academic_transcript', confidence: 'heuristic-low' };
+  }
+
   // ── Course / Landscape Certificate ──
-  // Only reached if NEITHER marriage NOR birth cert matched above.
+  // Only reached if NEITHER marriage NOR birth cert NOR academic diploma NOR transcript matched.
   // Two independent detection paths — both preserved for safety:
   //
   //   Path 1 (flat count): classic compound phrases, ≥3 → high, ≥2 → low.
@@ -143,6 +390,8 @@ function classifyFromTranslatedText(text: string): ClassificationResult {
   // Anti-overlap guards (implicit via early returns above):
   //   - Marriage cert markers: civil registry, spouse, property regime → early-returned above
   //   - Birth cert markers: child name, date and place of birth → early-returned above
+  //   - Academic diploma: degree conferral + officer → returned above
+  //   - Academic transcript: grade records, student ID, GPA → returned above
 
   // ── Path 1: flat signal count ──────────────────────────────────────────────
   const certLandscapeSignals: RegExp[] = [
@@ -223,6 +472,12 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
   }
   if (/nascimento|birth[-_]cert/i.test(fileUrl)) {
     return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-low' };
+  }
+  if (/diploma|formatura|gradua[çc][aã]o|degree[-_]cert/i.test(fileUrl)) {
+    return { documentType: 'academic_diploma_certificate', confidence: 'heuristic-low' };
+  }
+  if (/hist[oó]rico[-_]escolar|transcript|boletim|school[-_]record|grade[-_]report/i.test(fileUrl)) {
+    return { documentType: 'academic_transcript', confidence: 'heuristic-low' };
   }
   return { documentType: 'unknown', confidence: 'heuristic-low' };
 }

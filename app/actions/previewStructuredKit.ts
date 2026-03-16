@@ -11,15 +11,18 @@
  * This action:
  *   1. Loads the document's original file URL and metadata from the DB.
  *   2. Fetches the original source file buffer.
- *   3. Classifies the document type from available signals.
- *   4. For eligible structured document types (marriage_certificate_brazil,
- *      course_certificate_landscape):
- *        a. Re-extracts structured JSON via the Claude API.
- *        b. Detects orientation and page count from the original PDF.
- *        c. Renders beautiful structured HTML via the appropriate renderer
- *           (renderMarriageCertificateHtml / renderCertificateLandscapeHtml).
+ *   3. Classifies the document type from available signals (using
+ *      effectiveTranslatedText, not raw doc.translatedText, so editor content
+ *      is factored in when the operator hasn't saved yet).
+ *   4. For eligible structured document types:
+ *        - marriage_certificate_brazil    → marriageCertRenderer
+ *        - birth_certificate_brazil       → birthCertificateRenderer
+ *        - academic_diploma_certificate   → academicDiplomaRenderer
+ *        - academic_transcript            → academicTranscriptRenderer
+ *        - course_certificate_landscape   → certificateLandscapeRenderer
+ *        All five: re-extract structured JSON via Claude API, then render.
  *   5. For non-eligible document types: falls back to the legacy simple HTML
- *      wrapper around doc.translatedText.
+ *      wrapper around effectiveTranslatedText.
  *   6. Calls assembleStructuredPreviewKit with the correct structured HTML.
  *   7. Returns the preview kit URL.
  *
@@ -46,14 +49,32 @@ import {
   buildCertificateLandscapeSystemPrompt,
   buildCertificateLandscapeUserMessage,
 } from '@/lib/certificateLandscapePrompt';
+import {
+  buildAcademicDiplomaSystemPrompt,
+  buildAcademicDiplomaUserMessage,
+} from '@/lib/academicDiplomaPrompt';
+import {
+  buildAcademicTranscriptSystemPrompt,
+  buildAcademicTranscriptUserMessage,
+} from '@/lib/academicTranscriptPrompt';
+import {
+  buildBirthCertificateSystemPrompt,
+  buildBirthCertificateUserMessage,
+} from '@/lib/birthCertificatePrompt';
 import { renderMarriageCertificateHtml } from '@/lib/marriageCertRenderer';
 import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
+import { renderAcademicDiplomaHtml } from '@/lib/academicDiplomaRenderer';
+import { renderAcademicTranscriptHtml } from '@/lib/academicTranscriptRenderer';
+import { renderBirthCertificateHtml } from '@/lib/birthCertificateRenderer';
 import {
   detectOrientationFromPdfDoc,
   type DocumentOrientation,
 } from '@/lib/documentOrientationDetector';
 import type { MarriageCertificateBrazil } from '@/types/marriageCertificate';
 import type { CourseCertificateLandscape } from '@/types/certificateLandscape';
+import type { AcademicDiplomaCertificate } from '@/types/academicDiploma';
+import type { AcademicTranscript } from '@/types/academicTranscript';
+import type { BirthCertificateBrazil } from '@/types/birthCertificate';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -159,6 +180,13 @@ export async function previewStructuredKit(
    * Any unrecognised value defaults to 'pt-en'.
    */
   coverLang: string,
+  /**
+   * Current editor HTML from the Workbench UI (unsaved draft).
+   * When provided and non-empty, this takes priority over the saved
+   * translatedText in the database — allowing operators to preview
+   * in-progress translations without requiring a save first.
+   */
+  editorHtml?: string,
 ): Promise<{ success: boolean; previewUrl?: string; error?: string }> {
   const coverVariant: 'pt-en' | 'es-en' =
     coverLang.toUpperCase() === 'ES' ? 'es-en' : 'pt-en';
@@ -181,6 +209,24 @@ export async function previewStructuredKit(
     if (!doc) {
       return { success: false, error: `Document #${documentId} not found` };
     }
+
+    // Resolve translated content: editor (most current) › saved DB record › absent
+    const effectiveTranslatedText: string | null =
+      editorHtml && editorHtml.trim().length > 0
+        ? editorHtml
+        : doc.translatedText && doc.translatedText.trim().length > 0
+          ? doc.translatedText
+          : null;
+
+    const effectiveSource =
+      editorHtml && editorHtml.trim().length > 0 ? 'editor' : 'db';
+    console.log(
+      `${logPrefix} — effective translated content: ${
+        effectiveTranslatedText === null
+          ? 'ABSENT (editor: none, db: none)'
+          : `present (${effectiveTranslatedText.length} chars, source: ${effectiveSource})`
+      }`,
+    );
 
     // ── Step 1: Fetch original file ─────────────────────────────────────────
 
@@ -226,10 +272,14 @@ export async function previewStructuredKit(
     }
 
     // ── Step 3: Classify document type ──────────────────────────────────────
+    //
+    // Use effectiveTranslatedText (editor content first, then DB) so the
+    // classifier has access to the current translation even when it hasn't been
+    // saved yet (e.g. documents with externalTranslationUrl set).
 
     const classification = classifyDocument({
       fileUrl: doc.originalFileUrl ?? undefined,
-      translatedText: doc.translatedText ?? '',
+      translatedText: effectiveTranslatedText ?? '',
       sourceLanguage: doc.sourceLanguage ?? undefined,
     });
 
@@ -241,21 +291,22 @@ export async function previewStructuredKit(
     // ── Step 4: Generate structured HTML via the correct renderer ───────────
     //
     // For eligible document types, re-run the Claude structured extraction and
-    // pass the result through the dedicated renderer (marriageCertRenderer or
-    // certificateLandscapeRenderer).  This is the source of the "beautiful"
-    // structured translated page — the old good output.
+    // pass the result through the dedicated renderer.
     //
     // For all other document types, fall back to the simple HTML wrapper
-    // around doc.translatedText (legacy behaviour).
+    // around effectiveTranslatedText (legacy behaviour).
 
     let structuredHtml: string;
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
-    // May differ from detectedOrientation for landscape certs (override logic).
+    // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
 
-    const isMarriageCert = classification.documentType === 'marriage_certificate_brazil';
-    const isCertLandscape = classification.documentType === 'course_certificate_landscape';
-    const isEligible = isMarriageCert || isCertLandscape;
+    const isMarriageCert      = classification.documentType === 'marriage_certificate_brazil';
+    const isBirthCert         = classification.documentType === 'birth_certificate_brazil';
+    const isAcademicDiploma   = classification.documentType === 'academic_diploma_certificate';
+    const isAcademicTranscript = classification.documentType === 'academic_transcript';
+    const isCertLandscape     = classification.documentType === 'course_certificate_landscape';
+    const isEligible          = isMarriageCert || isBirthCert || isAcademicDiploma || isAcademicTranscript || isCertLandscape;
 
     if (isEligible && doc.originalFileUrl && originalFileBuffer.byteLength > 0) {
       const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -293,14 +344,14 @@ export async function previewStructuredKit(
             );
           } catch (err) {
             console.error(`${logPrefix} — marriage cert render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(doc.translatedText ?? '');
+            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
           }
         } else {
           console.warn(`${logPrefix} — marriage cert extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(doc.translatedText ?? '');
+          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
         }
 
-      } else {
+      } else if (isCertLandscape) {
         // ── Course certificate landscape extraction ───────────────────────
         const messageContent = buildMessageContent(
           originalFileBuffer,
@@ -346,11 +397,164 @@ export async function previewStructuredKit(
             );
           } catch (err) {
             console.error(`${logPrefix} — cert landscape render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(doc.translatedText ?? '');
+            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
           }
         } else {
           console.warn(`${logPrefix} — cert landscape extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(doc.translatedText ?? '');
+          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+        }
+
+      } else if (isAcademicDiploma) {
+        // ── Academic diploma / degree certificate extraction ───────────────
+        //
+        // Orientation policy for academic diplomas:
+        //   landscape → landscape (keep detected)
+        //   portrait  → portrait  (diplomas can legitimately be portrait — no override)
+        //   unknown   → landscape (landscape is the more common Brazilian diploma format)
+        let effectiveOrientation: DocumentOrientation = detectedOrientation;
+        if (detectedOrientation === 'unknown') {
+          effectiveOrientation = 'landscape';
+        }
+        orientationForKit = effectiveOrientation;
+
+        const messageContent = buildMessageContent(
+          originalFileBuffer,
+          doc.originalFileUrl,
+          contentType,
+          buildAcademicDiplomaUserMessage(),
+        );
+
+        const rawJson = await callClaudeForJson(
+          client,
+          buildAcademicDiplomaSystemPrompt(),
+          messageContent,
+          8192,
+          `${logPrefix} [academic-diploma]`,
+        );
+
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicDiplomaCertificate;
+
+            // Inject pipeline-detected metadata (mirrors structuredPipeline.ts pattern)
+            parsed.orientation = detectedOrientation;
+            parsed.page_count = sourcePageCount ?? null;
+
+            structuredHtml = renderAcademicDiplomaHtml(parsed, {
+              pageCount: sourcePageCount,
+              orientation: effectiveOrientation,
+            });
+            console.log(
+              `${logPrefix} — structured renderer: academicDiplomaRenderer ` +
+              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
+              `effective orientation: ${effectiveOrientation})`,
+            );
+          } catch (err) {
+            console.error(`${logPrefix} — academic diploma render failed: ${err} — falling back`);
+            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          }
+        } else {
+          console.warn(`${logPrefix} — academic diploma extraction failed — falling back`);
+          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+        }
+
+      } else if (isAcademicTranscript) {
+        // ── Academic transcript / school record extraction ────────────────
+        //
+        // Orientation policy:
+        //   portrait  → portrait  (most transcripts are portrait)
+        //   landscape → landscape (some multi-page institutional transcripts)
+        //   unknown   → portrait  (conservative default for transcripts)
+        // No forced override — use detected orientation directly.
+
+        const messageContent = buildMessageContent(
+          originalFileBuffer,
+          doc.originalFileUrl,
+          contentType,
+          buildAcademicTranscriptUserMessage(),
+        );
+
+        const rawJson = await callClaudeForJson(
+          client,
+          buildAcademicTranscriptSystemPrompt(),
+          messageContent,
+          8192,
+          `${logPrefix} [academic-transcript]`,
+        );
+
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicTranscript;
+
+            // Inject pipeline-detected metadata
+            parsed.orientation = detectedOrientation;
+            parsed.page_count = sourcePageCount ?? null;
+
+            structuredHtml = renderAcademicTranscriptHtml(parsed, {
+              pageCount: sourcePageCount,
+              orientation: detectedOrientation,
+            });
+            console.log(
+              `${logPrefix} — structured renderer: academicTranscriptRenderer ` +
+              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
+              `orientation: ${detectedOrientation})`,
+            );
+          } catch (err) {
+            console.error(`${logPrefix} — academic transcript render failed: ${err} — falling back`);
+            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          }
+        } else {
+          console.warn(`${logPrefix} — academic transcript extraction failed — falling back`);
+          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+        }
+
+      } else {
+        // ── Birth certificate extraction ──────────────────────────────────
+        //
+        // Orientation policy: Brazilian birth certs are always portrait.
+        // No orientation override needed — use detected value directly.
+        // (isBirthCert must be true here since isEligible was true and no other
+        //  branch matched.)
+
+        const messageContent = buildMessageContent(
+          originalFileBuffer,
+          doc.originalFileUrl,
+          contentType,
+          buildBirthCertificateUserMessage(),
+        );
+
+        const rawJson = await callClaudeForJson(
+          client,
+          buildBirthCertificateSystemPrompt(),
+          messageContent,
+          6144,
+          `${logPrefix} [birth-cert]`,
+        );
+
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as BirthCertificateBrazil;
+
+            // Inject pipeline-detected metadata
+            parsed.orientation = detectedOrientation;
+            parsed.page_count = sourcePageCount ?? null;
+
+            structuredHtml = renderBirthCertificateHtml(parsed, {
+              pageCount: sourcePageCount,
+              orientation: detectedOrientation,
+            });
+            console.log(
+              `${logPrefix} — structured renderer: birthCertificateRenderer ` +
+              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
+              `orientation: ${detectedOrientation})`,
+            );
+          } catch (err) {
+            console.error(`${logPrefix} — birth cert render failed: ${err} — falling back`);
+            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          }
+        } else {
+          console.warn(`${logPrefix} — birth cert extraction failed — falling back`);
+          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
         }
       }
 
@@ -365,7 +569,13 @@ export async function previewStructuredKit(
           `${logPrefix} — non-structured document type (${classification.documentType}); using legacy HTML`,
         );
       }
-      structuredHtml = buildTranslatedDocumentHtml(doc.translatedText ?? '');
+      if (!effectiveTranslatedText) {
+        return {
+          success: false,
+          error: 'This document has no translated content. Add the translation in the workbench editor, then generate the preview kit again.',
+        };
+      }
+      structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText, orientationForKit === 'landscape' ? 'landscape' : 'portrait');
     }
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────

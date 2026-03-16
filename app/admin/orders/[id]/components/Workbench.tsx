@@ -151,7 +151,7 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { previewStructuredKit } = await import('../../../../actions/previewStructuredKit')
-            const result = await previewStructuredKit(order.id, selectedDoc.id, coverLang || 'PT_BR')
+            const result = await previewStructuredKit(order.id, selectedDoc.id, coverLang || 'PT_BR', editorContent || undefined)
 
             if (result.success && result.previewUrl) {
                 setKitPreviewUrl(result.previewUrl)
