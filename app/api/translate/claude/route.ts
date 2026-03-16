@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeTranslationHtml } from "@/lib/translationHtmlSanitizer";
 import { buildTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
+import { selectTranslationPipeline } from "@/services/translationRouter";
+import { classifyDocument } from "@/services/documentClassifier";
+import {
+  isEligibleForStructuredPipeline,
+  dispatchStructuredPipeline,
+} from "@/services/structuredPipeline";
 
 // Allow up to 5 minutes for translation (large PDFs + retries on overload)
 export const maxDuration = 300;
@@ -42,6 +48,9 @@ const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
 export async function POST(req: Request) {
   try {
     const { fileUrl, documentId, orderId, sourceLanguage = "pt" } = await req.json();
+
+    // Router: always 'legacy' until structured pipeline is implemented
+    selectTranslationPipeline({ orderId, documentId });
 
     if (!fileUrl) {
       return NextResponse.json({ error: "fileUrl is required" }, { status: 400 });
@@ -129,6 +138,46 @@ export async function POST(req: Request) {
 
     if (!rawTranslation) {
       return NextResponse.json({ error: "Claude returned empty translation" }, { status: 500 });
+    }
+
+    // ── Document classification (auxiliary — does not affect translation output) ──
+    const classification = classifyDocument({ fileUrl, translatedText: rawTranslation, sourceLanguage });
+    console.log(
+      `[documentClassifier] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `detected document type: ${classification.documentType} (confidence: ${classification.confidence})`
+    );
+
+    // ── Structured pipeline (runs in parallel with legacy — output not sent to frontend) ──
+    const structuredEligible = isEligibleForStructuredPipeline(classification.documentType);
+    console.log(
+      `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `structured pipeline eligible: ${structuredEligible ? "yes" : "no"}`
+    );
+    if (structuredEligible) {
+      try {
+        console.log(
+          `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — structured pipeline executed: yes`
+        );
+        await dispatchStructuredPipeline(client, {
+          fileBuffer,
+          fileUrl,
+          contentType,
+          sourceLanguage,
+          orderId,
+          documentId,
+        }, classification.documentType);
+        // Result is logged inside structuredPipeline.ts — not returned to frontend
+      } catch (structuredErr) {
+        // Defensive outer catch — dispatchStructuredPipeline already catches internally
+        console.error(
+          `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+          `unexpected error escaped pipeline: ${structuredErr}`
+        );
+      }
+    } else {
+      console.log(
+        `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — structured pipeline executed: no`
+      );
     }
 
     // ── Layer 3: Sanitize for Gotenberg (format HTML, compact layout) ──

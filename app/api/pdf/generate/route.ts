@@ -1,561 +1,538 @@
-// app/api/pdf/generate/route.ts
-// Promobidocs — Gotenberg 8 PDF Generation (Cartório Standard)
-// Endpoint: POST /api/pdf/generate
+import { NextRequest, NextResponse } from 'next/server';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
+import prisma from '@/lib/prisma';
+import { createClient } from '@supabase/supabase-js';
+import fs from 'fs/promises';
+import path from 'path';
 
-import { NextRequest, NextResponse } from "next/server";
+const GOTENBERG_URL = 'http://127.0.0.1:3001/forms/chromium/convert/html';
 
-// ─────────────────────────────────────────────
-// 1. GOTENBERG ENGINE CONFIG
-// ─────────────────────────────────────────────
-const GOTENBERG_URL =
-  "http://127.0.0.1:3001/forms/chromium/convert/html";
+function isPdf(buffer: Buffer): boolean {
+  return (
+    buffer.length > 4 &&
+    buffer[0] === 0x25 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x44 &&
+    buffer[3] === 0x46
+  );
+}
 
-const PDF_CONFIG = {
-  paperWidth: "8.5",
-  paperHeight: "11",
-  marginTop: "1.8",
-  marginBottom: "1.2",
-  marginLeft: "0.8",
-  marginRight: "0.8",
-  scale: "0.85",
-  printBackground: "true",
-  preferCssPageSize: "false",
-  skipNetworkIdleEvent: "true",
-} as const;
+function isPng(buffer: Buffer): boolean {
+  return (
+    buffer.length > 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  );
+}
 
-// ─────────────────────────────────────────────
-// 2. CARTÓRIO CSS — Authority Style
-// ─────────────────────────────────────────────
-const CARTORIO_CSS = `
-  /* ── Reset & Base ── */
-  *, *::before, *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
+function wrapLines(
+  text: string,
+  font: any,
+  fontSize: number,
+  maxWidth: number
+): string[] {
+  const lines: string[] = [];
+  const paragraphs = text.split('\n');
+
+  for (const para of paragraphs) {
+    if (!para.trim()) {
+      lines.push('');
+      continue;
+    }
+
+    const words = para.split(/\s+/);
+    let current = words[0] || '';
+
+    for (let i = 1; i < words.length; i++) {
+      const test = `${current} ${words[i]}`;
+      if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
+        current = test;
+      } else {
+        lines.push(current);
+        current = words[i];
+      }
+    }
+
+    if (current) lines.push(current);
   }
 
-  @page {
-    size: letter;
-  }
+  return lines;
+}
 
-  html, body {
-    width: 100%;
-    height: 100%;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    line-height: 1.45;
-    color: #000;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
+function sanitizeTranslatedHtml(html: string): string {
+  if (!html) return '';
 
-  /* ── Page Container ── */
-  .page {
-    width: 100%;
-    padding: 1.8in 0.8in 1.2in 0.8in;
-    page-break-after: always;
-    position: relative;
-  }
+  return html
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<html[^>]*>/gi, '')
+    .replace(/<\/html>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<body[^>]*>/gi, '')
+    .replace(/<\/body>/gi, '')
+    .replace(/```html/gi, '')
+    .replace(/```/gi, '')
+    .trim();
+}
 
-  .page:last-child {
-    page-break-after: auto;
-  }
+async function loadLetterheadBytes(): Promise<Buffer> {
+  const rootPath = path.join(process.cwd(), 'letterhead.png');
+  const publicFallbackPath = path.join(process.cwd(), 'public', 'letterhead.png');
 
-  /* ── Header / Letterhead ── */
-  .header {
-    text-align: center;
-    margin-bottom: 16pt;
-    padding-bottom: 10pt;
-    border-bottom: 2pt solid #000;
+  try {
+    console.log('[Kit Route] using root letterhead:', rootPath);
+    return await fs.readFile(rootPath);
+  } catch {
+    console.log('[Kit Route] root letterhead not found, trying public:', publicFallbackPath);
+    try {
+      return await fs.readFile(publicFallbackPath);
+    } catch {
+      throw new Error("ERRO CRÍTICO: Imagem 'letterhead.png' não encontrada.");
+    }
   }
+}
 
-  .header .logo-line {
-    font-size: 9pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1.5pt;
-    color: #333;
-    margin-bottom: 4pt;
-  }
+async function buildTranslatedSectionPdfWithLetterhead(
+  translatedHtml: string,
+  targetPdfDoc: PDFDocument,
+  pageWidth: number,
+  pageHeight: number
+) {
+  const cleanHtml = sanitizeTranslatedHtml(translatedHtml);
 
-  .header .company-name {
-    font-size: 14pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 2pt;
-    margin-bottom: 2pt;
-  }
-
-  .header .tagline {
-    font-size: 8.5pt;
-    color: #555;
-    font-style: italic;
-  }
-
-  .header .credentials {
-    font-size: 8pt;
-    color: #444;
-    margin-top: 4pt;
-  }
-
-  /* ── Document Title ── */
-  .doc-title {
-    text-align: center;
-    font-size: 13pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1pt;
-    margin: 14pt 0 10pt;
-    text-decoration: underline;
-  }
-
-  .doc-subtitle {
-    text-align: center;
-    font-size: 10pt;
-    font-style: italic;
-    margin-bottom: 14pt;
-    color: #333;
-  }
-
-  /* ── Section Headers ── */
-  .section-title {
-    font-size: 11pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin: 12pt 0 6pt;
-    padding-bottom: 2pt;
-    border-bottom: 1pt solid #000;
-  }
-
-  /* ── Tables — Cartório Standard ── */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8pt 0;
-    font-size: 10pt;
-    page-break-inside: avoid;
-  }
-
-  table th,
-  table td {
-    border: 1pt solid #000;
-    padding: 6px;
-    text-align: left;
-    vertical-align: top;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-
-  table th {
-    background-color: #f0f0f0;
-    font-weight: bold;
-    font-size: 9.5pt;
-    text-transform: uppercase;
-  }
-
-  /* Label/value pattern: label left, value right */
-  table .label-cell {
-    width: 35%;
-    font-weight: bold;
-    background-color: #fafafa;
-  }
-
-  table .value-cell {
-    width: 65%;
-  }
-
-  /* ── Body Text ── */
-  .body-text {
-    text-align: justify;
-    text-indent: 2em;
-    margin-bottom: 8pt;
-    font-size: 11pt;
-  }
-
-  .body-text.no-indent {
-    text-indent: 0;
-  }
-
-  /* ── Certification Block ── */
-  .certification-block {
-    margin-top: 20pt;
-    padding: 12pt;
-    border: 2pt solid #000;
-    background-color: #fafafa;
-    page-break-inside: avoid;
-  }
-
-  .certification-block p {
-    font-size: 10pt;
-    margin-bottom: 6pt;
-    text-align: justify;
-  }
-
-  /* ── Signature Area ── */
-  .signature-area {
-    margin-top: 30pt;
-    text-align: center;
-    page-break-inside: avoid;
-  }
-
-  .signature-line {
-    width: 280pt;
-    border-top: 1pt solid #000;
-    margin: 0 auto 4pt;
-    padding-top: 4pt;
-  }
-
-  .signature-name {
-    font-weight: bold;
-    font-size: 10pt;
-  }
-
-  .signature-title {
-    font-size: 9pt;
-    color: #333;
-  }
-
-  /* ── Footer ── */
-  .footer {
-    text-align: center;
-    font-size: 7.5pt;
-    color: #666;
-    border-top: 1pt solid #999;
-    padding-top: 6pt;
-    margin-top: 16pt;
-  }
-
-  /* ── Notarial Seal placeholder ── */
-  .notarial-seal {
-    display: inline-block;
-    width: 80pt;
-    height: 80pt;
-    border: 1pt dashed #999;
-    border-radius: 50%;
-    text-align: center;
-    line-height: 80pt;
-    font-size: 7pt;
-    color: #999;
-    margin: 10pt 0;
-  }
-
-  /* ── Utility ── */
-  .text-center { text-align: center; }
-  .text-right  { text-align: right; }
-  .text-bold   { font-weight: bold; }
-  .text-italic { font-style: italic; }
-  .text-small  { font-size: 9pt; }
-  .text-upper  { text-transform: uppercase; }
-  .mt-4  { margin-top: 4pt; }
-  .mt-8  { margin-top: 8pt; }
-  .mt-12 { margin-top: 12pt; }
-  .mb-4  { margin-bottom: 4pt; }
-  .mb-8  { margin-bottom: 8pt; }
-  .no-break { page-break-inside: avoid; }
-
-  /* ── Compact Translation Body (AI-generated content) ── */
-  .translation-body h1,
-  .translation-body h2,
-  .translation-body h3 {
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin: 6pt 0 3pt;
-    padding: 0;
-    border: none;
-  }
-  .translation-body p {
-    margin-bottom: 3pt;
-    text-align: justify;
-    line-height: 1.35;
-  }
-  .translation-body p strong {
-    font-weight: bold;
-  }
-  .translation-body table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 4pt 0;
-    font-size: 9.5pt;
-  }
-  .translation-body table td,
-  .translation-body table th {
-    border: 0.5pt solid #999;
-    padding: 2px 4px;
-  }
-  .translation-body ul, .translation-body ol {
-    margin-left: 16pt;
-    margin-bottom: 4pt;
-  }
-`;
-
-// ─────────────────────────────────────────────
-// 3. HTML WRAPPER — Wraps translation content
-// ─────────────────────────────────────────────
-function wrapHtmlForGotenberg(bodyContent: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
+  const fullHtml = `<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>${CARTORIO_CSS}</style>
+  <meta charset="UTF-8">
+  <style>
+    @page {
+      size: letter;
+      margin: 0;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent !important;
+      background-color: transparent !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      font-family: "Times New Roman", Times, serif;
+      color: black;
+      width: 100%;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-size: 10.5pt;
+      line-height: 1.28;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .content-area {
+      box-sizing: border-box;
+      padding-top: 150px;
+      padding-bottom: 90px;
+      padding-left: 62px;
+      padding-right: 62px;
+      width: 100%;
+    }
+
+    .translation-body {
+      width: 100%;
+    }
+
+    .translation-body h1,
+    .translation-body h2,
+    .translation-body h3,
+    .translation-body h4,
+    .translation-body h5,
+    .translation-body h6 {
+      font-family: "Times New Roman", Times, serif;
+      color: #000;
+      margin: 0 0 6pt 0;
+      line-height: 1.15;
+      font-weight: bold;
+    }
+
+    .translation-body h1 { font-size: 13pt; }
+    .translation-body h2 { font-size: 12pt; }
+    .translation-body h3 { font-size: 11.5pt; }
+    .translation-body h4,
+    .translation-body h5,
+    .translation-body h6 { font-size: 11pt; }
+
+    .translation-body p {
+      margin: 0 0 5pt 0;
+      text-align: justify;
+      line-height: 1.28;
+    }
+
+    .translation-body ul,
+    .translation-body ol {
+      margin: 0 0 6pt 18pt;
+      padding: 0;
+    }
+
+    .translation-body li {
+      margin: 0 0 3pt 0;
+    }
+
+    .translation-body table {
+      width: 100%;
+      border-collapse: collapse;
+      border-spacing: 0;
+      table-layout: fixed;
+      margin: 6pt 0;
+      font-size: 9pt;
+      page-break-inside: avoid;
+    }
+
+    .translation-body th,
+    .translation-body td {
+      border: 0.75pt solid #000;
+      padding: 4pt;
+      vertical-align: top;
+      text-align: left;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .translation-body img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .translation-body .text-center { text-align: center; }
+    .translation-body .text-right { text-align: right; }
+    .translation-body .text-left { text-align: left; }
+    .translation-body .no-break { page-break-inside: avoid; }
+  </style>
 </head>
 <body>
-  ${bodyContent}
+  <div class="content-area">
+    <div class="translation-body">
+      ${cleanHtml}
+    </div>
+  </div>
 </body>
 </html>`;
+
+  const formData = new FormData();
+  const file = new File([fullHtml], 'index.html', { type: 'text/html' });
+
+  formData.append('files', file);
+  formData.append('paperWidth', '8.5');
+  formData.append('paperHeight', '11');
+  formData.append('marginTop', '0');
+  formData.append('marginBottom', '0');
+  formData.append('marginLeft', '0');
+  formData.append('marginRight', '0');
+  formData.append('printBackground', 'true');
+  formData.append('preferCssPageSize', 'false');
+  formData.append('skipNetworkIdleEvent', 'true');
+
+  const gotenbergRes = await fetch(GOTENBERG_URL, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!gotenbergRes.ok) {
+    const errorText = await gotenbergRes.text();
+    throw new Error(`Gotenberg translated section failed: ${gotenbergRes.status} - ${errorText}`);
+  }
+
+  const translatedPdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
+
+  if (!isPdf(translatedPdfBuffer)) {
+    throw new Error('Gotenberg falhou em gerar o PDF do documento traduzido.');
+  }
+
+  const letterheadBytes = await loadLetterheadBytes();
+  const letterheadImg = await targetPdfDoc.embedPng(letterheadBytes);
+
+  const translatedPdf = await PDFDocument.load(translatedPdfBuffer);
+  const translatedPages = translatedPdf.getPages();
+  const embeddedPages = await targetPdfDoc.embedPages(translatedPages);
+
+  for (const embeddedPage of embeddedPages) {
+    const newPage = targetPdfDoc.addPage([pageWidth, pageHeight]);
+
+    newPage.drawPage(embeddedPage, {
+      x: 0,
+      y: 0,
+      width: pageWidth,
+      height: pageHeight,
+    });
+
+    newPage.drawImage(letterheadImg, {
+      x: 0,
+      y: 0,
+      width: pageWidth,
+      height: pageHeight,
+      opacity: 1,
+    });
+  }
 }
 
-// ─────────────────────────────────────────────
-// 4. MARRIAGE CERTIFICATE TEMPLATE (Example)
-// ─────────────────────────────────────────────
-interface MarriageCertData {
-  orderNumber: string;
-  registryOffice: string;
-  bookNumber: string;
-  pageNumber: string;
-  registrationNumber: string;
-  spouse1: {
-    fullName: string;
-    nationality: string;
-    dateOfBirth: string;
-    placeOfBirth: string;
-    occupation: string;
-    idDocument: string;
-    fatherName: string;
-    motherName: string;
-  };
-  spouse2: {
-    fullName: string;
-    nationality: string;
-    dateOfBirth: string;
-    placeOfBirth: string;
-    occupation: string;
-    idDocument: string;
-    fatherName: string;
-    motherName: string;
-  };
-  marriageDate: string;
-  propertyRegime: string;
-  officiantName: string;
-  notes?: string;
-}
-
-function buildMarriageCertificateHtml(data: MarriageCertData): string {
-  const buildSpouseTable = (label: string, spouse: MarriageCertData["spouse1"]) => `
-    <div class="section-title">${label}</div>
-    <table>
-      <tr><td class="label-cell">Full Name</td><td class="value-cell">${spouse.fullName}</td></tr>
-      <tr><td class="label-cell">Nationality</td><td class="value-cell">${spouse.nationality}</td></tr>
-      <tr><td class="label-cell">Date of Birth</td><td class="value-cell">${spouse.dateOfBirth}</td></tr>
-      <tr><td class="label-cell">Place of Birth</td><td class="value-cell">${spouse.placeOfBirth}</td></tr>
-      <tr><td class="label-cell">Occupation</td><td class="value-cell">${spouse.occupation}</td></tr>
-      <tr><td class="label-cell">ID Document</td><td class="value-cell">${spouse.idDocument}</td></tr>
-      <tr><td class="label-cell">Father&rsquo;s Name</td><td class="value-cell">${spouse.fatherName}</td></tr>
-      <tr><td class="label-cell">Mother&rsquo;s Name</td><td class="value-cell">${spouse.motherName}</td></tr>
-    </table>
-  `;
-
-  const bodyContent = `
-    <div class="page">
-      <!-- ── HEADER / LETTERHEAD ── -->
-      <div class="header">
-        <div class="logo-line">Certified Translation Services</div>
-        <div class="company-name">Promobidocs</div>
-        <div class="tagline">Official Certified Translations &mdash; USCIS &bull; DMV &bull; Academic</div>
-        <div class="credentials">
-          ATA Associate Member &bull; Florida Notary Public &bull; Order #${data.orderNumber}
-        </div>
-      </div>
-
-      <!-- ── DOCUMENT TITLE ── -->
-      <div class="doc-title">Certified Translation &mdash; Marriage Certificate</div>
-      <div class="doc-subtitle">
-        Translated from Portuguese (Brazil) into English (United States)
-      </div>
-
-      <!-- ── REGISTRY INFO ── -->
-      <div class="section-title">Registry Information</div>
-      <table>
-        <tr>
-          <td class="label-cell">Registry Office</td>
-          <td class="value-cell">${data.registryOffice}</td>
-        </tr>
-        <tr>
-          <td class="label-cell">Book / Page</td>
-          <td class="value-cell">Book ${data.bookNumber}, Page ${data.pageNumber}</td>
-        </tr>
-        <tr>
-          <td class="label-cell">Registration No.</td>
-          <td class="value-cell">${data.registrationNumber}</td>
-        </tr>
-        <tr>
-          <td class="label-cell">Date of Marriage</td>
-          <td class="value-cell">${data.marriageDate}</td>
-        </tr>
-      </table>
-
-      <!-- ── SPOUSE 1 ── -->
-      ${buildSpouseTable("1st Spouse", data.spouse1)}
-
-      <!-- ── SPOUSE 2 ── -->
-      ${buildSpouseTable("2nd Spouse", data.spouse2)}
-
-      <!-- ── PROPERTY REGIME ── -->
-      <div class="section-title">Property Regime</div>
-      <p class="body-text no-indent">${data.propertyRegime}</p>
-
-      <!-- ── OFFICIANT ── -->
-      <div class="section-title">Officiant</div>
-      <p class="body-text no-indent">${data.officiantName}</p>
-
-      ${data.notes ? `
-      <div class="section-title">Annotations / Notes</div>
-      <p class="body-text no-indent">${data.notes}</p>
-      ` : ""}
-
-      <!-- ── CERTIFICATION BLOCK ── -->
-      <div class="certification-block">
-        <p>
-          <strong>TRANSLATOR&rsquo;S CERTIFICATION:</strong> I, Isabele Bandeira de Moraes D&rsquo;Angelo,
-          ATA Associate Member (Credential M-194918), do hereby certify that the foregoing is a true
-          and accurate translation of the original document in Portuguese into English, to the best
-          of my knowledge and ability.
-        </p>
-        <p class="text-small">
-          Sworn and subscribed before me, a Notary Public in and for the State of Florida,
-          on this _____ day of ______________, 20____.
-        </p>
-      </div>
-
-      <!-- ── SIGNATURE ── -->
-      <div class="signature-area">
-        <div class="notarial-seal">[SEAL]</div>
-        <div class="signature-line">
-          <div class="signature-name">Isabele Bandeira de Moraes D&rsquo;Angelo</div>
-          <div class="signature-title">ATA Associate &bull; Florida Notary Public</div>
-        </div>
-      </div>
-
-      <!-- ── FOOTER ── -->
-      <div class="footer">
-        Promobidocs &mdash; Certified Translation &amp; Notarization Services
-        &bull; Order #${data.orderNumber}
-        &bull; This document is not valid without the translator&rsquo;s signature and notarial seal.
-      </div>
-    </div>
-  `;
-
-  return bodyContent;
-}
-
-// ─────────────────────────────────────────────
-// 5. GENERIC TEMPLATE — For any translation
-// ─────────────────────────────────────────────
-interface GenericTranslationData {
-  orderNumber: string;
-  documentType: string;
-  sourceLanguage: string;
-  targetLanguage: string;
-  translatedContent: string; // Pre-formatted HTML from Tiptap/workbench
-}
-
-function buildGenericTranslationHtml(data: GenericTranslationData): string {
-  return `
-    <div class="page">
-      <!-- Translated content injected from workbench -->
-      <div class="translation-body">
-        ${data.translatedContent}
-      </div>
-    </div>
-  `;
-}
-
-// ─────────────────────────────────────────────
-// 6. API ROUTE HANDLER
-// ─────────────────────────────────────────────
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const {
-      template,       // "marriage_certificate" | "generic"
-      data,           // Template-specific data
-    } = body;
+    console.log('=== ROUTE generate-pdf-kit HIT ===');
 
-    // Build HTML based on template type
-    let innerHtml: string;
+    const { orderId } = await req.json();
 
-    switch (template) {
-      case "marriage_certificate":
-        innerHtml = buildMarriageCertificateHtml(data as MarriageCertData);
-        break;
-      case "generic":
-        innerHtml = buildGenericTranslationHtml(data as GenericTranslationData);
-        break;
-      default:
-        // Fallback: if raw HTML is sent, wrap it directly
-        if (body.rawHtml || body.htmlContent) {
-          innerHtml = body.rawHtml ?? body.htmlContent;
-        } else {
-          return NextResponse.json(
-            { error: `Unknown template: "${template}"` },
-            { status: 400 }
-          );
+    if (!orderId) {
+      return NextResponse.json({ error: 'Order ID required' }, { status: 400 });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { documents: true, user: true }
+    });
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    const PAGE_WIDTH = 612;
+    const PAGE_HEIGHT = 792;
+    const MARGIN = 70;
+
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const black = rgb(0, 0, 0);
+    const grey = rgb(0.3, 0.3, 0.3);
+
+    // 1) CAPA DE CERTIFICAÇÃO — MANTER INTACTA
+    const coverPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    const publicDir = path.join(process.cwd(), 'public');
+
+    try {
+      const logoBytes = await fs.readFile(path.join(publicDir, 'logo-promobidocs.png'));
+      const logoImg = await pdfDoc.embedPng(logoBytes);
+      const originalWidth = 140;
+      const originalHeight = (logoImg.height / logoImg.width) * originalWidth;
+      const scaledWidth = originalWidth * 0.7;
+      const scaledHeight = originalHeight * 0.7;
+
+      coverPage.drawImage(logoImg, {
+        x: MARGIN,
+        y: PAGE_HEIGHT - scaledHeight - 40,
+        width: scaledWidth,
+        height: scaledHeight,
+      });
+    } catch {
+      console.warn('[Kit Route] logo-promobidocs.png não encontrado para a capa');
+    }
+
+    coverPage.drawText('CERTIFICATION OF TRANSLATION ACCURACY', {
+      x: MARGIN,
+      y: PAGE_HEIGHT - 160,
+      size: 16,
+      font: boldFont,
+      color: black,
+    });
+
+    const labelX = 70;
+    const valueX = 220;
+    let currentY = PAGE_HEIGHT - 210;
+    const lineSpacing = 22;
+
+    const drawGridLine = (label: string, value: string) => {
+      coverPage.drawText(label, { x: labelX, y: currentY, size: 10, font: boldFont });
+      coverPage.drawText(value, { x: valueX, y: currentY, size: 10, font });
+      currentY -= lineSpacing;
+    };
+
+    const firstDoc = order.documents[0];
+    const docTypeVal =
+      firstDoc?.exactNameOnDoc || firstDoc?.docType || 'Official Documents';
+
+    const sourceLang =
+      order.sourceLanguage === 'ES'
+        ? 'Spanish'
+        : order.sourceLanguage === 'EN'
+          ? 'English'
+          : 'Portuguese';
+
+    drawGridLine('Document Type:', docTypeVal.toUpperCase());
+    drawGridLine('Source Language:', sourceLang);
+    drawGridLine('Target Language:', 'English');
+    drawGridLine('Number of pages:', String(order.documents.length).padStart(2, '0'));
+    drawGridLine('Order #:', String(order.id + 1000).padStart(4, '0') + '-USA');
+
+    currentY -= 20;
+
+    const certText =
+      `I, the undersigned, hereby certify that I am fluent in English and the source language (${sourceLang}) ` +
+      `of the attached documents, and that the attached translation is a true, accurate, and complete translation ` +
+      `of the original document attached hereto.`;
+
+    const wrapWidth = PAGE_WIDTH - (MARGIN * 2);
+    const lines = wrapLines(certText, font, 11, wrapWidth);
+    for (const line of lines) {
+      coverPage.drawText(line, { x: MARGIN, y: currentY, size: 11, font, lineHeight: 16 });
+      currentY -= 18;
+    }
+
+    currentY -= 20;
+
+    const dateString = `Dated: ${new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })}`;
+    const dateWidth = font.widthOfTextAtSize(dateString, 11);
+    coverPage.drawText(dateString, {
+      x: PAGE_WIDTH - MARGIN - dateWidth,
+      y: currentY,
+      size: 11,
+      font
+    });
+
+    currentY -= 50;
+
+    try {
+      const signatureBytes = await fs.readFile(path.join(publicDir, 'assinatura-isabele.png.jpg'));
+      const signatureImg = await pdfDoc.embedJpg(signatureBytes);
+      coverPage.drawImage(signatureImg, { x: MARGIN, y: currentY, width: 150, height: 45 });
+    } catch {
+      console.warn('[Kit Route] assinatura não encontrada');
+    }
+
+    try {
+      const ataLogoBytes = await fs.readFile(path.join(publicDir, 'logo-ata.png'));
+      const ataImg = await pdfDoc.embedPng(ataLogoBytes);
+      coverPage.drawImage(ataImg, { x: MARGIN + 180, y: currentY + 5, width: 40, height: 40 });
+    } catch {
+      console.warn('[Kit Route] logo ATA não encontrado');
+    }
+
+    currentY -= 15;
+    coverPage.drawText('___________________________________', { x: MARGIN, y: currentY, size: 12, font });
+    currentY -= 20;
+    coverPage.drawText('Promobi Certified Translator', { x: MARGIN, y: currentY, size: 11, font: boldFont });
+
+    const footerText =
+      '13558 Village Park Dr, Orlando/FL, 32837 | +1 321 324-5851 | translator@promobidocs.com | www.promobidocs.com';
+    const footerW = font.widthOfTextAtSize(footerText, 8.5);
+    coverPage.drawText(footerText, {
+      x: (PAGE_WIDTH - footerW) / 2,
+      y: 35,
+      size: 8.5,
+      font,
+      color: grey
+    });
+
+    // 2) DOC TRADUZIDO
+    for (const doc of order.documents) {
+      if (doc.translatedText) {
+        console.log('=== ROUTE translated section start ===');
+        await buildTranslatedSectionPdfWithLetterhead(
+          doc.translatedText,
+          pdfDoc,
+          PAGE_WIDTH,
+          PAGE_HEIGHT
+        );
+      }
+
+      // 3) DOC ORIGINAL — MANTER INTACTO
+      if (doc.originalFileUrl && doc.originalFileUrl !== 'PENDING_UPLOAD') {
+        try {
+          const origRes = await fetch(doc.originalFileUrl);
+
+          if (origRes.ok) {
+            const origBuf = Buffer.from(await origRes.arrayBuffer());
+            const rotationsMap = (doc.pageRotations as any) || {};
+
+            if (isPdf(origBuf)) {
+              const origPdf = await PDFDocument.load(origBuf, { ignoreEncryption: true });
+              const copiedPages = await pdfDoc.copyPages(origPdf, origPdf.getPageIndices());
+
+              copiedPages.forEach((p, idx) => {
+                const rot = rotationsMap[String(idx)] || p.getRotation().angle;
+                p.setRotation(degrees(rot));
+                pdfDoc.addPage(p);
+              });
+            } else {
+              const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+              let image;
+
+              if (isPng(origBuf)) {
+                image = await pdfDoc.embedPng(origBuf);
+              } else {
+                image = await pdfDoc.embedJpg(origBuf);
+              }
+
+              const scale = Math.min(
+                PAGE_WIDTH / image.width,
+                PAGE_HEIGHT / image.height
+              );
+
+              const rot = rotationsMap['0'] || 0;
+              if (rot !== 0) page.setRotation(degrees(rot));
+
+              page.drawImage(image, {
+                x: (PAGE_WIDTH - image.width * scale) / 2,
+                y: (PAGE_HEIGHT - image.height * scale) / 2,
+                width: image.width * scale,
+                height: image.height * scale,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('[Kit Route] Error appending original doc', e);
         }
+      }
     }
 
-    const fullHtml = wrapHtmlForGotenberg(innerHtml);
+    // 4) SAVE / UPLOAD
+    const pdfBytes = await pdfDoc.save();
 
-    // ── Build FormData for Gotenberg ──
-    const formData = new FormData();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Supabase config missing');
 
-    // The HTML file — Gotenberg expects a file named "index.html"
-    const htmlBlob = new Blob([fullHtml], { type: "text/html" });
-    formData.append("files", htmlBlob, "index.html");
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const fileName = `Certificate_Order_${order.id}_${Date.now()}.pdf`;
+    const storagePath = `orders/delivered/${fileName}`;
 
-    // Engine parameters
-    for (const [key, value] of Object.entries(PDF_CONFIG)) {
-      formData.append(key, value);
-    }
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, pdfBytes, {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
 
-    // ── Call Gotenberg ──
-    const gotenbergResponse = await fetch(GOTENBERG_URL, {
-      method: "POST",
-      body: formData,
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('documents')
+      .getPublicUrl(storagePath);
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        deliveryUrl: urlData.publicUrl,
+        status: 'READY_FOR_REVIEW'
+      }
     });
 
-    if (!gotenbergResponse.ok) {
-      const errorText = await gotenbergResponse.text();
-      console.error("[Gotenberg] Error:", gotenbergResponse.status, errorText);
-      return NextResponse.json(
-        {
-          error: "PDF generation failed",
-          details: errorText,
-          status: gotenbergResponse.status,
-        },
-        { status: 502 }
-      );
-    }
-
-    // ── Return PDF ──
-    const pdfBuffer = await gotenbergResponse.arrayBuffer();
-
-    return new NextResponse(pdfBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="promobidocs-order-${body.data?.orderId ?? "document"}.pdf"`,
-        "Cache-Control": "no-store",
-      },
+    return NextResponse.json({
+      success: true,
+      deliveryUrl: urlData.publicUrl,
+      order: updatedOrder
     });
-  } catch (error) {
-    console.error("[PDF Generate] Unexpected error:", error);
+  } catch (error: any) {
+    console.error('PDF Kit Error:', error);
     return NextResponse.json(
-      {
-        error: "Internal server error during PDF generation",
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }

@@ -1,3 +1,6 @@
+# structured preview artefacts (local dev fallback — never commit)
+.artifacts/
+
 # dependencies
 node_modules
 .pnp

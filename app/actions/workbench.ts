@@ -195,8 +195,19 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   const recipients: string[] = []
 
-  if (options.sendToClient && clientEmail) {
-    recipients.push(clientEmail)
+  if (options.sendToClient) {
+    if (clientEmail) {
+      recipients.push(clientEmail)
+    } else {
+      console.error(
+        `[sendDeliveryEmail] ❌ sendToClient=true but clientEmail is missing for Order #${order.id}. ` +
+        `order.user=${JSON.stringify(order.user)}. Client will NOT receive the delivery email.`
+      )
+      throw new Error(
+        `Client email not found for Order #${order.id}. ` +
+        `Check that the order is linked to the correct user in the database.`
+      )
+    }
   }
   if (options.sendToTranslator) {
     recipients.push('belebmd@gmail.com')

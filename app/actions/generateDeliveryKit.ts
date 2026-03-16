@@ -1,560 +1,370 @@
-// app/actions/generateDeliveryKit.ts
-// Promobidocs — Delivery Kit Generator (Server Action)
-// Orchestrates: Fetch order → Build HTML → Call Gotenberg → Store/Return PDF
-
 "use server";
 
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { PDFDocument } from "pdf-lib";
+import fs from "fs/promises";
+import path from "path";
 
-// ─────────────────────────────────────────────
-// 1. TYPES
-// ─────────────────────────────────────────────
 interface DeliveryKitResult {
-    success: boolean;
-    deliveryUrl?: string;
-    pdfUrl?: string;
-    pdfBase64?: string;
-    fileName?: string;
-    isPreview?: boolean;
-    error?: string;
+  success: boolean;
+  deliveryUrl?: string;
+  pdfUrl?: string;
+  pdfBase64?: string;
+  fileName?: string;
+  isPreview?: boolean;
+  error?: string;
 }
 
 interface GenerateOptions {
-    preview?: boolean;
-    coverLanguage?: string;
+  preview?: boolean;
+  coverLanguage?: string;
 }
 
-// ─────────────────────────────────────────────
-// 2. GOTENBERG CONFIG
-// ─────────────────────────────────────────────
-const GOTENBERG_URL =
-    "http://127.0.0.1:3001/forms/chromium/convert/html";
+const GOTENBERG_URL = "http://127.0.0.1:3001/forms/chromium/convert/html";
 
-const PDF_ENGINE = {
-    paperWidth: "8.5",
-    paperHeight: "11",
-    marginTop: "1.8",
-    marginBottom: "1.2",
-    marginLeft: "0.8",
-    marginRight: "0.8",
-    scale: "0.85",
-    printBackground: "true",
-    preferCssPageSize: "false",
-    skipNetworkIdleEvent: "true",
-} as const;
+function sanitizeTranslatedHtml(html: string): string {
+  if (!html) return "";
 
-// ─────────────────────────────────────────────
-// 3. CARTÓRIO CSS (Inline — Gotenberg has no
-//    access to your Next.js static files)
-// ─────────────────────────────────────────────
-const CARTORIO_CSS = `
-  *, *::before, *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+  return html
+    .replace(/<!DOCTYPE[^>]*>/gi, "")
+    .replace(/<html[^>]*>/gi, "")
+    .replace(/<\/html>/gi, "")
+    .replace(/<head[\s\S]*?<\/head>/gi, "")
+    .replace(/<body[^>]*>/gi, "")
+    .replace(/<\/body>/gi, "")
+    .replace(/```html/gi, "")
+    .replace(/```/gi, "")
+    .trim();
+}
 
-  @page { size: letter; }
+async function loadLetterheadBytes(): Promise<Buffer> {
+  const rootPath = path.join(process.cwd(), "letterhead.png");
+  const publicFallbackPath = path.join(process.cwd(), "public", "letterhead.png");
 
-  html, body {
-    width: 100%;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    line-height: 1.45;
-    color: #000;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+  try {
+    console.log("[DeliveryKit Action] using root letterhead:", rootPath);
+    return await fs.readFile(rootPath);
+  } catch {
+    console.log("[DeliveryKit Action] root letterhead not found, trying public:", publicFallbackPath);
+    try {
+      return await fs.readFile(publicFallbackPath);
+    } catch {
+      throw new Error("ERRO CRÍTICO: Imagem 'letterhead.png' não encontrada na raiz nem em /public.");
+    }
   }
+}
 
-  .page {
-    width: 100%;
-    padding: 1.8in 0.8in 1.2in 0.8in;
-    page-break-after: always;
-  }
-  .page:last-child { page-break-after: auto; }
+async function renderTranslatedSectionWithLetterhead(
+  translatedHtml: string
+): Promise<Buffer> {
+  const cleanHtml = sanitizeTranslatedHtml(translatedHtml);
 
-  /* Header */
-  .header {
-    text-align: center;
-    margin-bottom: 16pt;
-    padding-bottom: 10pt;
-    border-bottom: 2pt solid #000;
-  }
-  .header .logo-line {
-    font-size: 9pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1.5pt;
-    color: #333;
-    margin-bottom: 4pt;
-  }
-  .header .company-name {
-    font-size: 14pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 2pt;
-    margin-bottom: 2pt;
-  }
-  .header .tagline {
-    font-size: 8.5pt;
-    color: #555;
-    font-style: italic;
-  }
-  .header .credentials {
-    font-size: 8pt;
-    color: #444;
-    margin-top: 4pt;
-  }
-
-  /* Titles */
-  .doc-title {
-    text-align: center;
-    font-size: 13pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1pt;
-    margin: 14pt 0 10pt;
-    text-decoration: underline;
-  }
-  .doc-subtitle {
-    text-align: center;
-    font-size: 10pt;
-    font-style: italic;
-    margin-bottom: 14pt;
-    color: #333;
-  }
-  .section-title {
-    font-size: 11pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin: 12pt 0 6pt;
-    padding-bottom: 2pt;
-    border-bottom: 1pt solid #000;
-  }
-
-  /* Tables — Cartório */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8pt 0;
-    font-size: 10pt;
-    page-break-inside: avoid;
-  }
-  table th, table td {
-    border: 1pt solid #000;
-    padding: 6px;
-    text-align: left;
-    vertical-align: top;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-  table th {
-    background-color: #f0f0f0;
-    font-weight: bold;
-    font-size: 9.5pt;
-    text-transform: uppercase;
-  }
-  .label-cell {
-    width: 35%;
-    font-weight: bold;
-    background-color: #fafafa;
-  }
-  .value-cell { width: 65%; }
-
-  /* Body text */
-  .body-text {
-    text-align: justify;
-    text-indent: 2em;
-    margin-bottom: 8pt;
-    font-size: 11pt;
-  }
-  .body-text.no-indent { text-indent: 0; }
-
-  /* Certification */
-  .certification-block {
-    margin-top: 20pt;
-    padding: 12pt;
-    border: 2pt solid #000;
-    background-color: #fafafa;
-    page-break-inside: avoid;
-  }
-  .certification-block p {
-    font-size: 10pt;
-    margin-bottom: 6pt;
-    text-align: justify;
-  }
-
-  /* Signature */
-  .signature-area {
-    margin-top: 30pt;
-    text-align: center;
-    page-break-inside: avoid;
-  }
-  .signature-line {
-    width: 280pt;
-    border-top: 1pt solid #000;
-    margin: 0 auto 4pt;
-    padding-top: 4pt;
-  }
-  .signature-name { font-weight: bold; font-size: 10pt; }
-  .signature-title { font-size: 9pt; color: #333; }
-
-  /* Footer */
-  .footer {
-    text-align: center;
-    font-size: 7.5pt;
-    color: #666;
-    border-top: 1pt solid #999;
-    padding-top: 6pt;
-    margin-top: 16pt;
-  }
-
-  /* Seal */
-  .notarial-seal {
-    display: inline-block;
-    width: 80pt;
-    height: 80pt;
-    border: 1pt dashed #999;
-    border-radius: 50%;
-    text-align: center;
-    line-height: 80pt;
-    font-size: 7pt;
-    color: #999;
-    margin: 10pt 0;
-  }
-
-  /* Tiptap content normalization */
-  .translation-body h1,
-  .translation-body h2,
-  .translation-body h3 {
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin: 6pt 0 3pt;
-    padding: 0;
-    border: none;
-  }
-  .translation-body p {
-    margin-bottom: 3pt;
-    text-align: justify;
-    line-height: 1.35;
-  }
-  .translation-body p strong {
-    font-weight: bold;
-  }
-  .translation-body table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 4pt 0;
-    font-size: 9.5pt;
-  }
-  .translation-body table td,
-  .translation-body table th {
-    border: 0.5pt solid #999;
-    padding: 2px 4px;
-  }
-  .translation-body ul, .translation-body ol {
-    margin-left: 16pt;
-    margin-bottom: 4pt;
-  }
-
-  .text-center { text-align: center; }
-  .text-small  { font-size: 9pt; }
-  .no-break    { page-break-inside: avoid; }
-`;
-
-// ─────────────────────────────────────────────
-// 4. SOURCE LANGUAGE MAP
-// ─────────────────────────────────────────────
-const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
-    PT_BR: "Portuguese (Brazil)",
-    ES: "Spanish",
-    EN: "English",
-};
-
-// ─────────────────────────────────────────────
-// 5. HTML BUILDERS
-// ─────────────────────────────────────────────
-function wrapFullHtml(body: string): string {
-    return `<!DOCTYPE html>
-<html lang="en">
+  const html = `<!DOCTYPE html>
+<html>
 <head>
   <meta charset="UTF-8" />
-  <style>${CARTORIO_CSS}</style>
+  <style>
+    @page {
+      size: letter;
+      margin: 0;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent !important;
+      background-color: transparent !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      font-family: "Times New Roman", Times, serif;
+      color: black;
+      width: 100%;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-size: 10.5pt;
+      line-height: 1.28;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .content-area {
+      box-sizing: border-box;
+      padding-top: 150px;
+      padding-bottom: 90px;
+      padding-left: 62px;
+      padding-right: 62px;
+      width: 100%;
+    }
+
+    .translation-body {
+      width: 100%;
+    }
+
+    .translation-body h1,
+    .translation-body h2,
+    .translation-body h3,
+    .translation-body h4,
+    .translation-body h5,
+    .translation-body h6 {
+      font-family: "Times New Roman", Times, serif;
+      color: #000;
+      margin: 0 0 6pt 0;
+      line-height: 1.15;
+      font-weight: bold;
+    }
+
+    .translation-body h1 { font-size: 13pt; }
+    .translation-body h2 { font-size: 12pt; }
+    .translation-body h3 { font-size: 11.5pt; }
+    .translation-body h4,
+    .translation-body h5,
+    .translation-body h6 { font-size: 11pt; }
+
+    .translation-body p {
+      margin: 0 0 5pt 0;
+      text-align: justify;
+      line-height: 1.28;
+    }
+
+    .translation-body ul,
+    .translation-body ol {
+      margin: 0 0 6pt 18pt;
+      padding: 0;
+    }
+
+    .translation-body li {
+      margin: 0 0 3pt 0;
+    }
+
+    .translation-body table {
+      width: 100%;
+      border-collapse: collapse;
+      border-spacing: 0;
+      table-layout: fixed;
+      margin: 6pt 0;
+      font-size: 9pt;
+      page-break-inside: avoid;
+    }
+
+    .translation-body th,
+    .translation-body td {
+      border: 0.75pt solid #000;
+      padding: 4pt;
+      vertical-align: top;
+      text-align: left;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .translation-body img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .translation-body .text-center { text-align: center; }
+    .translation-body .text-right { text-align: right; }
+    .translation-body .text-left { text-align: left; }
+    .translation-body .no-break { page-break-inside: avoid; }
+  </style>
 </head>
-<body>${body}</body>
+<body>
+  <div class="content-area">
+    <div class="translation-body">
+      ${cleanHtml}
+    </div>
+  </div>
+</body>
 </html>`;
+
+  const formData = new FormData();
+  const htmlFile = new File([html], "index.html", { type: "text/html" });
+
+  formData.append("files", htmlFile);
+  formData.append("paperWidth", "8.5");
+  formData.append("paperHeight", "11");
+  formData.append("marginTop", "0");
+  formData.append("marginBottom", "0");
+  formData.append("marginLeft", "0");
+  formData.append("marginRight", "0");
+  formData.append("printBackground", "true");
+  formData.append("preferCssPageSize", "false");
+  formData.append("skipNetworkIdleEvent", "true");
+
+  const gotenbergRes = await fetch(GOTENBERG_URL, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!gotenbergRes.ok) {
+    const errorText = await gotenbergRes.text();
+    throw new Error(
+      `Gotenberg translated section failed: ${gotenbergRes.status} - ${errorText}`
+    );
+  }
+
+  const translatedPdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
+  const letterheadBytes = await loadLetterheadBytes();
+
+  const finalPdf = await PDFDocument.create();
+  const translatedPdf = await PDFDocument.load(translatedPdfBuffer);
+  const embeddedPages = await finalPdf.embedPages(translatedPdf.getPages());
+  const letterheadImage = await finalPdf.embedPng(letterheadBytes);
+
+  for (const embeddedPage of embeddedPages) {
+    const { width, height } = embeddedPage;
+    const page = finalPdf.addPage([width, height]);
+
+    page.drawPage(embeddedPage, {
+      x: 0,
+      y: 0,
+      width,
+      height,
+    });
+
+    page.drawImage(letterheadImage, {
+      x: 0,
+      y: 0,
+      width,
+      height,
+      opacity: 1,
+    });
+  }
+
+  const finalBytes = await finalPdf.save();
+  return Buffer.from(finalBytes);
 }
 
-function buildHeaderHtml(orderId: number | string): string {
-    return `
-    <div class="header">
-      <div class="logo-line">Certified Translation Services</div>
-      <div class="company-name">Promobidocs</div>
-      <div class="tagline">Official Certified Translations &mdash; USCIS &bull; DMV &bull; Academic</div>
-      <div class="credentials">
-        ATA Associate Member &bull; Florida Notary Public &bull; Order #${orderId}
-      </div>
-    </div>
-  `;
-}
-
-function buildCertificationHtml(sourceLanguage: string): string {
-    const sourceLang = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
-    return `
-    <div class="certification-block">
-      <p>
-        <strong>TRANSLATOR&rsquo;S CERTIFICATION:</strong> I, Isabele Bandeira de Moraes D&rsquo;Angelo,
-        ATA Associate Member (Credential M-194918), do hereby certify that the foregoing is a true
-        and accurate translation of the original document in ${sourceLang} into English (United States),
-        to the best of my knowledge and ability.
-      </p>
-      <p class="text-small">
-        Sworn and subscribed before me, a Notary Public in and for the State of Florida,
-        on this ${new Date().getDate()} day of ${new Date().toLocaleString("en-US", { month: "long" })}, ${new Date().getFullYear()}.
-      </p>
-    </div>
-
-    <div class="signature-area">
-      <div class="notarial-seal">[SEAL]</div>
-      <div class="signature-line">
-        <div class="signature-name">Isabele Bandeira de Moraes D&rsquo;Angelo</div>
-        <div class="signature-title">ATA Associate &bull; Florida Notary Public</div>
-      </div>
-    </div>
-  `;
-}
-
-function buildFooterHtml(orderId: number | string): string {
-    return `
-    <div class="footer">
-      Promobidocs &mdash; Certified Translation &amp; Notarization Services
-      &bull; Order #${orderId}
-      &bull; This document is not valid without the translator&rsquo;s signature and notarial seal.
-    </div>
-  `;
-}
-
-// ─────────────────────────────────────────────
-// 6. MAIN ACTION
-// ─────────────────────────────────────────────
 export async function generateDeliveryKit(
-    orderId: number,
-    documentId: number,
-    options: GenerateOptions = {}
+  orderId: number,
+  documentId: number,
+  options: GenerateOptions = {}
 ): Promise<DeliveryKitResult> {
-    const { preview = false } = options;
+  const { preview = false } = options;
 
-    try {
-        // ── Fetch order with the specific document ──
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: {
-                documents: {
-                    where: { id: documentId },
-                    orderBy: { id: "asc" },
-                },
-            },
-        });
+  try {
+    console.log("=== ACTION generateDeliveryKit HIT ===");
 
-        if (!order) {
-            return { success: false, error: `Order not found: ${orderId}` };
-        }
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        documents: {
+          where: { id: documentId },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
 
-        if (order.documents.length === 0) {
-            return {
-                success: false,
-                error: `Document ${documentId} not found in order ${orderId}.`,
-            };
-        }
-
-        // Schema: Order.sourceLanguage = SourceLanguage enum (PT_BR | ES)
-        const sourceLanguage = order.sourceLanguage ?? "PT_BR";
-        const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
-
-        // ── Build per-document pages ──
-        const documentPages = order.documents.map((doc, idx) => {
-            // Schema: Document.docType = String, Document.translatedText = String?
-            const docType = doc.docType ?? "Document";
-            const translatedHtml = doc.translatedText ?? "";
-
-            return `
-        <div class="page">
-          ${buildHeaderHtml(order.id)}
-
-          <div class="doc-title">
-            Certified Translation &mdash; ${docType}
-          </div>
-          <div class="doc-subtitle">
-            Translated from ${sourceLangLabel} into English (United States)
-            ${order.documents.length > 1 ? `&bull; Document ${idx + 1} of ${order.documents.length}` : ""}
-          </div>
-
-          <div class="translation-body">
-            ${translatedHtml}
-          </div>
-
-          ${buildCertificationHtml(sourceLanguage)}
-          ${buildFooterHtml(order.id)}
-        </div>
-      `;
-        });
-
-        const fullBody = documentPages.join("\n");
-        const fullHtml = wrapFullHtml(fullBody);
-
-        // ── Call Gotenberg ──
-        const formData = new FormData();
-        const htmlBlob = new Blob([fullHtml], { type: "text/html" });
-        formData.append("files", htmlBlob, "index.html");
-
-        for (const [key, value] of Object.entries(PDF_ENGINE)) {
-            formData.append(key, value);
-        }
-
-        const gotenbergRes = await fetch(GOTENBERG_URL, {
-            method: "POST",
-            body: formData,
-        });
-
-        if (!gotenbergRes.ok) {
-            const errText = await gotenbergRes.text();
-            console.error(
-                `[DeliveryKit] Gotenberg error ${gotenbergRes.status}:`,
-                errText
-            );
-            return {
-                success: false,
-                error: `Gotenberg returned ${gotenbergRes.status}: ${errText}`,
-            };
-        }
-
-        const pdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
-        const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
-
-        // ── Store in Supabase Storage & return URL ──
-        try {
-            const { createClient } = await import("@supabase/supabase-js");
-            const supabase = createClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.SUPABASE_SERVICE_ROLE_KEY!
-            );
-
-            const storagePath = preview
-                ? `orders/previews/${fileName}`
-                : `orders/completed/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from("translations")
-                .upload(storagePath, pdfBuffer, {
-                    contentType: "application/pdf",
-                    upsert: true,
-                });
-
-            if (uploadError) {
-                console.error("[DeliveryKit] Storage upload error:", uploadError);
-                return {
-                    success: false,
-                    error: `Storage upload failed: ${uploadError.message}`,
-                };
-            }
-
-            const { data: urlData } = supabase.storage
-                .from("translations")
-                .getPublicUrl(storagePath);
-
-            if (!preview) {
-                // ── Update document: save delivery URL and mark approved ──
-                await prisma.document.update({
-                    where: { id: documentId },
-                    data: {
-                        delivery_pdf_url: urlData.publicUrl,
-                        translation_status: "approved",
-                    },
-                });
-
-                revalidatePath(`/admin/orders/${orderId}`);
-                revalidatePath("/admin/orders");
-            }
-
-            return {
-                success: true,
-                deliveryUrl: urlData.publicUrl,
-                pdfUrl: urlData.publicUrl,
-                fileName,
-                isPreview: preview,
-            };
-        } catch (storageError) {
-            console.error("[DeliveryKit] Storage error:", storageError);
-            return {
-                success: false,
-                error: storageError instanceof Error ? storageError.message : String(storageError),
-            };
-        }
-    } catch (error) {
-        console.error("[DeliveryKit] Unexpected error:", error);
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-        };
+    if (!order) {
+      return { success: false, error: `Order not found: ${orderId}` };
     }
+
+    if (order.documents.length === 0) {
+      return {
+        success: false,
+        error: `Document ${documentId} not found in order ${orderId}.`,
+      };
+    }
+
+    const doc = order.documents[0];
+
+    if (!doc.translatedText) {
+      return {
+        success: false,
+        error: `Document ${documentId} has no translatedText.`,
+      };
+    }
+
+    const finalPdfBuffer = await renderTranslatedSectionWithLetterhead(
+      doc.translatedText
+    );
+
+    const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
+
+    const { createClient } = await import("@supabase/supabase-js");
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const storagePath = preview
+      ? `orders/previews/${fileName}`
+      : `orders/completed/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("translations")
+      .upload(storagePath, finalPdfBuffer, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      return {
+        success: false,
+        error: `Storage upload failed: ${uploadError.message}`,
+      };
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("translations")
+      .getPublicUrl(storagePath);
+
+    if (!preview) {
+      await prisma.document.update({
+        where: { id: documentId },
+        data: {
+          delivery_pdf_url: urlData.publicUrl,
+          translation_status: "approved",
+        },
+      });
+
+      revalidatePath(`/admin/orders/${orderId}`);
+      revalidatePath("/admin/orders");
+    }
+
+    return {
+      success: true,
+      deliveryUrl: urlData.publicUrl,
+      pdfUrl: urlData.publicUrl,
+      fileName,
+      isPreview: preview,
+    };
+  } catch (error) {
+    console.error("[DeliveryKit] Unexpected error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
-// ─────────────────────────────────────────────
-// 7. PREVIEW ACTION (for Workbench "Preview PDF")
-// ─────────────────────────────────────────────
 export async function previewDocumentPdf(
-    documentId: number,
-    translatedHtml: string,
-    documentType: string = "Document",
-    sourceLanguage: string = "PT_BR"
+  documentId: number,
+  translatedHtml: string,
+  documentType: string = "Document",
+  sourceLanguage: string = "PT_BR"
 ): Promise<DeliveryKitResult> {
-    try {
-        const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
+  try {
+    const finalPdfBuffer = await renderTranslatedSectionWithLetterhead(
+      translatedHtml
+    );
 
-        const body = `
-      <div class="page">
-        ${buildHeaderHtml("PREVIEW")}
-        <div class="doc-title">Certified Translation &mdash; ${documentType}</div>
-        <div class="doc-subtitle">
-          Translated from ${sourceLangLabel} into English (United States)
-        </div>
-        <div class="translation-body">${translatedHtml}</div>
-        ${buildCertificationHtml(sourceLanguage)}
-        ${buildFooterHtml("PREVIEW")}
-      </div>
-    `;
-
-        const fullHtml = wrapFullHtml(body);
-
-        const formData = new FormData();
-        formData.append("files", new Blob([fullHtml], { type: "text/html" }), "index.html");
-
-        for (const [key, value] of Object.entries(PDF_ENGINE)) {
-            formData.append(key, value);
-        }
-
-        const res = await fetch(GOTENBERG_URL, { method: "POST", body: formData });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            return { success: false, error: `Gotenberg ${res.status}: ${errText}` };
-        }
-
-        const pdfBuffer = Buffer.from(await res.arrayBuffer());
-
-        return {
-            success: true,
-            pdfBase64: pdfBuffer.toString("base64"),
-            fileName: `preview-${documentId}.pdf`,
-        };
-    } catch (error) {
-        console.error("[PreviewPDF] Error:", error);
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-        };
-    }
+    return {
+      success: true,
+      pdfBase64: finalPdfBuffer.toString("base64"),
+      fileName: `preview-${documentId}.pdf`,
+    };
+  } catch (error) {
+    console.error("[PreviewPDF] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

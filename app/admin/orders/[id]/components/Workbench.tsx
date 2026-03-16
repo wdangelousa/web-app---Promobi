@@ -150,11 +150,11 @@ export default function Workbench({ order }: { order: Order }) {
                 await saveTranslationDraft(selectedDoc.id, editorContent)
             }
 
-            const { generateDeliveryKit } = await import('../../../../actions/generateDeliveryKit')
-            const result = await generateDeliveryKit(order.id, selectedDoc.id, { preview: true, coverLanguage: coverLang })
+            const { previewStructuredKit } = await import('../../../../actions/previewStructuredKit')
+            const result = await previewStructuredKit(order.id, selectedDoc.id, coverLang || 'PT_BR')
 
-            if (result.success && result.deliveryUrl) {
-                setKitPreviewUrl(result.deliveryUrl)
+            if (result.success && result.previewUrl) {
+                setKitPreviewUrl(result.previewUrl)
                 setShowPreviewModal(true)
             } else {
                 alert('Erro ao gerar preview: ' + result.error)
@@ -551,7 +551,7 @@ export default function Workbench({ order }: { order: Order }) {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-100">
                         <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2"><Send className="w-5 h-5 text-orange-500" /> Delivery Settings</h2>
                         <div className="space-y-3 mb-8">
-                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p></div></label>
+                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p><p className="text-xs text-gray-500 font-mono mt-0.5">{order.user.email}</p></div></label>
                             <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">Translator</p></div></label>
                         </div>
                         <div className="flex gap-3">

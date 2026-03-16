@@ -47,6 +47,25 @@ export function sanitizeTranslationHtml(rawHtml: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0.4. CONVERT PLAIN TEXT TO HTML
+// Runs first: if the input contains no HTML tags at all, wraps each non-empty
+// line in <p>. Handles the case where Claude outputs plain text (e.g. the
+// translation prompt says "output plain text only") with no HTML or markdown.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function convertPlainTextToHtml(input: string): string {
+  // If already HTML (has at least one opening tag), skip
+  if (/<[a-z][^>]*>/i.test(input)) return input;
+
+  return input
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .map(line => `<p>${line}</p>`)
+    .join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 0.5. CONVERT MARKDOWN TO HTML
 // Safety net: converts markdown syntax to HTML in case Claude ignores the prompt.
 // Only runs if the output looks like markdown (contains ** or # lines).
