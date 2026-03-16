@@ -827,50 +827,38 @@ async function callGotenberg(
   }
 }
 
-// ── Main function ─────────────────────────────────────────────────────────────
+// ── Shared kit buffer builder ─────────────────────────────────────────────────
 
-export async function assembleStructuredPreviewKit(
+/**
+ * Assembles the 3-part kit PDF (cover + translated + original) and returns the
+ * raw Buffer WITHOUT uploading or touching the database.
+ *
+ * Used by both:
+ *   - assembleStructuredPreviewKit  (preview → orders/previews/ in documents bucket)
+ *   - generateDeliveryKit           (official → orders/completed/ in translations bucket)
+ *
+ * Returns null on any internal failure (never throws).
+ */
+export async function buildStructuredKitBuffer(
   input: StructuredPreviewKitInput,
-): Promise<StructuredPreviewKitResult> {
-  const result: StructuredPreviewKitResult = {
-    assembled: false,
-    coverGenerated: false,
-    coverMetadataApplied: false,
-    translatedSectionGenerated: false,
-    originalAppended: false,
-    letterheadDetected: false,
-    letterheadInjected: false,
-  };
-
-  const logPrefix = `[structuredPreviewKit] Order #${input.orderId} Doc #${input.documentId}`;
+): Promise<Buffer | null> {
+  const logPrefix = `[buildStructuredKitBuffer] Order #${input.orderId} Doc #${input.documentId}`;
   const log = (msg: string) => console.log(`${logPrefix} — ${msg}`);
 
   try {
-    // ── Determine cover variant ───────────────────────────────────────────────
     const coverVariant = input.coverVariant ?? deriveCoverVariant(input.sourceLanguage);
-    log(`cover variant selected: ${coverVariant}`);
-
-    // ── Part 2: Translated document PDF (orientation-aware) ──────────────────
     const isLandscape = input.orientation === 'landscape';
     const paperSettings = isLandscape ? GOTENBERG_LANDSCAPE : GOTENBERG_PORTRAIT;
-    log(`translated section orientation: ${input.orientation ?? 'portrait (default)'}`);
+    log(`orientation: ${input.orientation ?? 'portrait (default)'}`);
 
-    // ── Detect letterhead for translated pages (orientation-aware) ────────────
-    // Portrait → letterhead.png; Landscape → letterhead-landscape.png
-    // Never stretch the portrait asset onto landscape pages.
+    // ── Part 2: Translated document PDF ──────────────────────────────────────
     const targetLhPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
-    try {
-      result.letterheadDetected = existsSync(targetLhPath);
-    } catch {
-      result.letterheadDetected = false;
-    }
-
-    const letterheadBuffer = result.letterheadDetected ? loadLetterheadBuffer(targetLhPath) : null;
+    const letterheadBuffer = loadLetterheadBuffer(targetLhPath);
 
     if (letterheadBuffer) {
-      log(`translated letterhead source detected: yes (${targetLhPath})`);
+      log(`letterhead detected: yes (${targetLhPath})`);
     } else {
-      log(`translated letterhead source detected: no (${targetLhPath})`);
+      log(`letterhead detected: no (${targetLhPath})`);
     }
 
     const translatedPdfBaseBuffer = await callGotenberg(
@@ -882,8 +870,8 @@ export async function assembleStructuredPreviewKit(
     );
 
     if (!translatedPdfBaseBuffer) {
-      log(`translated section generated: no (Gotenberg failed)`);
-      return result;
+      log(`translated section: Gotenberg failed`);
+      return null;
     }
 
     let translatedPdfBuffer = translatedPdfBaseBuffer;
@@ -894,26 +882,23 @@ export async function assembleStructuredPreviewKit(
         letterheadBuffer,
         logPrefix,
       );
-
       if (overlayBuffer) {
         translatedPdfBuffer = overlayBuffer;
-        result.letterheadInjected = true;
-        log(`translated letterhead applied: yes (PNG overlay on translated pages only)`);
+        log(`letterhead overlay applied: yes`);
       } else {
-        log(`translated letterhead applied: no (overlay failed)`);
+        log(`letterhead overlay applied: no (overlay failed)`);
       }
     } else {
-      log(`translated letterhead applied: no (letterhead.png not found)`);
+      log(`letterhead overlay applied: no (file not found)`);
     }
 
-    result.translatedSectionGenerated = true;
     log(`translated section generated: yes`);
 
     const translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
     const translatedPageCount = translatedPdfDoc.getPageCount();
-    log(`translated pages count: ${translatedPageCount}`);
+    log(`translated pages: ${translatedPageCount}`);
 
-    // ── Part 1: HTML certification cover — INTACT ────────────────────────────
+    // ── Part 1: HTML certification cover ─────────────────────────────────────
     const sourceLangLabel =
       SOURCE_LANGUAGE_LABELS[input.sourceLanguage ?? ''] ??
       input.sourceLanguage ??
@@ -943,11 +928,7 @@ export async function assembleStructuredPreviewKit(
       loadedCoverAssets,
     );
 
-    log(`html certification cover generated: yes`);
-    log(`approved cover HTML template applied: yes`);
-    log(`real cover assets loaded: [${Array.from(loadedCoverAssets).join(', ')}]`);
-    log(`dynamic metadata preserved on cover: yes`);
-    log(`metadata filled on html cover: yes`);
+    log(`cover assets loaded: [${Array.from(loadedCoverAssets).join(', ')}]`);
 
     const coverPdfBuffer = await callGotenberg(
       coverHtml,
@@ -958,13 +939,11 @@ export async function assembleStructuredPreviewKit(
     );
 
     if (!coverPdfBuffer) {
-      log(`html certification cover rendered: no (Gotenberg failed)`);
-      return result;
+      log(`cover page: Gotenberg failed`);
+      return null;
     }
 
-    result.coverGenerated = true;
-    result.coverMetadataApplied = true;
-    log(`html certification cover rendered: yes`);
+    log(`cover page generated: yes`);
 
     // ── pdf-lib assembly: Part 1 + Part 2 + Part 3 ───────────────────────────
     const finalPdf = await PDFDocument.create();
@@ -974,41 +953,84 @@ export async function assembleStructuredPreviewKit(
     const coverPages = await finalPdf.copyPages(coverDoc, coverDoc.getPageIndices());
     coverPages.forEach(p => finalPdf.addPage(p));
 
-    // Part 2: translated with margins fixed by Gotenberg + overlay
+    // Part 2: translated with letterhead overlay
     const translatedPages = await finalPdf.copyPages(translatedPdfDoc, translatedPdfDoc.getPageIndices());
     translatedPages.forEach(p => finalPdf.addPage(p));
 
-    // Part 3: original intact
+    // Part 3: original intact (skipped if not PDF or unavailable)
     let originalPageCount = 0;
-    if (input.isOriginalPdf) {
+    if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
       try {
         const originalDoc = await PDFDocument.load(input.originalFileBuffer, { ignoreEncryption: true });
         const originalPages = await finalPdf.copyPages(originalDoc, originalDoc.getPageIndices());
         originalPages.forEach(p => finalPdf.addPage(p));
         originalPageCount = originalDoc.getPageCount();
-        result.originalAppended = true;
-        log(`original source appended: yes (${originalPageCount} page(s))`);
+        log(`original appended: yes (${originalPageCount} page(s))`);
       } catch (origErr) {
-        log(`original source appended: no (pdf-lib load error: ${origErr})`);
+        log(`original appended: no (pdf-lib load error: ${origErr})`);
       }
     } else {
-      log(`original source appended: no (source is not a PDF)`);
+      log(`original appended: no (source is not a PDF or buffer empty)`);
     }
 
+    const totalPages = finalPdf.getPageCount();
     const kitBytes = await finalPdf.save();
     const kitBuffer = Buffer.from(kitBytes);
 
-    // ── Verify final kit order ────────────────────────────────────────────────
-    const coverPartPages = coverDoc.getPageCount();
-    const totalExpectedPages = coverPartPages + translatedPageCount + originalPageCount;
-    const totalActualPages = finalPdf.getPageCount();
-    const orderVerified = totalActualPages === totalExpectedPages;
-
     log(
-      `preview kit final order verified: ${orderVerified ? 'yes' : 'no'} ` +
-      `(cover=${coverPartPages} + translated=${translatedPageCount} + original=${originalPageCount}; total=${totalActualPages})`,
+      `kit assembled: yes — cover=${coverDoc.getPageCount()} + translated=${translatedPageCount} + original=${originalPageCount}; ` +
+      `total=${totalPages} pages, ${kitBuffer.length} bytes`,
     );
-    log(`structured preview kit assembled: yes (${kitBuffer.length} bytes, ${totalActualPages} page(s))`);
+
+    return kitBuffer;
+
+  } catch (err) {
+    console.error(`[buildStructuredKitBuffer] unexpected error: ${err}`);
+    return null;
+  }
+}
+
+// ── Main function ─────────────────────────────────────────────────────────────
+
+export async function assembleStructuredPreviewKit(
+  input: StructuredPreviewKitInput,
+): Promise<StructuredPreviewKitResult> {
+  const result: StructuredPreviewKitResult = {
+    assembled: false,
+    coverGenerated: false,
+    coverMetadataApplied: false,
+    translatedSectionGenerated: false,
+    originalAppended: false,
+    letterheadDetected: false,
+    letterheadInjected: false,
+  };
+
+  const logPrefix = `[structuredPreviewKit] Order #${input.orderId} Doc #${input.documentId}`;
+  const log = (msg: string) => console.log(`${logPrefix} — ${msg}`);
+
+  try {
+    // Detect letterhead for result metadata (orientation-aware)
+    const isLandscape = input.orientation === 'landscape';
+    const targetLhPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
+    try {
+      result.letterheadDetected = existsSync(targetLhPath);
+    } catch {
+      result.letterheadDetected = false;
+    }
+
+    // ── Assemble the 3-part PDF buffer ────────────────────────────────────────
+    const kitBuffer = await buildStructuredKitBuffer(input);
+
+    if (!kitBuffer) {
+      log(`kit assembly failed`);
+      return result;
+    }
+
+    result.coverGenerated = true;
+    result.coverMetadataApplied = true;
+    result.translatedSectionGenerated = true;
+    result.letterheadInjected = result.letterheadDetected;
+    result.originalAppended = input.isOriginalPdf && input.originalFileBuffer.byteLength > 0;
 
     // ── Persist: Supabase Storage with local fallback ─────────────────────────
     const timestamp = Date.now();
@@ -1025,37 +1047,26 @@ export async function assembleStructuredPreviewKit(
         .upload(kitStoragePath, kitBuffer, { contentType: 'application/pdf', upsert: true });
 
       if (uploadErr) {
-        log(`structured preview kit saved to storage: no (${uploadErr.message})`);
+        log(`storage upload failed: ${uploadErr.message}`);
         const localPath = saveLocalFallback(kitBuffer, kitFilename, logPrefix);
-
         if (localPath) {
           result.kitLocalPath = localPath;
           result.assembled = true;
-          log(`structured preview kit saved locally: yes`);
-          log(`structured preview kit local path: ${localPath}`);
-        } else {
-          log(`structured preview kit saved locally: no`);
+          log(`saved locally: ${localPath}`);
         }
       } else {
         const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(kitStoragePath);
         result.assembled = true;
         result.kitPath = kitStoragePath;
         result.kitUrl = urlData?.publicUrl;
-        log(`structured preview kit saved to storage: yes`);
-        log(`structured preview kit storage path: ${kitStoragePath}`);
-        if (result.kitUrl) log(`structured preview kit url: ${result.kitUrl}`);
+        log(`saved to storage: ${result.kitUrl}`);
       }
     } else {
-      log(`structured preview kit saved to storage: no (env vars not set)`);
       const localPath = saveLocalFallback(kitBuffer, kitFilename, logPrefix);
-
       if (localPath) {
         result.kitLocalPath = localPath;
         result.assembled = true;
-        log(`structured preview kit saved locally: yes`);
-        log(`structured preview kit local path: ${localPath}`);
-      } else {
-        log(`structured preview kit saved locally: no`);
+        log(`saved locally (no env vars): ${localPath}`);
       }
     }
   } catch (err) {
