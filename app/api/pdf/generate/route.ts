@@ -357,9 +357,7 @@ export async function POST(req: NextRequest) {
     const sourceLang =
       order.sourceLanguage === 'ES'
         ? 'Spanish'
-        : order.sourceLanguage === 'EN'
-          ? 'English'
-          : 'Portuguese';
+        : 'Portuguese';
 
     drawGridLine('Document Type:', docTypeVal.toUpperCase());
     drawGridLine('Source Language:', sourceLang);
