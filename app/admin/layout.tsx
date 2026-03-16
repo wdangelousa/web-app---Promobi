@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+export const dynamic = 'force-dynamic'
 import { Suspense } from 'react'
 import AdminSidebar from './components/AdminSidebar'
 import PageLoadingFallback from './components/PageLoadingFallback'
