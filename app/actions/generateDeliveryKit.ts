@@ -21,7 +21,9 @@ interface GenerateOptions {
   coverLanguage?: string;
 }
 
-const GOTENBERG_URL = "http://127.0.0.1:3001/forms/chromium/convert/html";
+const GOTENBERG_URL =
+  process.env.GOTENBERG_URL?.trim() ||
+  "http://127.0.0.1:3001/forms/chromium/convert/html";
 
 function sanitizeTranslatedHtml(html: string): string {
   if (!html) return "";
