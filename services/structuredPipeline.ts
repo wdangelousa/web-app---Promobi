@@ -77,8 +77,10 @@ export function isEligibleForStructuredPipeline(documentType: DocumentType): boo
   return (
     FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION && (
       documentType === 'marriage_certificate_brazil' ||
+      documentType === 'birth_certificate_brazil' ||
       documentType === 'course_certificate_landscape' ||
-      documentType === 'academic_diploma_certificate'
+      documentType === 'academic_diploma_certificate' ||
+      documentType === 'academic_transcript'
     )
   );
 }
