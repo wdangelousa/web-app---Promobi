@@ -70,10 +70,6 @@ function escapeHtml(value: string | undefined | null): string {
     .replace(/"/g, '&quot;');
 }
 
-function truncateRaw(s: string, maxLen: number): string {
-  if (!s || s.length <= maxLen) return s || '';
-  return s.slice(0, maxLen).trimEnd() + '\u2026';
-}
 
 // ── Documentary marks ─────────────────────────────────────────────────────────
 
@@ -119,11 +115,7 @@ const VISUAL_TYPE_PRIORITY: Record<string, number> = {
   other_official_mark:  10,
 };
 
-// Max description length for documentary marks in the certificate compact section.
-const MAX_MARK_DESC = 45;
-
-// Max number of documentary marks to render (keeps the section compact and discreet).
-const MAX_MARKS_CERT = 5;
+// Documentary marks must never be truncated — full text required for USCIS fidelity.
 
 function toDisplayLabel(raw: string): string {
   return raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -132,7 +124,7 @@ function toDisplayLabel(raw: string): string {
 function formatMarkLine(el: VisualElement): string {
   const rawType = (el.type || 'other_official_mark').toLowerCase().replace(/[-\s]+/g, '_');
   const label   = VISUAL_LABEL_MAP[rawType] ?? toDisplayLabel(rawType);
-  const desc    = truncateRaw((el.description || '').trim(), MAX_MARK_DESC);
+  const desc    = (el.description || '').trim();
   const isLegNote = el.text === 'illegible' || el.text === 'partially legible';
 
   let content: string;
@@ -141,7 +133,7 @@ function formatMarkLine(el: VisualElement): string {
     const alreadyNoted = descLower.includes('illegible') || descLower.includes('partially legible');
     content = (isLegNote && !alreadyNoted) ? `${desc} (${el.text})` : desc;
   } else if (el.text) {
-    content = truncateRaw(el.text.trim(), MAX_MARK_DESC);
+    content = el.text.trim();
   } else {
     content = 'present';
   }
@@ -155,8 +147,7 @@ function renderVisualMarks(elements: VisualElement[] | undefined): string {
       const pa = VISUAL_TYPE_PRIORITY[(a.type || '').toLowerCase()] ?? 99;
       const pb = VISUAL_TYPE_PRIORITY[(b.type || '').toLowerCase()] ?? 99;
       return pa - pb;
-    })
-    .slice(0, MAX_MARKS_CERT);
+    });
   const items = sorted
     .map(el => `<div class="mark-item">\u2022 ${escapeHtml(formatMarkLine(el))}</div>`)
     .join('');

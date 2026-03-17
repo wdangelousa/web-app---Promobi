@@ -585,9 +585,10 @@ ${isLandscape ? '@page { size: landscape; }' : '@page { size: letter; }'}
 
 .ve-type {
   font-weight: bold;
-  white-space: nowrap;
+  white-space: normal;
   width: 25%;
   color: #333;
+  word-break: break-word;
 }
 
 .ve-desc {

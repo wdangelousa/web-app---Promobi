@@ -106,15 +106,7 @@ function renderPageBreak(): string {
   return '<div class="page-break"></div>';
 }
 
-// Max description length before truncation — keeps visual marks compact.
-const MAX_DESC_STANDARD = 75;
-const MAX_DESC_COMPACT  = 45;
-
-/** Truncates a raw (unescaped) string. Appends '…' when truncated. Never throws. */
-function truncateRaw(s: string, maxLen: number): string {
-  if (!s || s.length <= maxLen) return s || '';
-  return s.slice(0, maxLen).trimEnd() + '\u2026';
-}
+// Documentary marks must never be truncated — full text required for USCIS fidelity.
 
 // ── Documentary marks — label normalization and priority ──────────────────────
 
@@ -176,10 +168,10 @@ function toDisplayLabel(raw: string): string {
  * Appends legibility status if present and not already in description.
  * Falls back to text, then "present".
  */
-function formatVisualLine(el: VisualElement, maxDescLen: number): string {
+function formatVisualLine(el: VisualElement): string {
   const rawType = (el.type || 'other_official_mark').toLowerCase().replace(/[-\s]+/g, '_');
   const label   = VISUAL_LABEL_MAP[rawType] ?? toDisplayLabel(rawType);
-  const desc    = truncateRaw((el.description || '').trim(), maxDescLen);
+  const desc    = (el.description || '').trim();
   const isLegibilityNote = el.text === 'illegible' || el.text === 'partially legible';
 
   let content: string;
@@ -188,7 +180,7 @@ function formatVisualLine(el: VisualElement, maxDescLen: number): string {
     const alreadyNoted = descLower.includes('illegible') || descLower.includes('partially legible');
     content = (isLegibilityNote && !alreadyNoted) ? `${desc} (${el.text})` : desc;
   } else if (el.text) {
-    content = truncateRaw(el.text.trim(), maxDescLen);
+    content = el.text.trim();
   } else {
     content = 'present';
   }
@@ -198,7 +190,7 @@ function formatVisualLine(el: VisualElement, maxDescLen: number): string {
 
 /**
  * Standard-mode documentary marks section.
- * Priority-sorted; all items shown; descriptions truncated to MAX_DESC_STANDARD.
+ * Priority-sorted; all items shown; full descriptions — no truncation.
  */
 function renderVisualElements(elements: VisualElement[] | undefined): string {
   if (!elements || elements.length === 0) return '';
@@ -208,15 +200,14 @@ function renderVisualElements(elements: VisualElement[] | undefined): string {
     return pa - pb;
   });
   const items = sorted.map(el => (
-    `<div class="vm-item">\u2022 ${escapeHtml(formatVisualLine(el, MAX_DESC_STANDARD))}</div>`
+    `<div class="vm-item">\u2022 ${escapeHtml(formatVisualLine(el))}</div>`
   )).join('');
   return renderSection('Documentary Marks', `<div class="vm-list">${items}</div>`);
 }
 
 /**
  * Compact-mode documentary marks section.
- * Priority-sorted; capped at 5 items to prevent overflow on single-page layouts.
- * Descriptions truncated to MAX_DESC_COMPACT.
+ * Priority-sorted; all items shown; full descriptions — no truncation.
  */
 function renderCompactVisualElements(elements: VisualElement[] | undefined): string {
   if (!elements || elements.length === 0) return '';
@@ -225,10 +216,9 @@ function renderCompactVisualElements(elements: VisualElement[] | undefined): str
       const pa = VISUAL_TYPE_PRIORITY[(a.type || '').toLowerCase()] ?? 99;
       const pb = VISUAL_TYPE_PRIORITY[(b.type || '').toLowerCase()] ?? 99;
       return pa - pb;
-    })
-    .slice(0, 5);
+    });
   const items = sorted.map(el => (
-    `<div class="vm-item">\u2022 ${escapeHtml(formatVisualLine(el, MAX_DESC_COMPACT))}</div>`
+    `<div class="vm-item">\u2022 ${escapeHtml(formatVisualLine(el))}</div>`
   )).join('');
   return (
     `<div class="section">` +
