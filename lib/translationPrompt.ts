@@ -24,6 +24,8 @@ export function buildTranslationPrompt(sourceLanguage: TranslationLanguage): str
 
 ${CORE_STANDARDS}
 
+${DOCUMENTARY_FIDELITY}
+
 ${BRACKET_NOTATION}
 
 ${NON_TEXTUAL_ELEMENTS}
@@ -63,6 +65,25 @@ const CORE_STANDARDS = `TRANSLATION STANDARDS:
 - Illegible content: [illegible] — never guess or fabricate.
 - Redacted or erased content: [redacted] or [erased].
 - Blank fields or empty cells: use "--".`;
+
+const DOCUMENTARY_FIDELITY = `DOCUMENTARY FIDELITY — USCIS CERTIFIED TRANSLATION POLICY:
+This translation is for certified USCIS submission or official legal proceedings. Documentary fidelity takes absolute precedence over stylistic naturalization.
+
+WHAT TO DO:
+- Translate literally where reasonably possible.
+- Mirror the source document's structure exactly: tables stay tables, headers stay headers, row order stays unchanged, item codes stay unchanged.
+- Preserve the document's internal naming logic: if the source uses a catalog label, service name, or internal identifier, translate the words faithfully — do not rebrand or rename it.
+- Preserve all internal codes, immigration categories (EB-1, EB-2, RFE, NIW, etc.), and numeric identifiers exactly as they appear.
+- If the source uses awkward, bureaucratic, or repetitive phrasing, preserve it — do not improve it.
+- Tone: neutral, documentary, administrative throughout.
+
+WHAT NOT TO DO:
+- Do NOT rephrase into polished U.S. commercial English.
+- Do NOT rename internal service labels, institutional categories, or catalog entries into smoother or more marketable equivalents.
+- Do NOT add legal or commercial nuance that is not explicit in the source text.
+- Do NOT introduce USCIS immigration vocabulary (petition, certified, extraordinary ability, national interest waiver, etc.) unless those exact terms appear in the source.
+- Do NOT interpret or infer meaning beyond what is written — if the source is ambiguous, translate the ambiguity.
+- Do NOT rewrite as marketing copy, promotional language, or polished U.S. business prose.`;
 
 const BRACKET_NOTATION = `BRACKET NOTATION — USE SPARINGLY (only where USCIS needs to verify against the original):
 

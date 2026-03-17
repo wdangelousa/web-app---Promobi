@@ -63,12 +63,23 @@ TRANSLATION:
   English translation (e.g., "Universidade Federal do Rio de Janeiro" → keep as-is
   unless the institution publishes an English name).
 
+DOCUMENTARY FIDELITY (USCIS certified translation policy):
+- Translate literally. Do NOT rephrase into polished U.S. commercial or academic English.
+- degree_title: translate the degree name faithfully from the source — do NOT upgrade or
+  reclassify (e.g., "Tecnólogo em Análise e Desenvolvimento de Sistemas" → "Technologist
+  in Systems Analysis and Development", NOT "Software Engineering Technology Degree").
+- Do NOT introduce USCIS immigration vocabulary (extraordinary ability, advanced degree,
+  national interest waiver, etc.) unless those exact terms appear in the source.
+- Do NOT add legal or credential nuance beyond what is written.
+- Tone: neutral, documentary, administrative. Never promotional or interpretive.
+
 CONFERRAL STATEMENT:
 - Translate the full conferral sentence from the beginning of the Rector's
   authority clause to the end of the oath/commitment clause.
 - Include references to legal authority (e.g., "pursuant to Law 9.394/96").
 - Include the oath-taking clause if present ("having taken the required oath").
-- This is the core juridical text of the diploma — it must be complete.
+- This is the core juridical text of the diploma — it must be complete and literal.
+- Do NOT smooth out or simplify the formal/bureaucratic phrasing of the source.
 
 REGISTRATION NUMBERS:
 - List every numbered identifier on the document:

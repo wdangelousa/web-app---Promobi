@@ -59,6 +59,18 @@ TRANSLATION:
 - Preserve numbers exactly: CNS codes, registration numbers, R$ amounts.
 - Do NOT translate proper institution names unless they have an official English name.
 
+DOCUMENTARY FIDELITY (USCIS certified translation policy):
+- Translate literally. Do NOT rephrase into polished U.S. commercial or promotional English.
+- completion_statement: translate the award/recognition sentence faithfully — do NOT
+  add promotional framing, elevate the tone, or introduce language not in the source.
+  If the source says "certifica que participou" → "certifies that [name] participated",
+  NOT "proudly certifies that [name] successfully completed".
+- course_or_program_name: translate the course/event name word-for-word — do NOT
+  rebrand or reframe into a standard U.S. course title.
+- Do NOT introduce USCIS vocabulary (training, certification, credentialed, etc.)
+  unless those exact terms appear in the source.
+- Tone: neutral, documentary, administrative. Never promotional.
+
 RECIPIENT NAME:
 - Transcribe the recipient name exactly as it appears.
 - If the name was filled in by hand and is legible, transcribe it as-is.

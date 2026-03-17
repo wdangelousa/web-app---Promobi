@@ -32,6 +32,13 @@ TRANSLATION:
 - Preserve law references exactly: "Law nº 6.015/73" — never alter.
 - Do NOT translate "REPÚBLICA FEDERATIVA DO BRASIL".
 
+DOCUMENTARY FIDELITY (USCIS certified translation policy):
+- Translate literally. Do NOT rephrase into polished U.S. commercial or legal English.
+- Do NOT add nuance, legal weight, or interpretation not present in the source text.
+- Do NOT introduce USCIS immigration vocabulary unless those exact terms appear in the source.
+- Preserve internal naming, labels, and institutional terminology faithfully — do not rebrand.
+- Tone: neutral, documentary, administrative. Never promotional or interpretive.
+
 DATES:
 - Convert to American format: "December 10, 2022".
 - Inline sub-fields: day="10", month="12", year="2022" (digits only, no words).

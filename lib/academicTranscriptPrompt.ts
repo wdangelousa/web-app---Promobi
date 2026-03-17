@@ -58,6 +58,15 @@ TRANSLATION:
 - Preserve all numbers exactly: registration numbers, grades, CPF values.
 - Preserve subject names faithfully (translate from source language to English).
 
+DOCUMENTARY FIDELITY (USCIS certified translation policy):
+- Translate literally. Do NOT rephrase into polished U.S. academic English.
+- Subject names: translate the words in the source faithfully — do NOT substitute
+  equivalent U.S. course names or standardized curriculum titles.
+- Do NOT add or infer credit system equivalences (e.g., do not convert hours to
+  U.S. credits or add semester/quarter equivalents).
+- Do NOT introduce USCIS vocabulary unless those terms appear in the source.
+- Tone: neutral, documentary, administrative.
+
 SUBJECTS TABLE:
 - Extract EVERY subject row without exception — do not summarize or skip.
 - If the transcript has 50 subjects, extract all 50.

@@ -65,6 +65,13 @@ TRANSLATION:
 - Dates: translate to American format — "Month DD, YYYY" (e.g., "March 15, 2001").
 - Do NOT translate personal names under any circumstances.
 
+DOCUMENTARY FIDELITY (USCIS certified translation policy):
+- Translate literally. Do NOT rephrase into polished U.S. legal or administrative English.
+- Do NOT add interpretive nuance or legal weight not present in the source text.
+- Do NOT introduce USCIS immigration vocabulary unless those exact terms appear in the source.
+- Preserve all institutional labels, field names, and internal codes faithfully.
+- Tone: neutral, documentary, administrative. Never interpretive or promotional.
+
 CHILD DATA:
 - Extract full name, date of birth, time of birth (if present), place of birth,
   gender, and nationality.
