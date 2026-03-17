@@ -2,10 +2,30 @@
 
 import prisma from '@/lib/prisma'
 import { PDFDocument } from 'pdf-lib'
+import JSZip from 'jszip'
 
 function isImageUrl(url: string): boolean {
     const lower = url.toLowerCase().split('?')[0]
     return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')
+}
+
+function isDocxUrl(url: string): boolean {
+    const lower = url.toLowerCase().split('?')[0]
+    return lower.endsWith('.docx') || lower.endsWith('.doc')
+}
+
+async function getDocxPageCount(buf: Buffer): Promise<number> {
+    try {
+        const zip = await JSZip.loadAsync(buf)
+        const appXml = zip.file('docProps/app.xml')
+        if (!appXml) return 1
+        const text = await appXml.async('text')
+        const match = text.match(/<Pages>(\d+)<\/Pages>/)
+        if (match) return Math.max(1, parseInt(match[1], 10))
+    } catch {
+        // ignore — fall through to default
+    }
+    return 1
 }
 
 // ─── updatePageRotation ───────────────────────────────────────────────────────
@@ -57,6 +77,11 @@ export async function getDocumentPageCount(docId: number): Promise<number> {
         if (!res.ok) return 1
 
         const buf = Buffer.from(await res.arrayBuffer())
+
+        if (isDocxUrl(doc.originalFileUrl)) {
+            return getDocxPageCount(buf)
+        }
+
         const pdf = await PDFDocument.load(buf, { ignoreEncryption: true })
         return pdf.getPageCount()
     } catch {
