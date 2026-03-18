@@ -15,7 +15,7 @@
  * orientation and page_count are always set to "unknown" / null by Claude
  * and overwritten by the pipeline from PDF metadata.
  *
- * Used ONLY by app/actions/previewStructuredKit.ts.
+ * Used by the shared structured renderer for preview and official delivery.
  * Does NOT affect the legacy pipeline.
  * ─────────────────────────────────────────────────────────────────────────────
  */

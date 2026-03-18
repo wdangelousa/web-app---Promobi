@@ -14,16 +14,11 @@
  *   3. Classifies the document type from available signals (using
  *      effectiveTranslatedText, not raw doc.translatedText, so editor content
  *      is factored in when the operator hasn't saved yet).
- *   4. For eligible structured document types:
- *        - marriage_certificate_brazil    → marriageCertRenderer
- *        - birth_certificate_brazil       → birthCertificateRenderer
- *        - academic_diploma_certificate   → academicDiplomaRenderer
- *        - academic_transcript            → academicTranscriptRenderer
- *        - course_certificate_landscape   → certificateLandscapeRenderer
- *        All five: re-extract structured JSON via Claude API, then render.
- *   5. For non-eligible document types: falls back to the legacy simple HTML
- *      wrapper around effectiveTranslatedText.
- *   6. Calls assembleStructuredPreviewKit with the correct structured HTML.
+ *   4. If the family is supported, it MUST render through the shared
+ *      structured renderer. Legacy output is blocked for that family.
+ *   5. If the family is unknown/unsupported, it uses the legacy translated
+ *      HTML wrapper as the only allowed fallback.
+ *   6. Calls assembleStructuredPreviewKit with the resolved HTML.
  *   7. Returns the preview kit URL.
  *
  * Guarantees:
@@ -42,132 +37,14 @@ import {
 } from '@/services/structuredPreviewKit';
 import { classifyDocument } from '@/services/documentClassifier';
 import {
-  buildStructuredMarriageCertSystemPrompt,
-  buildStructuredUserMessage,
-} from '@/lib/structuredTranslationPrompt';
-import {
-  buildCertificateLandscapeSystemPrompt,
-  buildCertificateLandscapeUserMessage,
-} from '@/lib/certificateLandscapePrompt';
-import {
-  buildAcademicDiplomaSystemPrompt,
-  buildAcademicDiplomaUserMessage,
-} from '@/lib/academicDiplomaPrompt';
-import {
-  buildAcademicTranscriptSystemPrompt,
-  buildAcademicTranscriptUserMessage,
-} from '@/lib/academicTranscriptPrompt';
-import {
-  buildBirthCertificateSystemPrompt,
-  buildBirthCertificateUserMessage,
-} from '@/lib/birthCertificatePrompt';
-import { renderMarriageCertificateHtml } from '@/lib/marriageCertRenderer';
-import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
-import { renderAcademicDiplomaHtml } from '@/lib/academicDiplomaRenderer';
-import { renderAcademicTranscriptHtml } from '@/lib/academicTranscriptRenderer';
-import { renderBirthCertificateHtml } from '@/lib/birthCertificateRenderer';
-import {
   detectOrientationFromPdfDoc,
   type DocumentOrientation,
 } from '@/lib/documentOrientationDetector';
-import type { MarriageCertificateBrazil } from '@/types/marriageCertificate';
-import type { CourseCertificateLandscape } from '@/types/certificateLandscape';
-import type { AcademicDiplomaCertificate } from '@/types/academicDiploma';
-import type { AcademicTranscript } from '@/types/academicTranscript';
-import type { BirthCertificateBrazil } from '@/types/birthCertificate';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function stripMarkdownFences(raw: string): string {
-  return raw
-    .replace(/^```json?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
-}
-
-/**
- * Calls the Claude API with the given system prompt, message content, and
- * max_tokens. Returns the raw text response, or null on any failure.
- * Never throws.
- */
-async function callClaudeForJson(
-  client: Anthropic,
-  systemPrompt: string,
-  messageContent: Anthropic.MessageParam['content'],
-  maxTokens: number,
-  logPrefix: string,
-): Promise<string | null> {
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: messageContent }],
-    });
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '';
-    if (!raw) {
-      console.warn(`${logPrefix} — Claude returned empty response`);
-      return null;
-    }
-    return raw;
-  } catch (err) {
-    console.error(`${logPrefix} — Claude API error: ${err}`);
-    return null;
-  }
-}
-
-/**
- * Builds message content for Claude from a file buffer.
- * Mirrors the logic used in structuredPipeline.ts.
- */
-function buildMessageContent(
-  fileBuffer: ArrayBuffer,
-  fileUrl: string,
-  contentType: string,
-  userMessage: string,
-): Anthropic.MessageParam['content'] {
-  const base64Data = Buffer.from(fileBuffer).toString('base64');
-  const isPdf =
-    contentType.includes('pdf') || fileUrl.toLowerCase().includes('.pdf');
-  const isImage =
-    contentType.includes('image/') ||
-    /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
-
-  if (isPdf) {
-    return [
-      {
-        type: 'document',
-        source: { type: 'base64', media_type: 'application/pdf', data: base64Data },
-      } as any,
-      { type: 'text', text: userMessage },
-    ];
-  }
-
-  if (isImage) {
-    const imageMediaType: 'image/png' | 'image/gif' | 'image/webp' | 'image/jpeg' =
-      contentType.includes('png')  ? 'image/png'  :
-      contentType.includes('gif')  ? 'image/gif'  :
-      contentType.includes('webp') ? 'image/webp' :
-      'image/jpeg';
-
-    return [
-      {
-        type: 'image',
-        source: { type: 'base64', media_type: imageMediaType, data: base64Data },
-      },
-      { type: 'text', text: userMessage },
-    ];
-  }
-
-  // Plain text fallback
-  const textContent = Buffer.from(fileBuffer).toString('utf-8');
-  return [
-    {
-      type: 'text',
-      text: `${userMessage}\n\n<source_document>\n${textContent}\n</source_document>`,
-    },
-  ];
-}
+import {
+  formatStructuredRenderingFailureMessage,
+  isSupportedStructuredDocumentType,
+  renderSupportedStructuredDocument,
+} from '@/services/structuredDocumentRenderer';
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -277,8 +154,12 @@ export async function previewStructuredKit(
     // classifier has access to the current translation even when it hasn't been
     // saved yet (e.g. documents with externalTranslationUrl set).
 
+    const documentLabelHint =
+      [doc.exactNameOnDoc, doc.docType].filter(Boolean).join(' ').trim() || undefined;
+
     const classification = classifyDocument({
       fileUrl: doc.originalFileUrl ?? undefined,
+      documentLabel: documentLabelHint,
       translatedText: effectiveTranslatedText ?? '',
       sourceLanguage: doc.sourceLanguage ?? undefined,
     });
@@ -288,272 +169,47 @@ export async function previewStructuredKit(
       `(confidence: ${classification.confidence})`,
     );
 
-    // ── Step 4: Generate structured HTML via the correct renderer ───────────
+    // ── Step 4: Resolve preview HTML under the global structured policy ─────
     //
-    // For eligible document types, re-run the Claude structured extraction and
-    // pass the result through the dedicated renderer.
+    // Supported family:
+    //   structured render succeeds → use it
+    //   structured render fails    → explicit product error
+    //   legacy fallback            → forbidden
     //
-    // For all other document types, fall back to the simple HTML wrapper
-    // around effectiveTranslatedText (legacy behaviour).
+    // Unsupported / unknown family:
+    //   legacy translated HTML remains allowed.
 
-    let structuredHtml: string | null = null;
+    let structuredHtml: string;
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
     // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
-
-    const isMarriageCert      = classification.documentType === 'marriage_certificate_brazil';
-    const isBirthCert         = classification.documentType === 'birth_certificate_brazil';
-    const isAcademicDiploma   = classification.documentType === 'academic_diploma_certificate';
-    const isAcademicTranscript = classification.documentType === 'academic_transcript';
-    const isCertLandscape     = classification.documentType === 'course_certificate_landscape';
-    const isEligible          = isMarriageCert || isBirthCert || isAcademicDiploma || isAcademicTranscript || isCertLandscape;
-
-    if (isEligible && doc.originalFileUrl && originalFileBuffer.byteLength > 0) {
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      if (isMarriageCert) {
-        // ── Marriage certificate extraction ───────────────────────────────
-        const messageContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildStructuredUserMessage(),
-        );
-
-        const rawJson = await callClaudeForJson(
+    if (isSupportedStructuredDocumentType(classification.documentType)) {
+      try {
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const resolved = await renderSupportedStructuredDocument({
           client,
-          buildStructuredMarriageCertSystemPrompt(),
-          messageContent,
-          8192,
-          `${logPrefix} [marriage-cert]`,
-        );
-
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as MarriageCertificateBrazil;
-            structuredHtml = renderMarriageCertificateHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: detectedOrientation === 'landscape' ? 'landscape' :
-                           detectedOrientation === 'portrait'  ? 'portrait'  :
-                           'unknown',
-            });
-            console.log(
-              `${logPrefix} — structured renderer: marriageCertRenderer ` +
-              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
-              `orientation: ${detectedOrientation})`,
-            );
-          } catch (err) {
-            console.error(`${logPrefix} — marriage cert render failed: ${err}`);
-          }
-        } else {
-          console.warn(`${logPrefix} — marriage cert extraction failed`);
-        }
-
-      } else if (isCertLandscape) {
-        // ── Course certificate landscape extraction ───────────────────────
-        const messageContent = buildMessageContent(
+          documentType: classification.documentType,
           originalFileBuffer,
-          doc.originalFileUrl,
+          originalFileUrl: doc.originalFileUrl,
           contentType,
-          buildCertificateLandscapeUserMessage(),
+          sourcePageCount,
+          detectedOrientation,
+          logPrefix,
+        });
+
+        structuredHtml = resolved.structuredHtml;
+        orientationForKit = resolved.orientationForKit;
+
+        console.log(
+          `${logPrefix} — structured renderer enforced for ${classification.documentType} ` +
+          `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, orientation: ${orientationForKit})`,
         );
-
-        const rawJson = await callClaudeForJson(
-          client,
-          buildCertificateLandscapeSystemPrompt(),
-          messageContent,
-          4096,
-          `${logPrefix} [cert-landscape]`,
-        );
-
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as CourseCertificateLandscape;
-
-            // Apply the same orientation override logic as structuredPipeline.ts:
-            // single-page portrait PDF is likely a scanner artifact for landscape certs.
-            let effectiveOrientation: DocumentOrientation = detectedOrientation;
-            if (detectedOrientation === 'portrait' && sourcePageCount === 1) {
-              effectiveOrientation = 'landscape';
-            } else if (detectedOrientation === 'unknown') {
-              effectiveOrientation = 'landscape';
-            }
-            orientationForKit = effectiveOrientation;
-
-            // Inject pipeline-detected metadata (mirrors structuredPipeline.ts)
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-
-            structuredHtml = renderCertificateLandscapeHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: effectiveOrientation,
-            });
-            console.log(
-              `${logPrefix} — structured renderer: certificateLandscapeRenderer ` +
-              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
-              `effective orientation: ${effectiveOrientation})`,
-            );
-          } catch (err) {
-            console.error(`${logPrefix} — cert landscape render failed: ${err}`);
-          }
-        } else {
-          console.warn(`${logPrefix} — cert landscape extraction failed`);
-        }
-
-      } else if (isAcademicDiploma) {
-        // ── Academic diploma / degree certificate extraction ───────────────
-        //
-        // Orientation policy for academic diplomas:
-        //   landscape → landscape (keep detected)
-        //   portrait  → portrait  (diplomas can legitimately be portrait — no override)
-        //   unknown   → landscape (landscape is the more common Brazilian diploma format)
-        let effectiveOrientation: DocumentOrientation = detectedOrientation;
-        if (detectedOrientation === 'unknown') {
-          effectiveOrientation = 'landscape';
-        }
-        orientationForKit = effectiveOrientation;
-
-        const messageContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildAcademicDiplomaUserMessage(),
-        );
-
-        const rawJson = await callClaudeForJson(
-          client,
-          buildAcademicDiplomaSystemPrompt(),
-          messageContent,
-          8192,
-          `${logPrefix} [academic-diploma]`,
-        );
-
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicDiplomaCertificate;
-
-            // Inject pipeline-detected metadata (mirrors structuredPipeline.ts pattern)
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-
-            structuredHtml = renderAcademicDiplomaHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: effectiveOrientation,
-            });
-            console.log(
-              `${logPrefix} — structured renderer: academicDiplomaRenderer ` +
-              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
-              `effective orientation: ${effectiveOrientation})`,
-            );
-          } catch (err) {
-            console.error(`${logPrefix} — academic diploma render failed: ${err}`);
-          }
-        } else {
-          console.warn(`${logPrefix} — academic diploma extraction failed`);
-        }
-
-      } else if (isAcademicTranscript) {
-        // ── Academic transcript / school record extraction ────────────────
-        //
-        // Orientation policy:
-        //   portrait  → portrait  (most transcripts are portrait)
-        //   landscape → landscape (some multi-page institutional transcripts)
-        //   unknown   → portrait  (conservative default for transcripts)
-        // No forced override — use detected orientation directly.
-
-        const messageContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildAcademicTranscriptUserMessage(),
-        );
-
-        const rawJson = await callClaudeForJson(
-          client,
-          buildAcademicTranscriptSystemPrompt(),
-          messageContent,
-          8192,
-          `${logPrefix} [academic-transcript]`,
-        );
-
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicTranscript;
-
-            // Inject pipeline-detected metadata
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-
-            structuredHtml = renderAcademicTranscriptHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: detectedOrientation,
-            });
-            console.log(
-              `${logPrefix} — structured renderer: academicTranscriptRenderer ` +
-              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
-              `orientation: ${detectedOrientation})`,
-            );
-          } catch (err) {
-            console.error(`${logPrefix} — academic transcript render failed: ${err}`);
-          }
-        } else {
-          console.warn(`${logPrefix} — academic transcript extraction failed`);
-        }
-
-      } else {
-        // ── Birth certificate extraction ──────────────────────────────────
-        //
-        // Orientation policy: Brazilian birth certs are always portrait.
-        // No orientation override needed — use detected value directly.
-        // (isBirthCert must be true here since isEligible was true and no other
-        //  branch matched.)
-
-        const messageContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildBirthCertificateUserMessage(),
-        );
-
-        const rawJson = await callClaudeForJson(
-          client,
-          buildBirthCertificateSystemPrompt(),
-          messageContent,
-          6144,
-          `${logPrefix} [birth-cert]`,
-        );
-
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as BirthCertificateBrazil;
-
-            // Inject pipeline-detected metadata
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-
-            structuredHtml = renderBirthCertificateHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: detectedOrientation,
-            });
-            console.log(
-              `${logPrefix} — structured renderer: birthCertificateRenderer ` +
-              `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, ` +
-              `orientation: ${detectedOrientation})`,
-            );
-          } catch (err) {
-            console.error(`${logPrefix} — birth cert render failed: ${err}`);
-          }
-        } else {
-          console.warn(`${logPrefix} — birth cert extraction failed`);
-        }
+      } catch (err) {
+        return {
+          success: false,
+          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
+        };
       }
-
-    } else if (isEligible) {
-      // Eligible family but original file is missing — structured rendering requires it.
-      return {
-        success: false,
-        error: `Structured rendering is required for "${classification.documentType}" but the original file is not available. Re-upload the original document and try again.`,
-      };
     } else {
       // Truly unsupported family (unknown) — legacy is the correct and only path.
       console.log(
@@ -569,15 +225,6 @@ export async function previewStructuredKit(
     }
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
-    //
-    // Structured-first enforcement: if this family was eligible but extraction
-    // or rendering failed, return an error rather than silently producing legacy output.
-    if (structuredHtml === null) {
-      return {
-        success: false,
-        error: `Structured rendering failed for "${classification.documentType}" — extraction or rendering error. Check server logs for details.`,
-      };
-    }
 
     // Cover logic, original-append logic, letterhead PNG overlay, and Gotenberg
     // margins are all handled inside assembleStructuredPreviewKit — unchanged.
@@ -598,7 +245,9 @@ export async function previewStructuredKit(
     if (!kit.assembled) {
       return {
         success: false,
-        error: 'Preview kit assembly failed — check server logs for details',
+        error: isSupportedStructuredDocumentType(classification.documentType)
+          ? `Structured preview kit assembly failed for "${classification.documentType}". Legacy fallback is blocked for supported document families. Check server logs for Gotenberg/assembly details.`
+          : 'Preview kit assembly failed — check server logs for details',
       };
     }
 

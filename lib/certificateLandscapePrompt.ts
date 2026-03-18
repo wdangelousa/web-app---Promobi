@@ -19,7 +19,7 @@
  * metadata — not by Claude. Claude sets them to "unknown" / null and the
  * pipeline overwrites them after parsing.
  *
- * Used ONLY by services/structuredPipeline.ts.
+ * Used by the shared structured renderer and structured pipeline.
  * Does NOT affect the legacy pipeline.
  * ─────────────────────────────────────────────────────────────────────────────
  */

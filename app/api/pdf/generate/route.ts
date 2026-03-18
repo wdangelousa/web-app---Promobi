@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
+import { classifyDocument } from '@/services/documentClassifier';
+import { isSupportedStructuredDocumentType } from '@/services/structuredDocumentRenderer';
 
 const GOTENBERG_URL = 'http://127.0.0.1:3001/forms/chromium/convert/html';
 
@@ -297,6 +299,32 @@ export async function POST(req: NextRequest) {
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    const supportedDocs = order.documents
+      .map((doc) => {
+        const documentLabelHint =
+          [doc.exactNameOnDoc, doc.docType].filter(Boolean).join(' ').trim() || undefined;
+        const classification = classifyDocument({
+          fileUrl: doc.originalFileUrl ?? undefined,
+          documentLabel: documentLabelHint,
+          translatedText: doc.translatedText ?? undefined,
+          sourceLanguage: doc.sourceLanguage ?? order.sourceLanguage ?? undefined,
+        });
+
+        return isSupportedStructuredDocumentType(classification.documentType)
+          ? `${doc.exactNameOnDoc ?? doc.docType ?? `#${doc.id}`} (${classification.documentType})`
+          : null;
+      })
+      .filter(Boolean);
+
+    if (supportedDocs.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error:
+          'Legacy order-level PDF generation is blocked for supported structured document families. ' +
+          `Detected: ${supportedDocs.join(', ')}. Use the structured workbench delivery flow instead.`,
+      }, { status: 409 });
     }
 
     const PAGE_WIDTH = 612;

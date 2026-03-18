@@ -6,7 +6,8 @@
  * Strategy: heuristic-only, zero new dependencies, never throws.
  * Signal priority (highest → lowest reliability):
  *   1. Translated English text   — canonical markers produced by OUTPUT_RULES in translationPrompt.ts
- *   2. Source file URL/filename  — fallback when translation is unavailable
+ *   2. Original document label   — operator-visible filename/title when available
+ *   3. Source file URL/filename  — fallback when translation is unavailable
  *
  * Current supported types:
  *   - marriage_certificate_brazil    (certidão de casamento)
@@ -47,6 +48,8 @@ export interface ClassificationResult {
 export interface ClassifierInput {
   /** Storage URL — filename may hint at document type. */
   fileUrl?: string;
+  /** Original filename or operator-facing document label, if available. */
+  documentLabel?: string;
   /** English translation output from Claude — the most reliable signal. */
   translatedText?: string;
   /** Source language code, e.g. 'PT_BR' | 'pt' | 'ES' | 'es'. */
@@ -69,7 +72,13 @@ export function classifyDocument(input: ClassifierInput): ClassificationResult {
       if (result.documentType !== 'unknown') return result;
     }
 
-    // Signal 2: filename / URL hint
+    // Signal 2: original filename / visible label hint
+    if (input.documentLabel) {
+      const result = classifyFromUrl(input.documentLabel);
+      if (result.documentType !== 'unknown') return result;
+    }
+
+    // Signal 3: filename / storage URL hint
     if (input.fileUrl) {
       const result = classifyFromUrl(input.fileUrl);
       if (result.documentType !== 'unknown') return result;

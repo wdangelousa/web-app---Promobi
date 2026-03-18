@@ -11,39 +11,14 @@ import {
   buildStructuredKitBuffer,
 } from "@/services/structuredPreviewKit";
 import {
-  buildStructuredMarriageCertSystemPrompt,
-  buildStructuredUserMessage,
-} from "@/lib/structuredTranslationPrompt";
-import {
-  buildCertificateLandscapeSystemPrompt,
-  buildCertificateLandscapeUserMessage,
-} from "@/lib/certificateLandscapePrompt";
-import {
-  buildAcademicDiplomaSystemPrompt,
-  buildAcademicDiplomaUserMessage,
-} from "@/lib/academicDiplomaPrompt";
-import {
-  buildAcademicTranscriptSystemPrompt,
-  buildAcademicTranscriptUserMessage,
-} from "@/lib/academicTranscriptPrompt";
-import {
-  buildBirthCertificateSystemPrompt,
-  buildBirthCertificateUserMessage,
-} from "@/lib/birthCertificatePrompt";
-import { renderMarriageCertificateHtml } from "@/lib/marriageCertRenderer";
-import { renderCertificateLandscapeHtml } from "@/lib/certificateLandscapeRenderer";
-import { renderAcademicDiplomaHtml } from "@/lib/academicDiplomaRenderer";
-import { renderAcademicTranscriptHtml } from "@/lib/academicTranscriptRenderer";
-import { renderBirthCertificateHtml } from "@/lib/birthCertificateRenderer";
-import {
   detectOrientationFromPdfDoc,
   type DocumentOrientation,
 } from "@/lib/documentOrientationDetector";
-import type { MarriageCertificateBrazil } from "@/types/marriageCertificate";
-import type { CourseCertificateLandscape } from "@/types/certificateLandscape";
-import type { AcademicDiplomaCertificate } from "@/types/academicDiploma";
-import type { AcademicTranscript } from "@/types/academicTranscript";
-import type { BirthCertificateBrazil } from "@/types/birthCertificate";
+import {
+  formatStructuredRenderingFailureMessage,
+  isSupportedStructuredDocumentType,
+  renderSupportedStructuredDocument,
+} from "@/services/structuredDocumentRenderer";
 
 interface DeliveryKitResult {
   success: boolean;
@@ -95,8 +70,8 @@ async function loadLetterheadBytes(): Promise<Buffer> {
 }
 
 /**
- * Legacy linear renderer — used only when document family is unsupported
- * or when structured extraction/assembly fails completely.
+ * Legacy linear renderer — used only when the document family is truly
+ * unsupported/unknown and no structured renderer exists.
  */
 async function renderTranslatedSectionWithLetterhead(
   translatedHtml: string
@@ -184,92 +159,6 @@ async function renderTranslatedSectionWithLetterhead(
   return Buffer.from(await finalPdf.save());
 }
 
-// ── Structured extraction helpers ─────────────────────────────────────────────
-
-function stripMarkdownFences(raw: string): string {
-  return raw
-    .replace(/^```json?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-}
-
-async function callClaudeForJson(
-  client: Anthropic,
-  systemPrompt: string,
-  messageContent: Anthropic.MessageParam["content"],
-  maxTokens: number,
-  logPrefix: string
-): Promise<string | null> {
-  try {
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: messageContent }],
-    });
-    const raw =
-      response.content[0].type === "text" ? response.content[0].text : "";
-    if (!raw) {
-      console.warn(`${logPrefix} — Claude returned empty response`);
-      return null;
-    }
-    return raw;
-  } catch (err) {
-    console.error(`${logPrefix} — Claude API error: ${err}`);
-    return null;
-  }
-}
-
-function buildMessageContent(
-  fileBuffer: ArrayBuffer,
-  fileUrl: string,
-  contentType: string,
-  userMessage: string
-): Anthropic.MessageParam["content"] {
-  const base64Data = Buffer.from(fileBuffer).toString("base64");
-  const isPdf =
-    contentType.includes("pdf") || fileUrl.toLowerCase().includes(".pdf");
-  const isImage =
-    contentType.includes("image/") ||
-    /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
-
-  if (isPdf) {
-    return [
-      {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: base64Data },
-      } as any,
-      { type: "text", text: userMessage },
-    ];
-  }
-
-  if (isImage) {
-    const imageMediaType: "image/png" | "image/gif" | "image/webp" | "image/jpeg" =
-      contentType.includes("png")
-        ? "image/png"
-        : contentType.includes("gif")
-        ? "image/gif"
-        : contentType.includes("webp")
-        ? "image/webp"
-        : "image/jpeg";
-    return [
-      {
-        type: "image",
-        source: { type: "base64", media_type: imageMediaType, data: base64Data },
-      },
-      { type: "text", text: userMessage },
-    ];
-  }
-
-  const textContent = Buffer.from(fileBuffer).toString("utf-8");
-  return [
-    {
-      type: "text",
-      text: `${userMessage}\n\n<source_document>\n${textContent}\n</source_document>`,
-    },
-  ];
-}
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function generateDeliveryKit(
@@ -346,8 +235,12 @@ export async function generateDeliveryKit(
     }
 
     // ── Step 3: Classify document type ────────────────────────────────────────
+    const documentLabelHint =
+      [doc.exactNameOnDoc, doc.docType].filter(Boolean).join(" ").trim() || undefined;
+
     const classification = classifyDocument({
       fileUrl: doc.originalFileUrl ?? undefined,
+      documentLabel: documentLabelHint,
       translatedText: doc.translatedText,
       sourceLanguage: doc.sourceLanguage ?? undefined,
     });
@@ -356,183 +249,32 @@ export async function generateDeliveryKit(
       `${logPrefix} — classified: ${classification.documentType} (${classification.confidence})`
     );
 
-    const isMarriageCert       = classification.documentType === "marriage_certificate_brazil";
-    const isBirthCert          = classification.documentType === "birth_certificate_brazil";
-    const isAcademicDiploma    = classification.documentType === "academic_diploma_certificate";
-    const isAcademicTranscript = classification.documentType === "academic_transcript";
-    const isCertLandscape      = classification.documentType === "course_certificate_landscape";
-    const isEligible           = isMarriageCert || isBirthCert || isAcademicDiploma || isAcademicTranscript || isCertLandscape;
+    // ── Step 4: Resolve delivery PDF under the global structured policy ──────
+    let finalPdfBuffer: Buffer;
 
-    // ── Step 4: Structured extraction + rendering ─────────────────────────────
-    let finalPdfBuffer: Buffer | null = null;
-
-    if (isEligible && doc.originalFileUrl && originalFileBuffer.byteLength > 0) {
-      let structuredHtml: string | null = null;
+    if (isSupportedStructuredDocumentType(classification.documentType)) {
       let orientationForKit: DocumentOrientation = detectedOrientation;
 
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      if (isMarriageCert) {
-        const msgContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildStructuredUserMessage()
-        );
-        const rawJson = await callClaudeForJson(
+      try {
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const resolved = await renderSupportedStructuredDocument({
           client,
-          buildStructuredMarriageCertSystemPrompt(),
-          msgContent,
-          8192,
-          `${logPrefix} [marriage-cert]`
-        );
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as MarriageCertificateBrazil;
-            structuredHtml = renderMarriageCertificateHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation:
-                detectedOrientation === "landscape"
-                  ? "landscape"
-                  : detectedOrientation === "portrait"
-                  ? "portrait"
-                  : "unknown",
-            });
-          } catch (e) {
-            console.error(`${logPrefix} — marriage cert render failed: ${e}`);
-          }
-        }
-
-      } else if (isCertLandscape) {
-        const msgContent = buildMessageContent(
+          documentType: classification.documentType,
           originalFileBuffer,
-          doc.originalFileUrl,
+          originalFileUrl: doc.originalFileUrl,
           contentType,
-          buildCertificateLandscapeUserMessage()
-        );
-        const rawJson = await callClaudeForJson(
-          client,
-          buildCertificateLandscapeSystemPrompt(),
-          msgContent,
-          4096,
-          `${logPrefix} [cert-landscape]`
-        );
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as CourseCertificateLandscape;
-            let effectiveOrientation: DocumentOrientation = detectedOrientation;
-            if (detectedOrientation === "portrait" && sourcePageCount === 1) {
-              effectiveOrientation = "landscape";
-            } else if (detectedOrientation === "unknown") {
-              effectiveOrientation = "landscape";
-            }
-            orientationForKit = effectiveOrientation;
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-            structuredHtml = renderCertificateLandscapeHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: effectiveOrientation,
-            });
-          } catch (e) {
-            console.error(`${logPrefix} — cert landscape render failed: ${e}`);
-          }
-        }
+          sourcePageCount,
+          detectedOrientation,
+          logPrefix,
+        });
 
-      } else if (isAcademicDiploma) {
-        const effectiveOrientation: DocumentOrientation =
-          detectedOrientation === "unknown" ? "landscape" : detectedOrientation;
-        orientationForKit = effectiveOrientation;
-        const msgContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildAcademicDiplomaUserMessage()
-        );
-        const rawJson = await callClaudeForJson(
-          client,
-          buildAcademicDiplomaSystemPrompt(),
-          msgContent,
-          8192,
-          `${logPrefix} [academic-diploma]`
-        );
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicDiplomaCertificate;
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-            structuredHtml = renderAcademicDiplomaHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: effectiveOrientation,
-            });
-          } catch (e) {
-            console.error(`${logPrefix} — academic diploma render failed: ${e}`);
-          }
-        }
+        orientationForKit = resolved.orientationForKit;
 
-      } else if (isAcademicTranscript) {
-        const msgContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildAcademicTranscriptUserMessage()
-        );
-        const rawJson = await callClaudeForJson(
-          client,
-          buildAcademicTranscriptSystemPrompt(),
-          msgContent,
-          8192,
-          `${logPrefix} [academic-transcript]`
-        );
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as AcademicTranscript;
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-            structuredHtml = renderAcademicTranscriptHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: detectedOrientation,
-            });
-          } catch (e) {
-            console.error(`${logPrefix} — academic transcript render failed: ${e}`);
-          }
-        }
-
-      } else {
-        // isBirthCert
-        const msgContent = buildMessageContent(
-          originalFileBuffer,
-          doc.originalFileUrl,
-          contentType,
-          buildBirthCertificateUserMessage()
-        );
-        const rawJson = await callClaudeForJson(
-          client,
-          buildBirthCertificateSystemPrompt(),
-          msgContent,
-          6144,
-          `${logPrefix} [birth-cert]`
-        );
-        if (rawJson) {
-          try {
-            const parsed = JSON.parse(stripMarkdownFences(rawJson)) as BirthCertificateBrazil;
-            parsed.orientation = detectedOrientation;
-            parsed.page_count = sourcePageCount ?? null;
-            structuredHtml = renderBirthCertificateHtml(parsed, {
-              pageCount: sourcePageCount,
-              orientation: detectedOrientation,
-            });
-          } catch (e) {
-            console.error(`${logPrefix} — birth cert render failed: ${e}`);
-          }
-        }
-      }
-
-      if (structuredHtml) {
         const coverVariant: "pt-en" | "es-en" =
           (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
 
-        finalPdfBuffer = await buildStructuredKitBuffer({
-          structuredHtml,
+        const structuredKitBuffer = await buildStructuredKitBuffer({
+          structuredHtml: resolved.structuredHtml,
           originalFileBuffer,
           isOriginalPdf,
           orderId,
@@ -544,39 +286,26 @@ export async function generateDeliveryKit(
           sourcePageCount,
         });
 
-        if (finalPdfBuffer) {
-          console.log(
-            `${logPrefix} — structured delivery kit assembled: ${finalPdfBuffer.length} bytes ` +
-            `(family: ${classification.documentType})`
-          );
-        } else {
-          console.warn(`${logPrefix} — buildStructuredKitBuffer returned null for ${classification.documentType}`);
+        if (!structuredKitBuffer) {
+          return {
+            success: false,
+            error: `Structured delivery kit assembly failed for "${classification.documentType}". Legacy fallback is blocked for supported document families. Check server logs for Gotenberg/assembly details.`,
+          };
         }
-      } else {
-        console.warn(`${logPrefix} — structured extraction produced no HTML for ${classification.documentType}`);
-      }
 
-    } else if (isEligible) {
-      // Eligible family but original file is missing — structured rendering requires it.
-      return {
-        success: false,
-        error: `Structured rendering is required for "${classification.documentType}" but the original file is not available. Re-upload the original document and try again.`,
-      };
-    } else {
-      console.log(`${logPrefix} — unsupported family (${classification.documentType}), using legacy renderer`);
-    }
-
-    // ── Step 5: Legacy fallback ───────────────────────────────────────────────
-    // Used only when family is truly unsupported (unknown) and no structured renderer exists.
-    // Eligible families that fail at extraction or assembly return an error — never legacy.
-    if (!finalPdfBuffer) {
-      if (isEligible) {
+        finalPdfBuffer = structuredKitBuffer;
+        console.log(
+          `${logPrefix} — structured delivery kit assembled: ${finalPdfBuffer.length} bytes ` +
+            `(family: ${classification.documentType}, orientation: ${orientationForKit})`
+        );
+      } catch (err) {
         return {
           success: false,
-          error: `Structured rendering failed for "${classification.documentType}" — extraction or rendering error. Check server logs for details.`,
+          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
         };
       }
-      console.log(`${logPrefix} — using legacy renderTranslatedSectionWithLetterhead`);
+    } else {
+      console.log(`${logPrefix} — unsupported family (${classification.documentType}), using legacy renderer`);
       finalPdfBuffer = await renderTranslatedSectionWithLetterhead(doc.translatedText);
     }
 

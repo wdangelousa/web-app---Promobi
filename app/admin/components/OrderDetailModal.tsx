@@ -507,12 +507,12 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ orderId: order.id })
                                             });
+                                            const data = await res.json();
                                             if (res.ok) {
-                                                const data = await res.json();
                                                 alert("Kit PDF gerado com sucesso!");
                                                 onUpdate({ ...order, status: 'READY_FOR_REVIEW', deliveryUrl: data.deliveryUrl });
                                             } else {
-                                                alert("Erro ao gerar o kit PDF.");
+                                                alert(data.error || "Erro ao gerar o kit PDF.");
                                             }
                                             setLoading(false);
                                         }}

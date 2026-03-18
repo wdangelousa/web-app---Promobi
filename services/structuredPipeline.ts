@@ -1,17 +1,17 @@
 /**
  * services/structuredPipeline.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Structured translation pipeline — first implementation: marriage_certificate_brazil.
+ * Structured translation pipeline for supported structured document families.
  *
  * This pipeline runs IN PARALLEL with the legacy pipeline when:
  *   1. USE_STRUCTURED_TRANSLATION === "true"
- *   2. The document has been classified as "marriage_certificate_brazil"
+ *   2. The document has been classified into a supported structured family
  *
  * It does NOT replace the legacy pipeline. Its output is currently used
  * for internal logging and future use only — not sent to the frontend.
  *
  * Error policy: NEVER throws. All errors are caught, logged, and the function
- * returns a failed result so the legacy pipeline is never disrupted.
+ * returns a failed result so the legacy translation response is never disrupted.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -32,6 +32,12 @@ import {
   buildCertificateLandscapeUserMessage,
 } from '@/lib/certificateLandscapePrompt';
 import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
+import {
+  formatStructuredRenderingFailureMessage,
+  isSupportedStructuredDocumentType,
+  renderSupportedStructuredDocument,
+  type SupportedStructuredDocumentType,
+} from '@/services/structuredDocumentRenderer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,8 +53,8 @@ export interface StructuredPipelineInput {
 export interface StructuredPipelineResult {
   /** True only if the full pipeline succeeded (parse + validation). */
   success: boolean;
-  /** Validated structured data, or null on any failure. */
-  data: MarriageCertificateBrazil | null;
+  /** Structured payload when available, or null on failure/non-persisted generic flows. */
+  data: unknown | null;
   parseSuccess: boolean;
   validationSuccess: boolean;
   error?: string;
@@ -60,7 +66,7 @@ export interface StructuredPipelineResult {
 
 export interface CertificateLandscapePipelineResult {
   success: boolean;
-  data: CourseCertificateLandscape | null;
+  data: unknown | null;
   parseSuccess: boolean;
   validationSuccess: boolean;
   error?: string;
@@ -74,15 +80,7 @@ export interface CertificateLandscapePipelineResult {
  * Both conditions must be met: flag enabled AND document type supported.
  */
 export function isEligibleForStructuredPipeline(documentType: DocumentType): boolean {
-  return (
-    FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION && (
-      documentType === 'marriage_certificate_brazil' ||
-      documentType === 'birth_certificate_brazil' ||
-      documentType === 'course_certificate_landscape' ||
-      documentType === 'academic_diploma_certificate' ||
-      documentType === 'academic_transcript'
-    )
-  );
+  return FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION && isSupportedStructuredDocumentType(documentType);
 }
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
@@ -650,6 +648,128 @@ export async function runCertificateLandscapeStructuredPipeline(
   }
 }
 
+const STRUCTURED_DOCUMENT_LABELS: Record<SupportedStructuredDocumentType, string> = {
+  marriage_certificate_brazil: 'Marriage Certificate',
+  birth_certificate_brazil: 'Birth Certificate',
+  academic_diploma_certificate: 'Academic Diploma',
+  academic_transcript: 'Academic Transcript',
+  course_certificate_landscape: 'Training Certificate',
+};
+
+async function runSharedStructuredPipeline(
+  client: Anthropic,
+  input: StructuredPipelineInput,
+  documentType: SupportedStructuredDocumentType,
+): Promise<StructuredPipelineResult> {
+  const ctx = `Order #${input.orderId ?? '?'} Doc #${input.documentId ?? '?'}`;
+  const log = (msg: string) => console.log(`[structuredPipeline] ${ctx} — ${msg}`);
+
+  try {
+    const isPdf =
+      input.contentType.includes('pdf') || input.fileUrl.toLowerCase().includes('.pdf');
+
+    let sourcePageCount: number | undefined;
+    let detectedOrientation: DocumentOrientation = 'unknown';
+
+    if (isPdf) {
+      try {
+        const pdfDoc = await PDFDocument.load(input.fileBuffer, { ignoreEncryption: true });
+        sourcePageCount = pdfDoc.getPageCount();
+        const orientResult = detectOrientationFromPdfDoc(pdfDoc);
+        detectedOrientation = orientResult.orientation;
+        log(`original pdf page count: ${sourcePageCount}`);
+        log(`original document orientation: ${detectedOrientation}`);
+        log(`orientation source: ${orientResult.source}`);
+      } catch (pdfErr) {
+        log(`page count unavailable: yes (pdf-lib error: ${pdfErr})`);
+        log('original document orientation: unknown');
+        log('orientation source: unavailable');
+      }
+    } else {
+      log('page count unavailable: yes (not a PDF)');
+      log('original document orientation: unknown');
+      log('orientation source: unavailable');
+    }
+
+    const resolved = await renderSupportedStructuredDocument({
+      client,
+      documentType,
+      originalFileBuffer: input.fileBuffer,
+      originalFileUrl: input.fileUrl,
+      contentType: input.contentType,
+      sourcePageCount,
+      detectedOrientation,
+      logPrefix: `[structuredPipeline] ${ctx}`,
+    });
+
+    log(`shared structured renderer used: yes | family: ${documentType}`);
+    log(`structured html generated: yes | length: ${resolved.structuredHtml.length} chars`);
+
+    const previewEnabled = FEATURE_FLAGS.ENABLE_STRUCTURED_PREVIEW;
+    log(`structured preview enabled: ${previewEnabled ? 'yes' : 'no'}`);
+    if (previewEnabled) {
+      const { saveStructuredPreview } = await import('@/services/structuredPreview');
+      const preview = await saveStructuredPreview(
+        resolved.structuredHtml,
+        input.documentId ?? 'unknown',
+        input.orderId ?? 'unknown',
+        {
+          generatePdf: true,
+          orientation: resolved.orientationForKit,
+        },
+      );
+      log(`structured html preview saved: ${preview.htmlSaved ? 'yes' : 'no'}`);
+      if (preview.htmlPath) log(`structured html preview path: ${preview.htmlPath}`);
+      if (preview.htmlLocalPath) log(`structured html local path: ${preview.htmlLocalPath}`);
+      log(`structured pdf preview generated: ${preview.pdfSaved ? 'yes' : 'no'}`);
+      if (preview.pdfPath) log(`structured pdf preview path: ${preview.pdfPath}`);
+      if (preview.pdfLocalPath) log(`structured pdf local path: ${preview.pdfLocalPath}`);
+    }
+
+    const kitEnabled = FEATURE_FLAGS.ENABLE_STRUCTURED_PREVIEW_KIT;
+    log(`structured preview kit eligible: ${kitEnabled ? 'yes' : 'no'}`);
+    if (kitEnabled) {
+      const { assembleStructuredPreviewKit } = await import('@/services/structuredPreviewKit');
+      const kit = await assembleStructuredPreviewKit({
+        structuredHtml: resolved.structuredHtml,
+        originalFileBuffer: input.fileBuffer,
+        isOriginalPdf: isPdf,
+        orderId: input.orderId ?? 'unknown',
+        documentId: input.documentId ?? 'unknown',
+        sourceLanguage: input.sourceLanguage,
+        orientation: resolved.orientationForKit,
+        documentTypeLabel: STRUCTURED_DOCUMENT_LABELS[documentType],
+        sourcePageCount,
+      });
+      log(`certification cover generated: ${kit.coverGenerated ? 'yes' : 'no'}`);
+      log(`translated section generated: ${kit.translatedSectionGenerated ? 'yes' : 'no'}`);
+      log(`original source appended: ${kit.originalAppended ? 'yes' : 'no'}`);
+      log(`structured preview kit assembled: ${kit.assembled ? 'yes' : 'no'}`);
+      if (kit.kitPath) log(`structured preview kit storage path: ${kit.kitPath}`);
+      if (kit.kitUrl) log(`structured preview kit url: ${kit.kitUrl}`);
+      if (kit.kitLocalPath) log(`structured preview kit local path: ${kit.kitLocalPath}`);
+    }
+
+    return {
+      success: true,
+      data: null,
+      parseSuccess: true,
+      validationSuccess: true,
+      orientation: resolved.orientationForKit,
+    };
+  } catch (err) {
+    const message = formatStructuredRenderingFailureMessage(documentType, err);
+    log(message);
+    return {
+      success: false,
+      data: null,
+      parseSuccess: false,
+      validationSuccess: false,
+      error: message,
+    };
+  }
+}
+
 // ── Pipeline dispatcher ────────────────────────────────────────────────────────
 
 /**
@@ -666,18 +786,22 @@ export async function dispatchStructuredPipeline(
   input: StructuredPipelineInput,
   documentType: DocumentType
 ): Promise<StructuredPipelineResult | CertificateLandscapePipelineResult> {
+  if (!isSupportedStructuredDocumentType(documentType)) {
+    return {
+      success: false,
+      data: null,
+      parseSuccess: false,
+      validationSuccess: false,
+      error: `No structured pipeline registered for document type: ${documentType}`,
+    };
+  }
+
   if (documentType === 'marriage_certificate_brazil') {
     return runMarriageCertStructuredPipeline(client, input);
   }
   if (documentType === 'course_certificate_landscape') {
     return runCertificateLandscapeStructuredPipeline(client, input);
   }
-  // Should not be reached — isEligibleForStructuredPipeline guards the call site
-  return {
-    success: false,
-    data: null,
-    parseSuccess: false,
-    validationSuccess: false,
-    error: `No structured pipeline registered for document type: ${documentType}`,
-  };
+
+  return runSharedStructuredPipeline(client, input, documentType);
 }

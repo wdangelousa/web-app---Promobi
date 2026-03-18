@@ -4,10 +4,10 @@
  */
 export const FEATURE_FLAGS = {
   /**
-   * When true, routes translation requests through the new structured pipeline.
-   * The structured pipeline is not yet implemented — setting this to "true"
-   * will log a warning and continue using the legacy pipeline.
-   * Default: false (legacy pipeline always used).
+   * When true, enables the parallel structured pipeline for supported families.
+   * The legacy translation response remains the user-facing output; structured
+   * artifacts run in parallel for preview/rendering workflows.
+   * Default: false (legacy pipeline only).
    */
   USE_STRUCTURED_TRANSLATION: process.env.USE_STRUCTURED_TRANSLATION === 'true',
 
@@ -28,7 +28,8 @@ export const FEATURE_FLAGS = {
    * Saved under orders/previews/ — never written to the database, never exposed
    * to the client. Has zero effect when false (default).
    * Requires USE_STRUCTURED_TRANSLATION=true to have any effect.
-   * Supported document families: marriage_certificate_brazil, course_certificate_landscape.
+   * Supported document families: all supported structured families registered in
+   * services/structuredDocumentRenderer.ts.
    */
   ENABLE_STRUCTURED_PREVIEW_KIT: process.env.ENABLE_STRUCTURED_PREVIEW_KIT === 'true',
 } as const;

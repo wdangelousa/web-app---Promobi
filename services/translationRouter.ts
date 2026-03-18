@@ -43,4 +43,4 @@ export function selectTranslationPipeline(context?: TranslationRouterContext): T
 }
 
 // NOTE: The structured pipeline implementation lives in services/structuredPipeline.ts.
-// Use isEligibleForStructuredPipeline() and runMarriageCertStructuredPipeline() from there.
+// Use isEligibleForStructuredPipeline() and dispatchStructuredPipeline() from there.
