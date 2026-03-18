@@ -28,6 +28,10 @@ export type CivilRecordSubtype =
   | 'adoption_record'
   | 'name_change_record'
   | 'civil_registry_extract'
+  | 'birth_certificate_full_content_compact'
+  | 'civil_registry_full_text_single_page'
+  | 'birth_certificate_boxed_single_page'
+  | 'annotated_civil_record'
   | 'civil_record_other'
   | 'unknown';
 
@@ -110,3 +114,75 @@ export interface CivilRecordGeneral {
   page_count: number | null;
 }
 
+export type CivilRecordEstimatedDensity = 'low' | 'medium' | 'high';
+export type CivilRecordFontStyle = 'serif' | 'sans-serif';
+export type CivilRecordCompactionPriority = 'high' | 'medium' | 'low';
+export type CivilRecordSpacingProfile = 'compact' | 'normal';
+export type CivilRecordOrientationHint = 'portrait' | 'landscape' | 'unknown';
+
+export interface CivilRecordStructuredPageMetadata {
+  page_number: number;
+  detected_document_type: string;
+  suggested_orientation: CivilRecordOrientationHint;
+  estimated_density: CivilRecordEstimatedDensity;
+  suggested_font_style: CivilRecordFontStyle;
+  suggested_font_size_by_section: Record<string, string>;
+}
+
+export interface CivilRecordLayoutZone {
+  zone_id: string;
+  zone_type: string;
+  relative_position:
+    | 'top'
+    | 'upper-left'
+    | 'upper-right'
+    | 'center'
+    | 'lower-left'
+    | 'lower-right'
+    | 'bottom'
+    | 'left-margin'
+    | 'right-margin';
+  visual_style: string;
+  compaction_priority: CivilRecordCompactionPriority;
+}
+
+export interface CivilRecordZoneTranslatedContent {
+  zone_id: string;
+  content: string;
+}
+
+export interface CivilRecordRenderingHints {
+  recommended_spacing_profile: CivilRecordSpacingProfile;
+  recommended_line_height: string;
+  recommended_table_style: string;
+  recommended_layout_mode: string;
+  page_parity_risk_notes: string;
+}
+
+export interface CivilRecordStructuredPage {
+  PAGE_METADATA: CivilRecordStructuredPageMetadata;
+  LAYOUT_ZONES: CivilRecordLayoutZone[];
+  TRANSLATED_CONTENT_BY_ZONE: CivilRecordZoneTranslatedContent[];
+  RENDERING_HINTS: CivilRecordRenderingHints;
+  QUALITY_FLAGS?: string[];
+}
+
+export interface CivilRecordStandardizationCandidate {
+  original_term: string;
+  suggested_standard_translation: string;
+  alternative_translations_found_or_possible: string[];
+  recommended_status: 'approved' | 'review_needed' | 'do_not_use';
+  reason: string;
+}
+
+export interface CivilRecordGeneralZoneBlueprint {
+  document_type: 'civil_record_general';
+  document_subtype: CivilRecordSubtype;
+  document_style: CivilRecordStyle;
+  blueprint_profile: 'compact_civil_single_page' | 'compact_civil_multi_page' | 'unknown';
+  PAGES: CivilRecordStructuredPage[];
+  QUALITY_FLAGS?: string[];
+  STANDARDIZATION_CANDIDATES?: CivilRecordStandardizationCandidate[];
+  orientation: CivilRecordOrientationHint;
+  page_count: number | null;
+}

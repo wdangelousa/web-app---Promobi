@@ -74,6 +74,10 @@ Set document_subtype to one of:
 - adoption_record
 - name_change_record
 - civil_registry_extract
+- birth_certificate_full_content_compact
+- civil_registry_full_text_single_page
+- birth_certificate_boxed_single_page
+- annotated_civil_record
 - civil_record_other
 - unknown
 
@@ -113,7 +117,7 @@ No explanatory text.
 
 {
   "document_type": "civil_record_general",
-  "document_subtype": "divorce_certificate | divorce_judgment_or_decree | death_certificate | adoption_record | name_change_record | civil_registry_extract | civil_record_other | unknown",
+  "document_subtype": "divorce_certificate | divorce_judgment_or_decree | death_certificate | adoption_record | name_change_record | civil_registry_extract | birth_certificate_full_content_compact | civil_registry_full_text_single_page | birth_certificate_boxed_single_page | annotated_civil_record | civil_record_other | unknown",
   "document_style": "certificate_style | registry_extract_style | judgment_order_style | unknown",
 
   "document_title": "Title or empty string",

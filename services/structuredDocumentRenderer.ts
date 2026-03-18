@@ -28,6 +28,10 @@ import {
   buildCivilRecordGeneralUserMessage,
 } from '@/lib/civilRecordGeneralPrompt';
 import {
+  buildCivilRecordGeneralCompactZoneSystemPrompt,
+  buildCivilRecordGeneralCompactZoneUserMessage,
+} from '@/lib/civilRecordGeneralCompactZonePrompt';
+import {
   buildIdentityTravelRecordSystemPrompt,
   buildIdentityTravelRecordUserMessage,
 } from '@/lib/identityTravelRecordPrompt';
@@ -57,6 +61,7 @@ import {
   prepareCivilRecordGeneralForRender,
   renderCivilRecordGeneralHtml,
 } from '@/lib/civilRecordGeneralRenderer';
+import { renderCivilRecordCompactZoneHtml } from '@/lib/civilRecordCompactZoneRenderer';
 import { renderIdentityTravelRecordHtml } from '@/lib/identityTravelRecordRenderer';
 import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
 import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
@@ -83,7 +88,11 @@ import type { AcademicDiplomaCertificate } from '@/types/academicDiploma';
 import type { AcademicTranscript } from '@/types/academicTranscript';
 import type { AcademicRecordGeneral } from '@/types/academicRecordGeneral';
 import type { BirthCertificateBrazil } from '@/types/birthCertificate';
-import type { CivilRecordGeneral } from '@/types/civilRecordGeneral';
+import type {
+  CivilRecordGeneral,
+  CivilRecordGeneralZoneBlueprint,
+  CivilRecordSubtype,
+} from '@/types/civilRecordGeneral';
 import type { IdentityTravelRecord } from '@/types/identityTravelRecord';
 import type { EmploymentRecord } from '@/types/employmentRecord';
 import type { CorporateBusinessRecord } from '@/types/corporateBusinessRecord';
@@ -739,6 +748,81 @@ function assertMarriagePayloadCompliance(parsed: unknown): void {
   }
 }
 
+const CIVIL_COMPACT_SUBTYPES = new Set<CivilRecordSubtype>([
+  'birth_certificate_full_content_compact',
+  'civil_registry_full_text_single_page',
+  'birth_certificate_boxed_single_page',
+  'annotated_civil_record',
+]);
+
+function isCivilRecordGeneralZoneBlueprint(
+  parsed: unknown,
+): parsed is CivilRecordGeneralZoneBlueprint {
+  if (!isPlainObject(parsed)) return false;
+  if (parsed.document_type !== 'civil_record_general') return false;
+  return Array.isArray(parsed.PAGES);
+}
+
+function collectCivilZoneBlueprintText(payload: CivilRecordGeneralZoneBlueprint): string {
+  const parts: string[] = [];
+  parts.push(payload.document_subtype ?? '');
+  parts.push(payload.document_style ?? '');
+  for (const page of payload.PAGES ?? []) {
+    parts.push(page.PAGE_METADATA?.detected_document_type ?? '');
+    for (const zone of page.LAYOUT_ZONES ?? []) {
+      parts.push(zone.zone_id ?? '');
+      parts.push(zone.zone_type ?? '');
+    }
+    for (const content of page.TRANSLATED_CONTENT_BY_ZONE ?? []) {
+      parts.push(content.content ?? '');
+    }
+  }
+  return parts.join(' ').toLowerCase();
+}
+
+function inferCompactCivilSubtype(payload: CivilRecordGeneralZoneBlueprint): CivilRecordSubtype {
+  if (CIVIL_COMPACT_SUBTYPES.has(payload.document_subtype)) {
+    return payload.document_subtype;
+  }
+
+  const text = collectCivilZoneBlueprintText(payload);
+
+  if (/\bbirth\b|\bnascimento\b|\bcertidao de nascimento\b/.test(text)) {
+    const hasBoxedSignal = /\bbox(ed|section)?\b|boxed_sections|compact-grid|compact_grid/.test(text);
+    return hasBoxedSignal
+      ? 'birth_certificate_boxed_single_page'
+      : 'birth_certificate_full_content_compact';
+  }
+
+  if (/\bannotation\b|\baverba[cç][aã]o\b|\bmarginal\b|\bmargin note\b/.test(text)) {
+    return 'annotated_civil_record';
+  }
+
+  return 'civil_registry_full_text_single_page';
+}
+
+function normalizeCivilCompactZonePayload(
+  payload: CivilRecordGeneralZoneBlueprint,
+): CivilRecordGeneralZoneBlueprint {
+  const normalizedSubtype = inferCompactCivilSubtype(payload);
+  return {
+    ...payload,
+    blueprint_profile:
+      payload.blueprint_profile && payload.blueprint_profile !== 'unknown'
+        ? payload.blueprint_profile
+        : 'compact_civil_single_page',
+    document_subtype: normalizedSubtype,
+  };
+}
+
+function inferCivilZoneOrientation(
+  payload: CivilRecordGeneralZoneBlueprint,
+): DocumentOrientation {
+  if (payload.orientation === 'landscape') return 'landscape';
+  const pageHint = payload.PAGES?.[0]?.PAGE_METADATA?.suggested_orientation;
+  return pageHint === 'landscape' ? 'landscape' : 'portrait';
+}
+
 export async function renderSupportedStructuredDocument(
   input: StructuredRenderInput,
 ): Promise<StructuredRenderOutput> {
@@ -794,37 +878,108 @@ export async function renderSupportedStructuredDocument(
     }
 
     case 'civil_record_general': {
+      const requiresCompactZoneModel = input.sourcePageCount === 1;
+      const civilPromptLabel = requiresCompactZoneModel
+        ? 'civil-record-general-compact-zones'
+        : 'civil-record-general';
       const rawJson = ensureExtractionJson(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          buildCivilRecordGeneralSystemPrompt(),
+          requiresCompactZoneModel
+            ? buildCivilRecordGeneralCompactZoneSystemPrompt()
+            : buildCivilRecordGeneralSystemPrompt(),
           messageContentFor(
-            buildCivilRecordGeneralUserMessage({
-              sourcePageCount: input.sourcePageCount ?? null,
-            }),
+            requiresCompactZoneModel
+              ? buildCivilRecordGeneralCompactZoneUserMessage({
+                  sourcePageCount: input.sourcePageCount ?? null,
+                })
+              : buildCivilRecordGeneralUserMessage({
+                  sourcePageCount: input.sourcePageCount ?? null,
+                }),
           ),
-          12288,
-          `${input.logPrefix} [civil-record-general]`,
+          requiresCompactZoneModel ? 16384 : 12288,
+          `${input.logPrefix} [${civilPromptLabel}]`,
         ),
       );
 
-      const parsed = parseStructuredJson<CivilRecordGeneral>(
+      const parsed = parseStructuredJson<unknown>(
         input.documentType,
         rawJson,
       );
+      assertExpectedDocumentTypeTag('civil_record_general', parsed);
 
-      parsed.orientation = input.detectedOrientation;
-      parsed.page_count = input.sourcePageCount ?? null;
+      if (requiresCompactZoneModel) {
+        if (!isCivilRecordGeneralZoneBlueprint(parsed)) {
+          throw new StructuredRenderingRequiredError(
+            input.documentType,
+            buildStructuredFailureMessage(
+              input.documentType,
+              'Compact civil one-page rendering requires Anthropic zone blueprint fields (PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE/RENDERING_HINTS). Payload did not match required zone model.',
+            ),
+          );
+        }
+
+        const normalizedCompactPayload = normalizeCivilCompactZonePayload(parsed);
+        if (
+          typeof input.sourcePageCount === 'number' &&
+          input.sourcePageCount > 0 &&
+          normalizedCompactPayload.PAGES.length !== input.sourcePageCount
+        ) {
+          throw new StructuredRenderingRequiredError(
+            input.documentType,
+            buildStructuredFailureMessage(
+              input.documentType,
+              `Compact civil zone blueprint page mismatch: source_page_count=${input.sourcePageCount} but blueprint_pages=${normalizedCompactPayload.PAGES.length}.`,
+            ),
+          );
+        }
+
+        const effectiveOrientation: DocumentOrientation =
+          input.detectedOrientation === 'unknown'
+            ? inferCivilZoneOrientation(normalizedCompactPayload)
+            : input.detectedOrientation;
+
+        const totalZones = normalizedCompactPayload.PAGES.reduce(
+          (sum, page) => sum + (page.LAYOUT_ZONES?.length ?? 0),
+          0,
+        );
+        const totalContentBlocks = normalizedCompactPayload.PAGES.reduce(
+          (sum, page) => sum + (page.TRANSLATED_CONTENT_BY_ZONE?.length ?? 0),
+          0,
+        );
+
+        console.log(
+          `${input.logPrefix} [${civilPromptLabel}] layout diagnostics | ` +
+            `pageTarget=${input.sourcePageCount ?? 'n/a'} zoneModelUsed=yes pages=${normalizedCompactPayload.PAGES.length} ` +
+            `zones=${totalZones} translatedBlocks=${totalContentBlocks} subtype=${normalizedCompactPayload.document_subtype} ` +
+            `blueprintProfile=${normalizedCompactPayload.blueprint_profile} orientation=${effectiveOrientation}`,
+        );
+
+        return {
+          structuredHtml: renderCivilRecordCompactZoneHtml(normalizedCompactPayload, {
+            pageCount: input.sourcePageCount,
+            orientation: effectiveOrientation,
+          }),
+          orientationForKit: effectiveOrientation,
+          rendererName,
+        };
+      }
+
+      const parsedLegacy = parsed as CivilRecordGeneral;
+
+      parsedLegacy.orientation = input.detectedOrientation;
+      parsedLegacy.page_count = input.sourcePageCount ?? null;
 
       const effectiveOrientation: DocumentOrientation =
         input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
-      const preparedCivil = prepareCivilRecordGeneralForRender(parsed, {
+      const preparedCivil = prepareCivilRecordGeneralForRender(parsedLegacy, {
         targetPageCount: input.sourcePageCount,
       });
 
       console.log(
         `${input.logPrefix} [civil-record-general] layout diagnostics | ` +
+          `zoneModelUsed=no ` +
           `pageTarget=${input.sourcePageCount ?? 'n/a'} compactOnePage=${preparedCivil.compactOnePage ? 'yes' : 'no'} ` +
           `compactionRecommended=${preparedCivil.compactionRecommended ? 'yes' : 'no'} ` +
           `rows(before->after)=${preparedCivil.densityBefore.totalRows}->${preparedCivil.densityAfter.totalRows} ` +

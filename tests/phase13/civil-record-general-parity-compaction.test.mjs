@@ -39,6 +39,6 @@ test('structured dispatcher passes page count hint and emits civil layout diagno
   const dispatcher = read('services/structuredDocumentRenderer.ts')
 
   assert.match(dispatcher, /buildCivilRecordGeneralUserMessage\(\{\s*sourcePageCount: input\.sourcePageCount \?\? null,\s*\}\)/s)
-  assert.match(dispatcher, /prepareCivilRecordGeneralForRender\(parsed, \{\s*targetPageCount: input\.sourcePageCount,\s*\}\)/s)
+  assert.match(dispatcher, /prepareCivilRecordGeneralForRender\((parsed|parsedLegacy), \{\s*targetPageCount: input\.sourcePageCount,\s*\}\)/s)
   assert.match(dispatcher, /\[civil-record-general\] layout diagnostics/)
 })
