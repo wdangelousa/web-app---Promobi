@@ -654,11 +654,9 @@ ${page1Html}
 ${page2Html}
 </body>
 </html>`;
-  } catch {
-    return `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8" /><style>body{font-family:Arial;font-size:11pt;}</style></head>
-<body><p>[Diploma rendering error — see server logs]</p></body>
-</html>`;
+  } catch (err) {
+    throw new Error(
+      `Academic diploma renderer failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }

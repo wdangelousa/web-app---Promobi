@@ -106,7 +106,7 @@ export default async function DashboardPage() {
             color: 'text-blue-600',
             bg: 'bg-blue-50',
             border: 'border-blue-100',
-            href: '/admin/workbench',
+            href: '/admin/orders',
         },
         {
             label: 'Orçamentos Pendentes',
@@ -164,11 +164,11 @@ export default async function DashboardPage() {
                     </div>
 
                     <Link
-                        href="/admin/workbench"
+                        href="/admin/orders"
                         className="flex items-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow-md"
                     >
                         <Zap className="h-4 w-4" />
-                        Mesa de Operações
+                        Operações
                         <ArrowRight className="h-4 w-4" />
                     </Link>
                 </div>
@@ -268,9 +268,9 @@ export default async function DashboardPage() {
                         <div className="space-y-2">
                             {([
                                 {
-                                    label: 'Mesa de Operações',
-                                    desc: 'Fila de tradução e revisão',
-                                    href: '/admin/workbench',
+                                    label: 'Operações',
+                                    desc: 'Fluxo estruturado de pedidos',
+                                    href: '/admin/orders',
                                     icon: Zap,
                                     color: 'text-[#f58220]',
                                     bg: 'bg-orange-50',

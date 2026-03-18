@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Award, CheckCircle, Clock, AlertCircle, Search, Filter, MoreHorizontal, X, Upload, Send, ChevronRight, Eye, Copy } from 'lucide-react'
+import { FileText, Award, CheckCircle, Clock, AlertCircle, Search, Filter, MoreHorizontal, X, Send, ChevronRight, Eye, Copy } from 'lucide-react'
 import { updateOrderStatus } from '@/app/actions/adminOrders'
 import Link from 'next/link'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
@@ -31,7 +31,6 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
     const [selectedOrder, setSelectedOrder] = useState<any>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [loadingAction, setLoadingAction] = useState(false)
-    const [deliveryUrl, setDeliveryUrl] = useState('')
 
     // Filter Logic
     const filteredOrders = orders.filter(order => {
@@ -47,22 +46,28 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
 
     const handleOpenModal = (order: any) => {
         setSelectedOrder(order)
-        setDeliveryUrl(order.deliveryUrl || '')
         setIsModalOpen(true)
     }
 
     const handleUpdateStatus = async (newStatus: string) => {
         if (!selectedOrder) return;
+        if (newStatus === 'COMPLETED') {
+            toast.error('Conclusão manual foi bloqueada. Use o fluxo estruturado do workbench.')
+            return
+        }
         setLoadingAction(true);
 
-        // Optimistic update
-        const updatedOrders = orders.map(o => o.id === selectedOrder.id ? { ...o, status: newStatus } : o);
-        setOrders(updatedOrders);
-
         // Server Action
-        await updateOrderStatus(selectedOrder.id, newStatus, deliveryUrl || undefined);
+        const result = await updateOrderStatus(selectedOrder.id, newStatus);
+        if (!result.success) {
+            toast.error(result.error || 'Falha ao atualizar status')
+            setLoadingAction(false)
+            return
+        }
 
         // Update selected order locally
+        const updatedOrders = orders.map(o => o.id === selectedOrder.id ? { ...o, status: newStatus } : o);
+        setOrders(updatedOrders);
         setSelectedOrder({ ...selectedOrder, status: newStatus });
 
         setLoadingAction(false);
@@ -251,7 +256,7 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                             <div>
                                 <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Alterar Status</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {['PENDING', 'TRANSLATING', 'NOTARIZING', 'COMPLETED'].map((status) => (
+                                    {['PENDING', 'TRANSLATING', 'NOTARIZING'].map((status) => (
                                         <button
                                             key={status}
                                             onClick={() => handleUpdateStatus(status)}
@@ -266,33 +271,6 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                         </button>
                                     ))}
                                 </div>
-                            </div>
-
-                            {/* File Upload (Delivery) */}
-                            <div>
-                                <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Arquivo Final (URL)</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="https://..."
-                                        value={deliveryUrl}
-                                        onChange={(e) => setDeliveryUrl(e.target.value)}
-                                        className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 px-3 py-2 rounded-lg focus:ring-1 focus:ring-[#f58220] outline-none text-sm"
-                                    />
-                                    {/* Mock Upload Button functionality */}
-                                    <button className="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg transition-colors" title="Upload (Simulado)">
-                                        <Upload className="w-5 h-5" />
-                                    </button>
-                                </div>
-                                {deliveryUrl && (
-                                    <button
-                                        onClick={() => handleUpdateStatus('COMPLETED')}
-                                        disabled={loadingAction}
-                                        className="mt-2 w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold transition-all"
-                                    >
-                                        <CheckCircle className="w-4 h-4" /> Salvar URL e Concluir Pedido
-                                    </button>
-                                )}
                             </div>
 
                             {/* Notify Actions */}

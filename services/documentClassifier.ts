@@ -12,13 +12,20 @@
  * Current supported types:
  *   - marriage_certificate_brazil    (certidão de casamento)
  *   - birth_certificate_brazil       (certidão de nascimento)
+ *   - civil_record_general           (divorce/death/adoption/name-change/registry civil records)
+ *   - identity_travel_record         (passport/ID/visa/travel evidence pages)
  *   - academic_diploma_certificate   (diplomas, degree certificates from universities)
  *   - academic_transcript            (grade records, school histories, histórico escolar)
+ *   - academic_record_general        (enrollment/declaration/completion/syllabus records)
+ *   - corporate_business_record      (corporate registrations, bylaws, resolutions, extracts)
+ *   - publication_media_record       (articles, media clippings, publication metadata pages)
+ *   - recommendation_letter          (recommendation, expert opinion, support/reference letters)
+ *   - employment_record              (employment letters, HR attestations, salary confirmations)
  *   - course_certificate_landscape   (course/training/participation/completion certificates)
  *   - unknown                        (anything else, or insufficient signals)
  *
  * Classification order matters — more-specific families are checked first:
- *   marriage → birth → academic_diploma → academic_transcript → course_certificate → unknown
+ *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → publication_media_record → recommendation_letter → employment_record → course_certificate → unknown
  *
  * Integration note:
  *   This classifier is AUXILIARY — it never modifies translation behavior.
@@ -31,8 +38,15 @@
 export type DocumentType =
   | 'marriage_certificate_brazil'    // Certidão de Casamento
   | 'birth_certificate_brazil'       // Certidão de Nascimento
+  | 'civil_record_general'           // Divorce/death/adoption/name-change/civil-registry records
+  | 'identity_travel_record'         // Passport/ID/visa/travel evidence
   | 'academic_diploma_certificate'   // University diplomas, degree certificates
   | 'academic_transcript'            // Grade transcripts, school records, histórico escolar
+  | 'academic_record_general'        // Enrollment/declaration/completion/syllabus records
+  | 'corporate_business_record'      // Corporate registries, resolutions, bylaws, business licenses
+  | 'publication_media_record'       // Publication/media evidence: article pages, covers, clippings
+  | 'recommendation_letter'          // Recommendation/expert opinion/support/reference letters
+  | 'employment_record'              // Employment letters/contracts/attestations
   | 'course_certificate_landscape'   // Course/training/participation/completion certificates
   | 'unknown';
 
@@ -173,6 +187,250 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     if (birthHits >= 2) {
       return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-low' };
     }
+  }
+
+  // ── General Civil Records ────────────────────────────────────────────────
+  // Covers:
+  //   - divorce certificates / judgments / decrees
+  //   - death certificates
+  //   - adoption records / orders
+  //   - name change records / orders
+  //   - civil registry extracts for natural persons
+  //
+  // Checked AFTER marriage and birth certs to preserve dedicated renderers,
+  // and BEFORE identity/corporate families so civil-registry language is not
+  // downgraded into generic categories.
+  //
+  // Distinguishes:
+  //   - certificate style
+  //   - registry extract style
+  //   - judgment/order-derived civil records
+
+  const civilGeneralSignals: RegExp[] = [
+    /\bdeath certificate\b/i,
+    /\bcertificate of death\b/i,
+    /\bdate of death\b/i,
+    /\bcause of death\b/i,
+    /\bdeceased\b/i,
+    /\bdivorce (?:certificate|decree|judgment)\b/i,
+    /\bdecree of divorce\b/i,
+    /\badoption (?:record|order|judgment|decree|certificate)\b/i,
+    /\bname change (?:record|order|judgment|decree|certificate)\b/i,
+    /\bcivil registry extract\b/i,
+    /\bextract from (?:the )?civil registry\b/i,
+    /\bregistry of natural persons\b/i,
+    /\bregistro civil\b/i,
+    /\bcertid[aã]o de [oó]bito\b/i,
+    /\bcertid[aã]o de div[oó]rcio\b/i,
+    /\bcertid[aã]o de ado[cç][aã]o\b/i,
+    /\baverba[cç][aã]o\b/i,
+    /\bmarginal note(?:s)?\b/i,
+    /\bannotation(?:s)?\/endorsement(?:s)?\b/i,
+    /\bwitness(?:es)?\b/i,
+    /\bspouse\b/i,
+    /\bcourt order\b/i,
+    /\bcivil court\b/i,
+    /\bjudge\b/i,
+    /\bcase number\b/i,
+    /\bdocket number\b/i,
+    /\bbook\b.{0,20}\bpage\b/i,
+    /\bterm\b.{0,20}\bbook\b/i,
+    /\bregistry book\b/i,
+  ];
+
+  const civilGeneralHits = civilGeneralSignals.filter((rx) => rx.test(text)).length;
+
+  const hasCivilRegistryContext =
+    /\bcivil registry\b/i.test(text) ||
+    /\bregistry of natural persons\b/i.test(text) ||
+    /\bregistro civil\b/i.test(text) ||
+    /\bregistry office\b/i.test(text);
+
+  const hasCivilEventMarker =
+    /\bdeath\b/i.test(text) ||
+    /\bdeceased\b/i.test(text) ||
+    /\bdivorce\b/i.test(text) ||
+    /\badoption\b/i.test(text) ||
+    /\bname change\b/i.test(text);
+
+  const hasCertificateStyleMarker =
+    /\bcertificate\b/i.test(text) &&
+    (/\bregistry\b/i.test(text) || hasCivilEventMarker);
+
+  const hasRegistryExtractStyleMarker =
+    /\bcivil registry extract\b/i.test(text) ||
+    /\bextract from (?:the )?civil registry\b/i.test(text) ||
+    /\bregistry extract\b/i.test(text) ||
+    /\bbook\b.{0,20}\bpage\b/i.test(text) ||
+    /\bregistry book\b/i.test(text);
+
+  const hasJudgmentOrderStyleMarker =
+    /\bcourt order\b/i.test(text) ||
+    /\bjudgment\b/i.test(text) ||
+    /\bdecree\b/i.test(text) ||
+    /\bjudge\b/i.test(text) ||
+    /\bcase number\b/i.test(text) ||
+    /\bdocket number\b/i.test(text);
+
+  const hasCivilPersonRoleBlock =
+    /\bfather[:\s]/i.test(text) ||
+    /\bmother[:\s]/i.test(text) ||
+    /\bspouse[:\s]/i.test(text) ||
+    /\bwitness(?:es)?[:\s]/i.test(text) ||
+    /\bparents?[:\s]/i.test(text);
+
+  const hasCivilAnnotationsMarker =
+    /\bannotation(?:s)?\/endorsement(?:s)?\b/i.test(text) ||
+    /\bmarginal note(?:s)?\b/i.test(text) ||
+    /\baverba[cç][aã]o\b/i.test(text);
+
+  const hasCorporateOverlapMarker =
+    /\barticles of (?:incorporation|organization)\b/i.test(text) ||
+    /\boperating agreement\b/i.test(text) ||
+    /\bbylaws?\b/i.test(text) ||
+    /\bsecretary of state\b/i.test(text) ||
+    /\bregistered agent\b/i.test(text) ||
+    /\bcorporate resolution\b/i.test(text) ||
+    /\bshareholder(?:s)?\b/i.test(text) ||
+    /\bcnpj\b/i.test(text);
+
+  const civilGeneralCombo1 = hasCivilRegistryContext && hasCivilEventMarker;
+  const civilGeneralCombo2 = hasCertificateStyleMarker && hasCivilPersonRoleBlock;
+  const civilGeneralCombo3 =
+    hasRegistryExtractStyleMarker && (hasCivilPersonRoleBlock || hasCivilAnnotationsMarker);
+  const civilGeneralCombo4 = hasJudgmentOrderStyleMarker && hasCivilEventMarker;
+  const civilGeneralCombo5 =
+    hasCivilRegistryContext && hasJudgmentOrderStyleMarker && hasCivilAnnotationsMarker;
+
+  const matchesCivilGeneralCombo =
+    civilGeneralCombo1 ||
+    civilGeneralCombo2 ||
+    civilGeneralCombo3 ||
+    civilGeneralCombo4 ||
+    civilGeneralCombo5;
+
+  if (civilGeneralHits > 0 || matchesCivilGeneralCombo) {
+    const activeRules = [
+      civilGeneralCombo1 && 'registry+event',
+      civilGeneralCombo2 && 'certificate+person-roles',
+      civilGeneralCombo3 && 'extract+annotations/roles',
+      civilGeneralCombo4 && 'judgment-order+event',
+      civilGeneralCombo5 && 'registry+judgment+annotations',
+      hasCorporateOverlapMarker && 'corporate-overlap-guard',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] civil general record signals matched: ${civilGeneralHits}` +
+      (activeRules.length > 0 ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (!hasCorporateOverlapMarker && (civilGeneralHits >= 4 || matchesCivilGeneralCombo)) {
+    return { documentType: 'civil_record_general', confidence: 'heuristic-high' };
+  }
+  if (!hasCorporateOverlapMarker && civilGeneralHits >= 2) {
+    return { documentType: 'civil_record_general', confidence: 'heuristic-low' };
+  }
+  if (
+    hasCorporateOverlapMarker &&
+    (civilGeneralCombo1 || civilGeneralCombo4) &&
+    civilGeneralHits >= 4
+  ) {
+    return { documentType: 'civil_record_general', confidence: 'heuristic-low' };
+  }
+
+  // ── Identity / Travel Records ─────────────────────────────────────────────
+  // Covers:
+  //   - passport biographic pages
+  //   - identity cards
+  //   - driver licenses
+  //   - visa pages
+  //   - entry/exit pages
+  //   - I-94 style travel summaries
+  //   - travel document excerpts
+
+  const identityTravelSignals: RegExp[] = [
+    /\bpassport\b/i,
+    /\btravel document\b/i,
+    /\bidentity card\b/i,
+    /\bnational identity\b/i,
+    /\bdriver'?s? license\b/i,
+    /\bvisa\b/i,
+    /\bentry\b/i,
+    /\bexit\b/i,
+    /\bi-94\b/i,
+    /\bclass of admission\b/i,
+    /\badmit until(?: date)?\b/i,
+    /\bport of entry\b/i,
+    /\bdocument number\b/i,
+    /\bnationality\b/i,
+    /\bplace of birth\b/i,
+    /\bdate of birth\b/i,
+    /\bdate of issue\b/i,
+    /\bdate of expiry\b/i,
+    /\bexpiration date\b/i,
+    /\bissuing authority\b/i,
+    /\bmachine readable zone\b/i,
+    /\bmrz\b/i,
+    /p<[a-z0-9<]{4,}/i,
+    /\b(?:surname|given names)\b/i,
+  ];
+
+  const identityTravelHits = identityTravelSignals.filter((rx) => rx.test(text)).length;
+
+  const hasIdentityDocTitle =
+    /\bpassport\b/i.test(text) ||
+    /\btravel document\b/i.test(text) ||
+    /\bidentity card\b/i.test(text) ||
+    /\bnational identity\b/i.test(text) ||
+    /\bdriver'?s? license\b/i.test(text) ||
+    /\bvisa\b/i.test(text) ||
+    /\bi-94\b/i.test(text);
+
+  const hasIdentityBiographicCore =
+    /\bdocument number\b/i.test(text) &&
+    /\bnationality\b/i.test(text) &&
+    /\bdate of birth\b/i.test(text) &&
+    /\bplace of birth\b/i.test(text);
+
+  const hasTravelAdmissionCore =
+    /\bi-94\b/i.test(text) ||
+    (/class of admission/i.test(text) && /admit until(?: date)?/i.test(text)) ||
+    (/port of entry/i.test(text) && /(entry|arrival|departure|exit)/i.test(text));
+
+  const hasMrzOrCodeRegion =
+    /\bmachine readable zone\b/i.test(text) ||
+    /\bmrz\b/i.test(text) ||
+    /p<[a-z0-9<]{4,}/i.test(text);
+
+  const identityTravelCombo1 = hasIdentityDocTitle && hasIdentityBiographicCore;
+  const identityTravelCombo2 = hasIdentityDocTitle && hasTravelAdmissionCore;
+  const identityTravelCombo3 = hasIdentityDocTitle && hasMrzOrCodeRegion;
+  const identityTravelCombo4 = hasIdentityBiographicCore && hasMrzOrCodeRegion;
+
+  const matchesIdentityTravelCombo =
+    identityTravelCombo1 ||
+    identityTravelCombo2 ||
+    identityTravelCombo3 ||
+    identityTravelCombo4;
+
+  if (identityTravelHits > 0 || matchesIdentityTravelCombo) {
+    const activeRules = [
+      identityTravelCombo1 && 'title+biographic-core',
+      identityTravelCombo2 && 'title+admission-core',
+      identityTravelCombo3 && 'title+mrz',
+      identityTravelCombo4 && 'biographic-core+mrz',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] identity/travel signals matched: ${identityTravelHits}` +
+      (matchesIdentityTravelCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (identityTravelHits >= 4 || matchesIdentityTravelCombo) {
+    return { documentType: 'identity_travel_record', confidence: 'heuristic-high' };
+  }
+  if (identityTravelHits >= 2) {
+    return { documentType: 'identity_travel_record', confidence: 'heuristic-low' };
   }
 
   // ── Academic Diploma / Degree Certificate ─────────────────────────────────
@@ -395,8 +653,601 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     return { documentType: 'academic_transcript', confidence: 'heuristic-low' };
   }
 
+  // ── General Academic Records ─────────────────────────────────────────────
+  // Covers:
+  //   - enrollment certificates
+  //   - declarations from educational institutions
+  //   - course completion statements
+  //   - academic letters
+  //   - syllabi / ementa excerpts
+  //   - academic records with subject/grade tables (non-canonical transcript forms)
+  //
+  // Checked AFTER academic_transcript to preserve transcript-specialized parsing,
+  // and BEFORE non-academic families to avoid downgrading academic declarations.
+
+  const academicGeneralSignals: RegExp[] = [
+    /\bcertificate of enrollment\b/i,
+    /\benrollment certificate\b/i,
+    /\bproof of enrollment\b/i,
+    /\bdeclaration of enrollment\b/i,
+    /\bacademic declaration\b/i,
+    /\bdeclaration from (?:the )?(?:school|university|college|institution)\b/i,
+    /\bcourse completion statement\b/i,
+    /\bcompletion declaration\b/i,
+    /\bregistrar(?:'s)? office\b/i,
+    /\bacademic office\b/i,
+    /\bacademic affairs\b/i,
+    /\bsecretaria acad[êe]mica\b/i,
+    /\bsecretaria escolar\b/i,
+    /\bsyllabus\b/i,
+    /\bcourse outline\b/i,
+    /\bementa\b/i,
+    /\bcurricular component\b/i,
+    /\blearning objectives\b/i,
+    /\bevaluation criteria\b/i,
+    /\bbibliography\b/i,
+    /\bstudent name[:\s]/i,
+    /\bstudent id[:\s]/i,
+    /\bregistration number[:\s]/i,
+    /\benrollment number[:\s]/i,
+    /\bprogram[:\s]/i,
+    /\bcourse[:\s]/i,
+    /\bsemester\b/i,
+    /\bterm\b/i,
+    /\bacademic year\b/i,
+    /\bperiod[:\s]/i,
+    /\bregistrar\b/i,
+    /\bacademic secretary\b/i,
+  ];
+
+  const academicGeneralHits = academicGeneralSignals.filter((rx) => rx.test(text)).length;
+
+  const hasAcademicGeneralTitle =
+    /\bcertificate of enrollment\b/i.test(text) ||
+    /\benrollment certificate\b/i.test(text) ||
+    /\bproof of enrollment\b/i.test(text) ||
+    /\bdeclaration of enrollment\b/i.test(text) ||
+    /\bacademic declaration\b/i.test(text) ||
+    /\bcourse completion statement\b/i.test(text) ||
+    /\bcompletion declaration\b/i.test(text) ||
+    /\bsyllabus\b/i.test(text) ||
+    /\bcourse outline\b/i.test(text) ||
+    /\bementa\b/i.test(text);
+
+  const hasStudentProgramIdentity =
+    (/\bstudent name[:\s]/i.test(text) || /\bstudent id[:\s]/i.test(text) || /\bregistration number[:\s]/i.test(text)) &&
+    (/\bprogram[:\s]/i.test(text) || /\bcourse[:\s]/i.test(text) || /\bdegree\b/i.test(text));
+
+  const hasAcademicIssuanceContext =
+    /\bregistrar(?:'s)? office\b/i.test(text) ||
+    /\bacademic office\b/i.test(text) ||
+    /\bacademic affairs\b/i.test(text) ||
+    /\bregistrar\b/i.test(text) ||
+    /\bacademic secretary\b/i.test(text) ||
+    /\buniversity\b/i.test(text) ||
+    /\bcollege\b/i.test(text) ||
+    /\bschool\b/i.test(text);
+
+  const hasSyllabusStructure =
+    /\bsyllabus\b/i.test(text) ||
+    /\bementa\b/i.test(text) ||
+    /\bcurricular component\b/i.test(text) ||
+    /\blearning objectives\b/i.test(text) ||
+    /\bevaluation criteria\b/i.test(text) ||
+    /\bbibliography\b/i.test(text);
+
+  const hasPeriodOrTermLayout =
+    /\bsemester\b/i.test(text) ||
+    /\bterm\b/i.test(text) ||
+    /\bacademic year\b/i.test(text) ||
+    /\bperiod[:\s]/i.test(text) ||
+    /\bstart date[:\s]/i.test(text) ||
+    /\bend date[:\s]/i.test(text);
+
+  const academicGeneralCombo1 = hasAcademicGeneralTitle && hasStudentProgramIdentity;
+  const academicGeneralCombo2 = hasAcademicIssuanceContext && hasStudentProgramIdentity && hasPeriodOrTermLayout;
+  const academicGeneralCombo3 = hasSyllabusStructure && (hasAcademicGeneralTitle || hasAcademicIssuanceContext);
+
+  const matchesAcademicGeneralCombo =
+    academicGeneralCombo1 || academicGeneralCombo2 || academicGeneralCombo3;
+
+  if (academicGeneralHits > 0 || matchesAcademicGeneralCombo) {
+    const activeRules = [
+      academicGeneralCombo1 && 'title+student-program',
+      academicGeneralCombo2 && 'issuance+student-program+period',
+      academicGeneralCombo3 && 'syllabus-structure+institutional-context',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] academic general record signals matched: ${academicGeneralHits}` +
+      (matchesAcademicGeneralCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (academicGeneralHits >= 4 || matchesAcademicGeneralCombo) {
+    return { documentType: 'academic_record_general', confidence: 'heuristic-high' };
+  }
+  if (academicGeneralHits >= 2) {
+    return { documentType: 'academic_record_general', confidence: 'heuristic-low' };
+  }
+
+  // ── Corporate / Business Records ─────────────────────────────────────────
+  // Covers:
+  //   - articles of incorporation / organization
+  //   - operating agreement excerpts
+  //   - bylaws excerpts
+  //   - annual reports
+  //   - certificates of good standing
+  //   - business licenses
+  //   - corporate resolutions
+  //   - business registration docs and official registry extracts
+  //
+  // Checked BEFORE employment records because both can contain company metadata,
+  // but corporate records include stronger legal/registry/filer semantics.
+
+  const corporateSignals: RegExp[] = [
+    /articles of (?:incorporation|organization)/i,
+    /operating agreement/i,
+    /\bbylaws?\b/i,
+    /\bannual report\b/i,
+    /certificate of good standing/i,
+    /business license/i,
+    /corporate resolution/i,
+    /board resolution/i,
+    /\bminutes of (?:meeting|board|member)\b/i,
+    /business registration/i,
+    /official registry extract/i,
+    /commercial registry/i,
+    /registry authority/i,
+    /secretary of state/i,
+    /junta comercial/i,
+    /department of state/i,
+    /\bentity (?:name|type|status)\b/i,
+    /\bregistration (?:number|no\.?)\b/i,
+    /\bfiled on\b/i,
+    /\bfiling date\b/i,
+    /\beffective date\b/i,
+    /\bregistered agent\b/i,
+    /\bmanager(?:s)?\b/i,
+    /\bmember(?:s)?\b/i,
+    /\bofficer(?:s)?\b/i,
+    /\bshareholder(?:s)?\b/i,
+    /\barticle\s+\d+\b/i,
+    /\bsection\s+\d+\b/i,
+    /\bclause\s+\d+\b/i,
+    /\bbe it resolved\b/i,
+    /\bresolved that\b/i,
+    /\bcnpj\b/i,
+  ];
+
+  const corporateHits = corporateSignals.filter((rx) => rx.test(text)).length;
+
+  const hasCorporateDocTitle =
+    /articles of (?:incorporation|organization)/i.test(text) ||
+    /operating agreement/i.test(text) ||
+    /\bbylaws?\b/i.test(text) ||
+    /\bannual report\b/i.test(text) ||
+    /certificate of good standing/i.test(text) ||
+    /business license/i.test(text) ||
+    /corporate resolution/i.test(text) ||
+    /business registration/i.test(text) ||
+    /official registry extract/i.test(text);
+
+  const hasRegistryAuthority =
+    /secretary of state/i.test(text) ||
+    /commercial registry/i.test(text) ||
+    /registry authority/i.test(text) ||
+    /department of state/i.test(text) ||
+    /junta comercial/i.test(text);
+
+  const hasEntityMetadata =
+    /\bentity (?:name|type|status)\b/i.test(text) ||
+    /\bregistration (?:number|no\.?)\b/i.test(text) ||
+    /\bjurisdiction\b/i.test(text) ||
+    /\bregistered (?:office|address|agent)\b/i.test(text) ||
+    /\bprincipal (?:office|address)\b/i.test(text) ||
+    /\bcnpj\b/i.test(text);
+
+  const hasFilingInfo =
+    /\bfiled on\b/i.test(text) ||
+    /\bfiling date\b/i.test(text) ||
+    /\beffective date\b/i.test(text) ||
+    /\bcertificate number\b/i.test(text) ||
+    /\bdocument number\b/i.test(text);
+
+  const hasNumberedGovernanceSections =
+    /\barticle\s+\d+\b/i.test(text) ||
+    /\bsection\s+\d+\b/i.test(text) ||
+    /\bclause\s+\d+\b/i.test(text) ||
+    /\bbe it resolved\b/i.test(text) ||
+    /\bresolved that\b/i.test(text);
+
+  const hasOfficerMemberBlock =
+    /\bofficer(?:s)?\b/i.test(text) ||
+    /\bmanager(?:s)?\b/i.test(text) ||
+    /\bmember(?:s)?\b/i.test(text) ||
+    /\bdirector(?:s)?\b/i.test(text) ||
+    /\bshareholder(?:s)?\b/i.test(text);
+
+  const corporateCombo1 = hasCorporateDocTitle && hasEntityMetadata;
+  const corporateCombo2 = hasRegistryAuthority && hasFilingInfo;
+  const corporateCombo3 = hasNumberedGovernanceSections && hasOfficerMemberBlock;
+  const corporateCombo4 = hasCorporateDocTitle && hasNumberedGovernanceSections;
+
+  const matchesCorporateCombo =
+    corporateCombo1 || corporateCombo2 || corporateCombo3 || corporateCombo4;
+
+  if (corporateHits > 0 || matchesCorporateCombo) {
+    const activeRules = [
+      corporateCombo1 && 'title+entity-metadata',
+      corporateCombo2 && 'registry-authority+filing-info',
+      corporateCombo3 && 'numbered-governance+officer-block',
+      corporateCombo4 && 'title+numbered-governance',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] corporate/business record signals matched: ${corporateHits}` +
+      (matchesCorporateCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (corporateHits >= 4 || matchesCorporateCombo) {
+    return { documentType: 'corporate_business_record', confidence: 'heuristic-high' };
+  }
+  if (corporateHits >= 2) {
+    return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
+  }
+
+  // ── Publications / Media Evidence ────────────────────────────────────────
+  // Covers:
+  //   - book covers
+  //   - article covers / first pages / full articles
+  //   - magazine pages / newspaper clippings
+  //   - publication metadata pages
+  //   - interview pages
+  //   - conference paper first pages / abstract pages
+  //
+  // Checked BEFORE recommendation letters because recommendation letters may
+  // mention publications, but true publication/media pages include editorial or
+  // scholarly structure markers (source metadata, abstract, citations, etc.).
+
+  const publicationSignals: RegExp[] = [
+    /\bjournal\b/i,
+    /\bmagazine\b/i,
+    /\bnewspaper\b/i,
+    /\bpress clipping\b/i,
+    /\bmedia clipping\b/i,
+    /\bnewspaper clipping\b/i,
+    /\bconference paper\b/i,
+    /\bproceedings\b/i,
+    /\bbook cover\b/i,
+    /\barticle cover\b/i,
+    /\bfirst page\b/i,
+    /\bbyline\b/i,
+    /\bheadline\b/i,
+    /\binterview with\b/i,
+    /\bsource[:\s]/i,
+    /\bpublication date[:\s]/i,
+    /\bissue date[:\s]/i,
+    /\bvolume\s+\d+/i,
+    /\bissue(?:\s+no\.?|\s+number)?\s+\d+/i,
+    /\bdoi[:\s]/i,
+    /\bissn[:\s]/i,
+    /\bisbn[:\s]/i,
+    /\babstract\b/i,
+    /\bkeywords?\b/i,
+    /\bcitation(?:s)?\b/i,
+    /\breferences\b/i,
+    /\bfootnote(?:s)?\b/i,
+    /\bphoto caption\b/i,
+    /\bfigure\s+\d+/i,
+  ];
+
+  const publicationHits = publicationSignals.filter((rx) => rx.test(text)).length;
+
+  const hasPublicationContainer =
+    /\bjournal\b/i.test(text) ||
+    /\bmagazine\b/i.test(text) ||
+    /\bnewspaper\b/i.test(text) ||
+    /\bpress clipping\b/i.test(text) ||
+    /\bmedia clipping\b/i.test(text) ||
+    /\bnewspaper clipping\b/i.test(text) ||
+    /\bconference paper\b/i.test(text) ||
+    /\bproceedings\b/i.test(text) ||
+    /\bbook cover\b/i.test(text) ||
+    /\barticle cover\b/i.test(text);
+
+  const hasPublicationMetadata =
+    /\bsource[:\s]/i.test(text) ||
+    /\bpublication date[:\s]/i.test(text) ||
+    /\bissue date[:\s]/i.test(text) ||
+    /\bvolume\s+\d+/i.test(text) ||
+    /\bissue(?:\s+no\.?|\s+number)?\s+\d+/i.test(text) ||
+    /\bdoi[:\s]/i.test(text) ||
+    /\bissn[:\s]/i.test(text) ||
+    /\bisbn[:\s]/i.test(text);
+
+  const hasEditorialStructure =
+    /\bheadline\b/i.test(text) ||
+    /\bbyline\b/i.test(text) ||
+    /\binterview with\b/i.test(text) ||
+    /\bphoto caption\b/i.test(text) ||
+    /\bfigure\s+\d+/i.test(text);
+
+  const hasScholarlyStructure =
+    /\babstract\b/i.test(text) ||
+    /\bkeywords?\b/i.test(text) ||
+    /\bintroduction\b/i.test(text) ||
+    /\bmethods?\b/i.test(text) ||
+    /\bresults?\b/i.test(text) ||
+    /\bdiscussion\b/i.test(text) ||
+    /\bconclusion\b/i.test(text) ||
+    /\breferences\b/i.test(text) ||
+    /\bcitation(?:s)?\b/i.test(text);
+
+  const hasAuthorAndDate =
+    /\bauthor(?:s)?[:\s]/i.test(text) ||
+    /\bbyline\b/i.test(text) ||
+    /\bpublished (?:on|in)\b/i.test(text) ||
+    /\bdate[:\s]/i.test(text);
+
+  const publicationCombo1 = hasPublicationContainer && hasPublicationMetadata;
+  const publicationCombo2 = hasPublicationContainer && hasEditorialStructure && hasAuthorAndDate;
+  const publicationCombo3 = hasScholarlyStructure && hasPublicationMetadata;
+  const publicationCombo4 = hasScholarlyStructure && hasPublicationContainer;
+
+  const matchesPublicationCombo =
+    publicationCombo1 || publicationCombo2 || publicationCombo3 || publicationCombo4;
+
+  if (publicationHits > 0 || matchesPublicationCombo) {
+    const activeRules = [
+      publicationCombo1 && 'container+metadata',
+      publicationCombo2 && 'container+editorial+author/date',
+      publicationCombo3 && 'scholarly+metadata',
+      publicationCombo4 && 'scholarly+container',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] publication/media signals matched: ${publicationHits}` +
+      (matchesPublicationCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (publicationHits >= 4 || matchesPublicationCombo) {
+    return { documentType: 'publication_media_record', confidence: 'heuristic-high' };
+  }
+  if (publicationHits >= 2) {
+    return { documentType: 'publication_media_record', confidence: 'heuristic-low' };
+  }
+
+  // ── Recommendation / Expert Letters ──────────────────────────────────────
+  // Covers:
+  //   - recommendation letters
+  //   - expert opinion letters
+  //   - support letters
+  //   - reference letters
+  //   - testimonial letters
+  //   - institutional endorsement letters
+  //
+  // Checked BEFORE employment records because recommendation letters can use
+  // business-letter language but are narrative endorsements, not HR contracts.
+
+  const recommendationSignals: RegExp[] = [
+    /\bletter of recommendation\b/i,
+    /\brecommendation letter\b/i,
+    /\bexpert opinion letter\b/i,
+    /\bsupport letter\b/i,
+    /\breference letter\b/i,
+    /\btestimonial letter\b/i,
+    /\binstitutional endorsement\b/i,
+    /\bto whom it may concern\b/i,
+    /\bi am writing (?:this )?(?:letter )?to (?:recommend|support|endorse)\b/i,
+    /\bi (?:strongly )?(?:fully )?(?:recommend|support|endorse)\b/i,
+    /\bwithout reservation\b/i,
+    /\bhighest recommendation\b/i,
+    /\boutstanding (?:professional|researcher|scholar|candidate)\b/i,
+    /\bextraordinary ability\b/i,
+    /\bnational (?:or )?international acclaim\b/i,
+    /\bbeneficiary\b/i,
+    /\bpetitioner\b/i,
+    /\beb-1\b/i,
+    /\beb1\b/i,
+    /\beb-2\b/i,
+    /\beb2\b/i,
+    /\bniw\b/i,
+    /\bo-1\b/i,
+    /\bo1\b/i,
+    /\buscis\b/i,
+    /\bcurriculum vitae\b/i,
+    /\bcv attached\b/i,
+    /\bresume attached\b/i,
+    /\battached (?:bio|biography|curriculum vitae|resume)\b/i,
+    /\bprofessor\b/i,
+    /\bph\.?d\.?\b/i,
+    /\bmd\b/i,
+    /\bchair(?:person)? of\b/i,
+    /\bdirector of\b/i,
+  ];
+
+  const recommendationHits = recommendationSignals.filter((rx) => rx.test(text)).length;
+
+  const hasRecommendationTitle =
+    /\bletter of recommendation\b/i.test(text) ||
+    /\brecommendation letter\b/i.test(text) ||
+    /\bexpert opinion letter\b/i.test(text) ||
+    /\bsupport letter\b/i.test(text) ||
+    /\breference letter\b/i.test(text) ||
+    /\btestimonial letter\b/i.test(text) ||
+    /\binstitutional endorsement\b/i.test(text);
+
+  const hasNarrativeEndorsement =
+    /\bi am writing (?:this )?(?:letter )?to (?:recommend|support|endorse)\b/i.test(text) ||
+    /\bi (?:strongly )?(?:fully )?(?:recommend|support|endorse)\b/i.test(text) ||
+    /\bwithout reservation\b/i.test(text) ||
+    /\bhighest recommendation\b/i.test(text);
+
+  const hasRecommenderCredentials =
+    /\bprofessor\b/i.test(text) ||
+    /\bph\.?d\.?\b/i.test(text) ||
+    /\bmd\b/i.test(text) ||
+    /\bchair(?:person)? of\b/i.test(text) ||
+    /\bdirector of\b/i.test(text) ||
+    /\bdepartment of\b/i.test(text) ||
+    /\binstitution\b/i.test(text) ||
+    /\buniversity\b/i.test(text);
+
+  const hasImmigrationEvaluationContext =
+    /\bbeneficiary\b/i.test(text) ||
+    /\bpetitioner\b/i.test(text) ||
+    /\beb-1\b/i.test(text) ||
+    /\beb1\b/i.test(text) ||
+    /\beb-2\b/i.test(text) ||
+    /\beb2\b/i.test(text) ||
+    /\bniw\b/i.test(text) ||
+    /\bo-1\b/i.test(text) ||
+    /\bo1\b/i.test(text) ||
+    /\buscis\b/i.test(text) ||
+    /\bextraordinary ability\b/i.test(text) ||
+    /\bnational (?:or )?international acclaim\b/i.test(text);
+
+  const hasAttachmentBioMention =
+    /\bcurriculum vitae\b/i.test(text) ||
+    /\bcv attached\b/i.test(text) ||
+    /\bresume attached\b/i.test(text) ||
+    /\battached (?:bio|biography|curriculum vitae|resume)\b/i.test(text);
+
+  const recommendationCombo1 = hasRecommendationTitle && hasNarrativeEndorsement;
+  const recommendationCombo2 = hasNarrativeEndorsement && hasRecommenderCredentials;
+  const recommendationCombo3 = hasNarrativeEndorsement && hasImmigrationEvaluationContext;
+  const recommendationCombo4 = hasRecommendationTitle && hasAttachmentBioMention;
+
+  const matchesRecommendationCombo =
+    recommendationCombo1 ||
+    recommendationCombo2 ||
+    recommendationCombo3 ||
+    recommendationCombo4;
+
+  if (recommendationHits > 0 || matchesRecommendationCombo) {
+    const activeRules = [
+      recommendationCombo1 && 'title+endorsement',
+      recommendationCombo2 && 'endorsement+credentials',
+      recommendationCombo3 && 'endorsement+immigration-context',
+      recommendationCombo4 && 'title+bio-attachment',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] recommendation letter signals matched: ${recommendationHits}` +
+      (matchesRecommendationCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (recommendationHits >= 4 || matchesRecommendationCombo) {
+    return { documentType: 'recommendation_letter', confidence: 'heuristic-high' };
+  }
+  if (recommendationHits >= 2) {
+    return { documentType: 'recommendation_letter', confidence: 'heuristic-low' };
+  }
+
+  // ── Employment Records ────────────────────────────────────────────────────
+  // Covers employment verification/experience letters, employer declarations,
+  // salary confirmation letters, work certificates, simple employment contracts,
+  // and HR attestations.
+  //
+  // Checked BEFORE course_certificate_landscape because employment documents may
+  // also use certificate-like language ("certificate", "attests", "declares"),
+  // but contain distinct employment semantics (employee, role, salary, timeline).
+
+  const employmentSignals: RegExp[] = [
+    /employment verification/i,
+    /verification of employment/i,
+    /experience letter/i,
+    /employer declaration/i,
+    /salary confirmation/i,
+    /work certificate/i,
+    /hr attestation/i,
+    /to whom it may concern/i,
+    /employee(?:\s+name|\s+id|\s+number)?[:\s]/i,
+    /job title[:\s]/i,
+    /position[:\s]/i,
+    /currently employed/i,
+    /has been employed/i,
+    /employment (?:start|end|period|date)/i,
+    /start date[:\s]/i,
+    /end date[:\s]/i,
+    /duties(?: and responsibilities)?/i,
+    /responsibilit(?:y|ies)/i,
+    /salary[:\s]/i,
+    /compensation[:\s]/i,
+    /monthly salary/i,
+    /annual salary/i,
+    /human resources/i,
+    /hr department/i,
+    /employment contract/i,
+  ];
+
+  const employmentHits = employmentSignals.filter(rx => rx.test(text)).length;
+
+  const hasEmploymentTitle =
+    /employment verification/i.test(text) ||
+    /verification of employment/i.test(text) ||
+    /experience letter/i.test(text) ||
+    /employer declaration/i.test(text) ||
+    /salary confirmation/i.test(text) ||
+    /work certificate/i.test(text) ||
+    /employment contract/i.test(text) ||
+    /hr attestation/i.test(text);
+
+  const hasEmployeeIdentityBlock =
+    /employee(?:\s+name|\s+id|\s+number)?[:\s]/i.test(text) ||
+    /national id[:\s]/i.test(text) ||
+    /\bcpf[:\s]/i.test(text);
+
+  const hasRoleAndTimeline =
+    (/job title[:\s]/i.test(text) || /position[:\s]/i.test(text) || /role[:\s]/i.test(text)) &&
+    (/employment (?:start|end|period|date)/i.test(text) || /start date[:\s]/i.test(text) || /end date[:\s]/i.test(text) || /since \w+/i.test(text));
+
+  const hasCompensationLanguage =
+    /salary[:\s]/i.test(text) ||
+    /compensation[:\s]/i.test(text) ||
+    /monthly salary/i.test(text) ||
+    /annual salary/i.test(text) ||
+    /remuneration/i.test(text);
+
+  const hasCorporateIssuerContext =
+    /to whom it may concern/i.test(text) ||
+    /human resources/i.test(text) ||
+    /hr department/i.test(text) ||
+    /employer/i.test(text);
+
+  const employmentCombo1 = hasEmploymentTitle && hasRoleAndTimeline;
+  const employmentCombo2 = hasEmployeeIdentityBlock && hasRoleAndTimeline;
+  const employmentCombo3 = hasCompensationLanguage && hasRoleAndTimeline;
+  const employmentCombo4 = hasCorporateIssuerContext && (hasRoleAndTimeline || hasCompensationLanguage);
+
+  const matchesEmploymentCombo =
+    employmentCombo1 || employmentCombo2 || employmentCombo3 || employmentCombo4;
+
+  if (employmentHits > 0 || matchesEmploymentCombo) {
+    const activeRules = [
+      employmentCombo1 && 'title+role/timeline',
+      employmentCombo2 && 'identity+role/timeline',
+      employmentCombo3 && 'compensation+role/timeline',
+      employmentCombo4 && 'issuer-context+employment',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] employment record signals matched: ${employmentHits}` +
+      (matchesEmploymentCombo ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (employmentHits >= 4 || matchesEmploymentCombo) {
+    return { documentType: 'employment_record', confidence: 'heuristic-high' };
+  }
+  if (employmentHits >= 2) {
+    return { documentType: 'employment_record', confidence: 'heuristic-low' };
+  }
+
   // ── Course / Landscape Certificate ──
-  // Only reached if NEITHER marriage NOR birth cert NOR academic diploma NOR transcript matched.
+  // Only reached if NEITHER marriage NOR birth cert NOR civil general record
+  // NOR identity/travel NOR academic diploma NOR transcript NOR academic general record NOR
+  // corporate/business record NOR publication/media record NOR recommendation
+  // letter NOR employment record matched.
   // Two independent detection paths — both preserved for safety:
   //
   //   Path 1 (flat count): classic compound phrases, ≥3 → high, ≥2 → low.
@@ -519,11 +1370,32 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
   if (/nascimento|birth[-_]cert/i.test(fileUrl)) {
     return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-low' };
   }
+  if (/divorce|div[oó]rcio|death[-_ ]cert|certid[aã]o[-_ ]de[-_ ][oó]bito|obito|adoption|ado[cç][aã]o|name[-_ ]change|mudan[cç]a[-_ ]de[-_ ]nome|civil[-_ ]registry[-_ ]extract|registro[-_ ]civil|averba[cç][aã]o|marginal[-_ ]note|civil[-_ ]court[-_ ]order|judgment[-_ ]of[-_ ]divorce|decree[-_ ]of[-_ ]divorce/i.test(fileUrl)) {
+    return { documentType: 'civil_record_general', confidence: 'heuristic-low' };
+  }
+  if (/passport|passaporte|identity[-_ ]card|id[-_ ]card|national[-_ ]id|rg\b|driver'?s?[-_ ]license|cnh\b|visa|i[-_ ]94|entry[-_ ]exit|travel[-_ ]document|mrz/i.test(fileUrl)) {
+    return { documentType: 'identity_travel_record', confidence: 'heuristic-low' };
+  }
   if (/diploma|formatura|gradua[çc][aã]o|degree[-_]cert/i.test(fileUrl)) {
     return { documentType: 'academic_diploma_certificate', confidence: 'heuristic-low' };
   }
   if (/hist[oó]rico[-_]escolar|transcript|boletim|school[-_]record|grade[-_]report/i.test(fileUrl)) {
     return { documentType: 'academic_transcript', confidence: 'heuristic-low' };
+  }
+  if (/enrollment[-_ ]cert|certificate[-_ ]of[-_ ]enrollment|proof[-_ ]of[-_ ]enrollment|declaracao[-_ ]escolar|declara[cç][aã]o[-_ ]acad[eê]mica|academic[-_ ]declaration|course[-_ ]completion[-_ ]statement|syllabus|ementa|course[-_ ]outline|curricular[-_ ]component/i.test(fileUrl)) {
+    return { documentType: 'academic_record_general', confidence: 'heuristic-low' };
+  }
+  if (/articles[-_ ]of[-_ ](?:incorporation|organization)|operating[-_ ]agreement|bylaws?|annual[-_ ]report|good[-_ ]standing|business[-_ ]license|corporate[-_ ]resolution|business[-_ ]registration|registry[-_ ]extract|junta[-_ ]comercial|cnpj/i.test(fileUrl)) {
+    return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
+  }
+  if (/book[-_ ]cover|article[-_ ]cover|journal|magazine|newspaper|clipping|media[-_ ]coverage|press[-_ ]coverage|interview|conference[-_ ]paper|abstract|proceedings|doi|issn|isbn|publication[-_ ]metadata/i.test(fileUrl)) {
+    return { documentType: 'publication_media_record', confidence: 'heuristic-low' };
+  }
+  if (/recommendation[-_ ]letter|expert[-_ ]opinion|support[-_ ]letter|reference[-_ ]letter|testimonial[-_ ]letter|endorsement[-_ ]letter|carta[-_ ]recomend|carta[-_ ]apoio|opinion[-_ ]letter|o[-_ ]1|eb[-_ ]1|eb[-_ ]2|niw/i.test(fileUrl)) {
+    return { documentType: 'recommendation_letter', confidence: 'heuristic-low' };
+  }
+  if (/employment|experience[-_ ]letter|employer[-_ ]declaration|salary[-_ ]confirm|work[-_ ]cert|hr[-_ ]attestation|employment[-_ ]contract|contrato[-_ ]trabalho/i.test(fileUrl)) {
+    return { documentType: 'employment_record', confidence: 'heuristic-low' };
   }
   // Landscape/participation certificates — common filename patterns from Brazilian institutions
   // E.g. "EINSTEIN - CIRURGIA BARIATRICA.pdf", "CRN - NUTRICIONISTAS.pdf", "CERTIFICATE.pdf"

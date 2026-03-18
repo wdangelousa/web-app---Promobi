@@ -16,29 +16,109 @@ import {
   buildAcademicTranscriptUserMessage,
 } from '@/lib/academicTranscriptPrompt';
 import {
+  buildAcademicRecordGeneralSystemPrompt,
+  buildAcademicRecordGeneralUserMessage,
+} from '@/lib/academicRecordGeneralPrompt';
+import {
   buildBirthCertificateSystemPrompt,
   buildBirthCertificateUserMessage,
 } from '@/lib/birthCertificatePrompt';
+import {
+  buildCivilRecordGeneralSystemPrompt,
+  buildCivilRecordGeneralUserMessage,
+} from '@/lib/civilRecordGeneralPrompt';
+import {
+  buildIdentityTravelRecordSystemPrompt,
+  buildIdentityTravelRecordUserMessage,
+} from '@/lib/identityTravelRecordPrompt';
+import {
+  buildEmploymentRecordSystemPrompt,
+  buildEmploymentRecordUserMessage,
+} from '@/lib/employmentRecordPrompt';
+import {
+  buildCorporateBusinessRecordSystemPrompt,
+  buildCorporateBusinessRecordUserMessage,
+} from '@/lib/corporateBusinessRecordPrompt';
+import {
+  buildRecommendationLetterSystemPrompt,
+  buildRecommendationLetterUserMessage,
+} from '@/lib/recommendationLetterPrompt';
+import {
+  buildPublicationMediaRecordSystemPrompt,
+  buildPublicationMediaRecordUserMessage,
+} from '@/lib/publicationMediaRecordPrompt';
 import { renderMarriageCertificateHtml } from '@/lib/marriageCertRenderer';
 import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
 import { renderAcademicDiplomaHtml } from '@/lib/academicDiplomaRenderer';
 import { renderAcademicTranscriptHtml } from '@/lib/academicTranscriptRenderer';
+import { renderAcademicRecordGeneralHtml } from '@/lib/academicRecordGeneralRenderer';
 import { renderBirthCertificateHtml } from '@/lib/birthCertificateRenderer';
+import { renderCivilRecordGeneralHtml } from '@/lib/civilRecordGeneralRenderer';
+import { renderIdentityTravelRecordHtml } from '@/lib/identityTravelRecordRenderer';
+import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
+import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
+import { renderRecommendationLetterHtml } from '@/lib/recommendationLetterRenderer';
+import { renderPublicationMediaRecordHtml } from '@/lib/publicationMediaRecordRenderer';
 import type { DocumentType } from '@/services/documentClassifier';
+import {
+  detectDocumentFamily,
+  getFamilyClientFacingCapabilityMap,
+  getDocumentFamilyImplementationMatrixRow,
+  getDocumentFamilyForType,
+  getFamilyLayoutProfile,
+  getFamilyRenderCapabilities,
+  type DocumentFamilyImplementationMatrixRow,
+  type FamilyClientFacingCapabilityMap,
+  type FamilyLayoutProfile,
+  type FamilyRenderCapabilities,
+  type RegisteredDocumentFamily,
+} from '@/services/documentFamilyRegistry';
 import type { DocumentOrientation } from '@/lib/documentOrientationDetector';
 import type { MarriageCertificateBrazil } from '@/types/marriageCertificate';
 import type { CourseCertificateLandscape } from '@/types/certificateLandscape';
 import type { AcademicDiplomaCertificate } from '@/types/academicDiploma';
 import type { AcademicTranscript } from '@/types/academicTranscript';
+import type { AcademicRecordGeneral } from '@/types/academicRecordGeneral';
 import type { BirthCertificateBrazil } from '@/types/birthCertificate';
+import type { CivilRecordGeneral } from '@/types/civilRecordGeneral';
+import type { IdentityTravelRecord } from '@/types/identityTravelRecord';
+import type { EmploymentRecord } from '@/types/employmentRecord';
+import type { CorporateBusinessRecord } from '@/types/corporateBusinessRecord';
+import type { RecommendationLetter } from '@/types/recommendationLetter';
+import type { PublicationMediaRecord } from '@/types/publicationMediaRecord';
 
 export type SupportedStructuredDocumentType = Exclude<DocumentType, 'unknown'>;
+
+export const STRUCTURED_RENDERER_BY_DOCUMENT_TYPE: Record<SupportedStructuredDocumentType, string> = {
+  marriage_certificate_brazil: 'marriageCertRenderer',
+  birth_certificate_brazil: 'birthCertificateRenderer',
+  civil_record_general: 'civilRecordGeneralRenderer',
+  identity_travel_record: 'identityTravelRecordRenderer',
+  academic_diploma_certificate: 'academicDiplomaRenderer',
+  academic_transcript: 'academicTranscriptRenderer',
+  academic_record_general: 'academicRecordGeneralRenderer',
+  corporate_business_record: 'corporateBusinessRecordRenderer',
+  publication_media_record: 'publicationMediaRecordRenderer',
+  recommendation_letter: 'recommendationLetterRenderer',
+  employment_record: 'employmentRecordRenderer',
+  course_certificate_landscape: 'certificateLandscapeRenderer',
+};
+
+// Backward-compatible alias while older call sites are migrated.
+export const STRUCTURED_RENDERER_BY_FAMILY = STRUCTURED_RENDERER_BY_DOCUMENT_TYPE;
 
 export const SUPPORTED_STRUCTURED_DOCUMENT_TYPES: readonly SupportedStructuredDocumentType[] = [
   'marriage_certificate_brazil',
   'birth_certificate_brazil',
+  'civil_record_general',
+  'identity_travel_record',
   'academic_diploma_certificate',
   'academic_transcript',
+  'academic_record_general',
+  'corporate_business_record',
+  'publication_media_record',
+  'recommendation_letter',
+  'employment_record',
   'course_certificate_landscape',
 ] as const;
 
@@ -54,12 +134,33 @@ export class StructuredRenderingRequiredError extends Error {
   readonly code = 'STRUCTURED_RENDERING_REQUIRED';
 
   constructor(
-    readonly documentType: SupportedStructuredDocumentType,
+    readonly documentType: DocumentType,
     message: string,
   ) {
     super(message);
     this.name = 'StructuredRenderingRequiredError';
   }
+}
+
+export interface StructuredClientFacingRenderAssertionInput {
+  documentType: DocumentType;
+  documentLabel?: string | null;
+  fileUrl?: string | null;
+  translatedText?: string | null;
+  detectedOrientation?: DocumentOrientation;
+  surface: string;
+  logPrefix: string;
+}
+
+export interface StructuredClientFacingRenderAssertionResult {
+  family: RegisteredDocumentFamily;
+  documentType: SupportedStructuredDocumentType;
+  rendererName: string;
+  familyLayoutProfile: FamilyLayoutProfile;
+  familyCapabilities: FamilyRenderCapabilities;
+  familyClientFacingCapability: FamilyClientFacingCapabilityMap;
+  implementationMatrixRow: DocumentFamilyImplementationMatrixRow;
+  surfaceRequirement: 'preview' | 'delivery' | 'unknown';
 }
 
 export interface StructuredRenderInput {
@@ -76,6 +177,236 @@ export interface StructuredRenderInput {
 export interface StructuredRenderOutput {
   structuredHtml: string;
   orientationForKit: DocumentOrientation;
+  rendererName: string;
+}
+
+export interface StructuredFamilyRenderInput extends StructuredRenderInput {
+  family: RegisteredDocumentFamily;
+}
+
+export function getStructuredRendererName(
+  documentType: SupportedStructuredDocumentType,
+): string {
+  return STRUCTURED_RENDERER_BY_DOCUMENT_TYPE[documentType];
+}
+
+function buildMissingStructuredRendererMessage(
+  family: string,
+  surface: string,
+): string {
+  return `Document family detected: ${family}. Structured translated renderer not implemented yet. Surface: ${surface}. Client-facing translated output is blocked; linear/plain fallback is not allowed.`;
+}
+
+function buildUnknownFamilyMessage(surface: string): string {
+  return `Unable to determine a supported structured document family. Surface: ${surface}. Client-facing translated output is blocked; linear/plain fallback is not allowed.`;
+}
+
+function resolveSurfaceRequirement(surface: string): 'preview' | 'delivery' | 'unknown' {
+  const normalized = surface.trim().toLowerCase();
+  if (normalized.includes('preview')) return 'preview';
+  if (
+    normalized.includes('delivery') ||
+    normalized.includes('/api/pdf/generate') ||
+    normalized.includes('/api/generate-pdf-kit')
+  ) {
+    return 'delivery';
+  }
+  return 'unknown';
+}
+
+function isSurfaceCapabilitySatisfied(
+  capability: FamilyClientFacingCapabilityMap,
+  requirement: 'preview' | 'delivery' | 'unknown',
+): boolean {
+  if (requirement === 'preview') return capability.previewSupported;
+  if (requirement === 'delivery') return capability.deliverySupported;
+  return capability.previewSupported && capability.deliverySupported;
+}
+
+function summarizeCapabilityMap(capability: FamilyClientFacingCapabilityMap): string {
+  return (
+    `preview=${capability.previewSupported ? 'yes' : 'no'} ` +
+    `delivery=${capability.deliverySupported ? 'yes' : 'no'} ` +
+    `orientation=${capability.orientationSupport} ` +
+    `table=${capability.tableSupport} ` +
+    `signature=${capability.signatureBlockSupport}`
+  );
+}
+
+function summarizeImplementationMatrixRow(row: DocumentFamilyImplementationMatrixRow): string {
+  return (
+    `detection=${row.detectionImplemented ? 'yes' : 'no'} ` +
+    `previewRenderer=${row.previewRendererImplemented ? 'yes' : 'no'} ` +
+    `deliveryRenderer=${row.finalDeliveryRendererImplemented ? 'yes' : 'no'} ` +
+    `portrait=${row.portraitSupported ? 'yes' : 'no'} ` +
+    `landscape=${row.landscapeSupported ? 'yes' : 'no'} ` +
+    `denseTable=${row.denseTableHandling ? 'yes' : 'no'} ` +
+    `signatureSeal=${row.signatureSealHandling ? 'yes' : 'no'} ` +
+    `priority=${row.priorityLevel}`
+  );
+}
+
+function isOrientationSupportedByMatrix(
+  row: DocumentFamilyImplementationMatrixRow,
+  orientation: DocumentOrientation | undefined,
+): boolean {
+  if (!orientation || orientation === 'unknown') return true;
+  if (orientation === 'portrait') return row.portraitSupported;
+  if (orientation === 'landscape') return row.landscapeSupported;
+  return true;
+}
+
+export function assertStructuredClientFacingRender(
+  input: StructuredClientFacingRenderAssertionInput,
+): StructuredClientFacingRenderAssertionResult {
+  const {
+    documentType,
+    documentLabel,
+    fileUrl,
+    translatedText,
+    detectedOrientation,
+    surface,
+    logPrefix,
+  } = input;
+  const detection = detectDocumentFamily({
+    documentType,
+    documentLabel,
+    fileUrl,
+    translatedText,
+  });
+  const family = detection.family;
+  const familyLayoutProfile = getFamilyLayoutProfile(family);
+  const familyCapabilities = getFamilyRenderCapabilities(family);
+  const familyClientFacingCapability = getFamilyClientFacingCapabilityMap(family);
+  const implementationMatrixRow = getDocumentFamilyImplementationMatrixRow(family);
+  const surfaceRequirement = resolveSurfaceRequirement(surface);
+
+  console.log(
+    `${logPrefix} — structured render guard: evaluating surface=${surface}, docType=${documentType}, family=${family}, detection=${detection.confidence}`,
+  );
+  console.log(
+    `${logPrefix} — structured render guard: capability map | family=${family} | ${summarizeCapabilityMap(familyClientFacingCapability)}`,
+  );
+  console.log(
+    `${logPrefix} — structured render guard: implementation matrix | family=${family} | ${summarizeImplementationMatrixRow(implementationMatrixRow)} | notes="${implementationMatrixRow.notes}"`,
+  );
+
+  if (family === 'unknown') {
+    const message = buildUnknownFamilyMessage(surface);
+    console.error(`${logPrefix} — structured render guard: blocked | ${message} reason=${detection.reason}`);
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!implementationMatrixRow.detectionImplemented) {
+    const message =
+      `Document family detected: ${family}. Matrix marks detection as not implemented. ` +
+      `Surface: ${surface}. Client-facing translated output is blocked; linear/plain fallback is not allowed.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!familyCapabilities.structuredRendererImplemented) {
+    const message = buildMissingStructuredRendererMessage(family, surface);
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} status=${familyCapabilities.status} ` +
+      `capabilities=${summarizeCapabilityMap(familyClientFacingCapability)} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!isSurfaceCapabilitySatisfied(familyClientFacingCapability, surfaceRequirement)) {
+    const expectedSurface = surfaceRequirement === 'unknown' ? 'preview+delivery' : surfaceRequirement;
+    const message =
+      `Document family detected: ${family}. Structured translated renderer capability is missing for ${expectedSurface}. ` +
+      `Surface: ${surface}. Client-facing translated output is blocked; linear/plain fallback is not allowed.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} ` +
+      `capabilities=${summarizeCapabilityMap(familyClientFacingCapability)} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!isOrientationSupportedByMatrix(implementationMatrixRow, detectedOrientation)) {
+    const message =
+      `Document family detected: ${family}. Matrix does not support ${detectedOrientation} orientation for this family. ` +
+      `Surface: ${surface}. Client-facing translated output is blocked to avoid degraded fallback layout.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (
+    familyLayoutProfile.likelyTableDensity === 'high' &&
+    !implementationMatrixRow.denseTableHandling
+  ) {
+    const message =
+      `Document family detected: ${family}. Matrix reports no dense-table handling for a high-density family profile. ` +
+      `Surface: ${surface}. Client-facing translated output is blocked to avoid ugly fallback rendering.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (
+    (familyLayoutProfile.signatureStampPresence === 'common' ||
+      familyLayoutProfile.signatureStampPresence === 'very-common') &&
+    !implementationMatrixRow.signatureSealHandling
+  ) {
+    const message =
+      `Document family detected: ${family}. Matrix reports no signature/seal handling for a signature-heavy family profile. ` +
+      `Surface: ${surface}. Client-facing translated output is blocked to avoid ugly fallback rendering.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!isSupportedStructuredDocumentType(documentType)) {
+    const message =
+      `Family mismatch: document family "${family}" is mapped but no structured renderer is registered for document type "${documentType}" ` +
+      `(surface: ${surface}). Client-facing translated output is blocked.`;
+    console.error(`${logPrefix} — structured render guard: blocked | ${message}`);
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  const mappedFamily = getDocumentFamilyForType(documentType);
+  if (mappedFamily !== family) {
+    const message =
+      `Family mismatch: document type "${documentType}" belongs to family "${mappedFamily}" but detector selected "${family}" ` +
+      `(surface: ${surface}). Client-facing translated output is blocked.`;
+    console.error(`${logPrefix} — structured render guard: blocked | ${message}`);
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!familyCapabilities.supportedDocumentTypes.includes(documentType)) {
+    const message =
+      `Family mismatch: family "${family}" has no premium renderer binding for document type "${documentType}" ` +
+      `(surface: ${surface}). Client-facing translated output is blocked.`;
+    console.error(`${logPrefix} — structured render guard: blocked | ${message}`);
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  const rendererName = getStructuredRendererName(documentType);
+  console.log(
+    `${logPrefix} — structured render guard: allowed | family=${family} | renderer=${rendererName} | ` +
+    `defaultOrientation=${familyLayoutProfile.defaultOrientation} | safeMarginExpansion=${familyLayoutProfile.safeMarginExpansionLikely ? 'yes' : 'no'} | ` +
+    `${summarizeCapabilityMap(familyClientFacingCapability)} | matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)} | ` +
+    `surfaceRequirement=${surfaceRequirement} | detectedOrientation=${detectedOrientation ?? 'n/a'}`,
+  );
+  return {
+    family,
+    documentType,
+    rendererName,
+    familyLayoutProfile,
+    familyCapabilities,
+    familyClientFacingCapability,
+    implementationMatrixRow,
+    surfaceRequirement,
+  };
 }
 
 function stripMarkdownFences(raw: string): string {
@@ -160,14 +491,14 @@ function buildMessageContent(
 }
 
 function buildStructuredFailureMessage(
-  documentType: SupportedStructuredDocumentType,
+  documentType: DocumentType,
   reason: string,
 ): string {
-  return `Structured rendering failed for "${documentType}". Legacy fallback is blocked for supported document families. ${reason}`;
+  return `Structured rendering failed for "${documentType}". Legacy/plain fallback is blocked for client-facing translated output. ${reason}`;
 }
 
 export function formatStructuredRenderingFailureMessage(
-  documentType: SupportedStructuredDocumentType,
+  documentType: DocumentType,
   err: unknown,
 ): string {
   if (err instanceof StructuredRenderingRequiredError) {
@@ -182,6 +513,28 @@ export function formatStructuredRenderingFailureMessage(
         : 'Check server logs for details.';
 
   return buildStructuredFailureMessage(documentType, detail);
+}
+
+export async function renderStructuredFamilyDocument(
+  input: StructuredFamilyRenderInput,
+): Promise<StructuredRenderOutput> {
+  const expectedFamily = getDocumentFamilyForType(input.documentType);
+  if (expectedFamily !== input.family) {
+    throw new StructuredRenderingRequiredError(
+      input.documentType,
+      `Family mismatch: render request declared "${input.family}" but document type "${input.documentType}" belongs to "${expectedFamily}". Client-facing translated output is blocked.`,
+    );
+  }
+
+  const capabilities = getFamilyRenderCapabilities(input.family);
+  if (!capabilities.structuredRendererImplemented) {
+    throw new StructuredRenderingRequiredError(
+      input.documentType,
+      `Missing structured renderer for document family "${input.family}". Client-facing translated output is blocked.`,
+    );
+  }
+
+  return renderSupportedStructuredDocument(input);
 }
 
 function ensureStructuredSourceAvailable(
@@ -236,6 +589,7 @@ function parseStructuredJson<T>(
 export async function renderSupportedStructuredDocument(
   input: StructuredRenderInput,
 ): Promise<StructuredRenderOutput> {
+  const rendererName = getStructuredRendererName(input.documentType);
   const fileUrl = ensureStructuredSourceAvailable(
     input.documentType,
     input.originalFileBuffer,
@@ -250,160 +604,412 @@ export async function renderSupportedStructuredDocument(
       userMessage,
     );
 
-  if (input.documentType === 'marriage_certificate_brazil') {
-    const rawJson = ensureExtractionJson(
-      input.documentType,
-      await callClaudeForJson(
-        input.client,
-        buildStructuredMarriageCertSystemPrompt(),
-        messageContentFor(buildStructuredUserMessage()),
-        8192,
-        `${input.logPrefix} [marriage-cert]`,
-      ),
-    );
+  switch (input.documentType) {
+    case 'marriage_certificate_brazil': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildStructuredMarriageCertSystemPrompt(),
+          messageContentFor(buildStructuredUserMessage()),
+          8192,
+          `${input.logPrefix} [marriage-cert]`,
+        ),
+      );
 
-    const parsed = parseStructuredJson<MarriageCertificateBrazil>(
-      input.documentType,
-      rawJson,
-    );
+      const parsed = parseStructuredJson<MarriageCertificateBrazil>(
+        input.documentType,
+        rawJson,
+      );
 
-    const structuredHtml = renderMarriageCertificateHtml(parsed, {
-      pageCount: input.sourcePageCount,
-      orientation:
-        input.detectedOrientation === 'landscape'
-          ? 'landscape'
-          : input.detectedOrientation === 'portrait'
-            ? 'portrait'
-            : 'unknown',
-    });
+      const structuredHtml = renderMarriageCertificateHtml(parsed, {
+        pageCount: input.sourcePageCount,
+        orientation:
+          input.detectedOrientation === 'landscape'
+            ? 'landscape'
+            : input.detectedOrientation === 'portrait'
+              ? 'portrait'
+              : 'unknown',
+      });
 
-    return {
-      structuredHtml,
-      orientationForKit: input.detectedOrientation,
-    };
-  }
-
-  if (input.documentType === 'course_certificate_landscape') {
-    const rawJson = ensureExtractionJson(
-      input.documentType,
-      await callClaudeForJson(
-        input.client,
-        buildCertificateLandscapeSystemPrompt(),
-        messageContentFor(buildCertificateLandscapeUserMessage()),
-        4096,
-        `${input.logPrefix} [cert-landscape]`,
-      ),
-    );
-
-    const parsed = parseStructuredJson<CourseCertificateLandscape>(
-      input.documentType,
-      rawJson,
-    );
-
-    let effectiveOrientation: DocumentOrientation = input.detectedOrientation;
-    if (input.detectedOrientation === 'portrait' && input.sourcePageCount === 1) {
-      effectiveOrientation = 'landscape';
-    } else if (input.detectedOrientation === 'unknown') {
-      effectiveOrientation = 'landscape';
+      return {
+        structuredHtml,
+        orientationForKit: input.detectedOrientation,
+        rendererName,
+      };
     }
 
-    parsed.orientation = input.detectedOrientation;
-    parsed.page_count = input.sourcePageCount ?? null;
+    case 'civil_record_general': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildCivilRecordGeneralSystemPrompt(),
+          messageContentFor(buildCivilRecordGeneralUserMessage()),
+          12288,
+          `${input.logPrefix} [civil-record-general]`,
+        ),
+      );
 
-    return {
-      structuredHtml: renderCertificateLandscapeHtml(parsed, {
-        pageCount: input.sourcePageCount,
-        orientation: effectiveOrientation,
-      }),
-      orientationForKit: effectiveOrientation,
-    };
+      const parsed = parseStructuredJson<CivilRecordGeneral>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderCivilRecordGeneralHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'identity_travel_record': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildIdentityTravelRecordSystemPrompt(),
+          messageContentFor(buildIdentityTravelRecordUserMessage()),
+          8192,
+          `${input.logPrefix} [identity-travel]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<IdentityTravelRecord>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderIdentityTravelRecordHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'course_certificate_landscape': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildCertificateLandscapeSystemPrompt(),
+          messageContentFor(buildCertificateLandscapeUserMessage()),
+          4096,
+          `${input.logPrefix} [cert-landscape]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<CourseCertificateLandscape>(
+        input.documentType,
+        rawJson,
+      );
+
+      let effectiveOrientation: DocumentOrientation = input.detectedOrientation;
+      if (input.detectedOrientation === 'portrait' && input.sourcePageCount === 1) {
+        effectiveOrientation = 'landscape';
+      } else if (input.detectedOrientation === 'unknown') {
+        effectiveOrientation = 'landscape';
+      }
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      return {
+        structuredHtml: renderCertificateLandscapeHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'academic_diploma_certificate': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildAcademicDiplomaSystemPrompt(),
+          messageContentFor(buildAcademicDiplomaUserMessage()),
+          8192,
+          `${input.logPrefix} [academic-diploma]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<AcademicDiplomaCertificate>(
+        input.documentType,
+        rawJson,
+      );
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'landscape' : input.detectedOrientation;
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      return {
+        structuredHtml: renderAcademicDiplomaHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'academic_transcript': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildAcademicTranscriptSystemPrompt(),
+          messageContentFor(buildAcademicTranscriptUserMessage()),
+          8192,
+          `${input.logPrefix} [academic-transcript]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<AcademicTranscript>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      return {
+        structuredHtml: renderAcademicTranscriptHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: input.detectedOrientation,
+        }),
+        orientationForKit: input.detectedOrientation,
+        rendererName,
+      };
+    }
+
+    case 'academic_record_general': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildAcademicRecordGeneralSystemPrompt(),
+          messageContentFor(buildAcademicRecordGeneralUserMessage()),
+          12288,
+          `${input.logPrefix} [academic-general]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<AcademicRecordGeneral>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const hasDenseSubjectTable = (parsed.subject_grade_table?.length ?? 0) >= 12;
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown'
+          ? hasDenseSubjectTable
+            ? 'landscape'
+            : 'portrait'
+          : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderAcademicRecordGeneralHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'employment_record': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildEmploymentRecordSystemPrompt(),
+          messageContentFor(buildEmploymentRecordUserMessage()),
+          8192,
+          `${input.logPrefix} [employment-record]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<EmploymentRecord>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderEmploymentRecordHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+          forceSignatureOnNewPage: (input.sourcePageCount ?? 1) >= 2,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'corporate_business_record': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildCorporateBusinessRecordSystemPrompt(),
+          messageContentFor(buildCorporateBusinessRecordUserMessage()),
+          10240,
+          `${input.logPrefix} [corporate-business-record]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<CorporateBusinessRecord>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderCorporateBusinessRecordHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'publication_media_record': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildPublicationMediaRecordSystemPrompt(),
+          messageContentFor(buildPublicationMediaRecordUserMessage()),
+          12288,
+          `${input.logPrefix} [publication-media]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<PublicationMediaRecord>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderPublicationMediaRecordHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'recommendation_letter': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildRecommendationLetterSystemPrompt(),
+          messageContentFor(buildRecommendationLetterUserMessage()),
+          12288,
+          `${input.logPrefix} [recommendation-letter]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<RecommendationLetter>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderRecommendationLetterHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+      };
+    }
+
+    case 'birth_certificate_brazil': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildBirthCertificateSystemPrompt(),
+          messageContentFor(buildBirthCertificateUserMessage()),
+          6144,
+          `${input.logPrefix} [birth-cert]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<BirthCertificateBrazil>(
+        input.documentType,
+        rawJson,
+      );
+
+      parsed.orientation = input.detectedOrientation;
+      parsed.page_count = input.sourcePageCount ?? null;
+
+      return {
+        structuredHtml: renderBirthCertificateHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: input.detectedOrientation,
+        }),
+        orientationForKit: input.detectedOrientation,
+        rendererName,
+      };
+    }
+
+    default:
+      throw new StructuredRenderingRequiredError(
+        input.documentType,
+        `Family mismatch: structured renderer dispatch has no branch for "${input.documentType}". Client-facing translated output is blocked.`,
+      );
   }
-
-  if (input.documentType === 'academic_diploma_certificate') {
-    const rawJson = ensureExtractionJson(
-      input.documentType,
-      await callClaudeForJson(
-        input.client,
-        buildAcademicDiplomaSystemPrompt(),
-        messageContentFor(buildAcademicDiplomaUserMessage()),
-        8192,
-        `${input.logPrefix} [academic-diploma]`,
-      ),
-    );
-
-    const parsed = parseStructuredJson<AcademicDiplomaCertificate>(
-      input.documentType,
-      rawJson,
-    );
-
-    const effectiveOrientation: DocumentOrientation =
-      input.detectedOrientation === 'unknown' ? 'landscape' : input.detectedOrientation;
-
-    parsed.orientation = input.detectedOrientation;
-    parsed.page_count = input.sourcePageCount ?? null;
-
-    return {
-      structuredHtml: renderAcademicDiplomaHtml(parsed, {
-        pageCount: input.sourcePageCount,
-        orientation: effectiveOrientation,
-      }),
-      orientationForKit: effectiveOrientation,
-    };
-  }
-
-  if (input.documentType === 'academic_transcript') {
-    const rawJson = ensureExtractionJson(
-      input.documentType,
-      await callClaudeForJson(
-        input.client,
-        buildAcademicTranscriptSystemPrompt(),
-        messageContentFor(buildAcademicTranscriptUserMessage()),
-        8192,
-        `${input.logPrefix} [academic-transcript]`,
-      ),
-    );
-
-    const parsed = parseStructuredJson<AcademicTranscript>(
-      input.documentType,
-      rawJson,
-    );
-
-    parsed.orientation = input.detectedOrientation;
-    parsed.page_count = input.sourcePageCount ?? null;
-
-    return {
-      structuredHtml: renderAcademicTranscriptHtml(parsed, {
-        pageCount: input.sourcePageCount,
-        orientation: input.detectedOrientation,
-      }),
-      orientationForKit: input.detectedOrientation,
-    };
-  }
-
-  const rawJson = ensureExtractionJson(
-    input.documentType,
-    await callClaudeForJson(
-      input.client,
-      buildBirthCertificateSystemPrompt(),
-      messageContentFor(buildBirthCertificateUserMessage()),
-      6144,
-      `${input.logPrefix} [birth-cert]`,
-    ),
-  );
-
-  const parsed = parseStructuredJson<BirthCertificateBrazil>(
-    input.documentType,
-    rawJson,
-  );
-
-  parsed.orientation = input.detectedOrientation;
-  parsed.page_count = input.sourcePageCount ?? null;
-
-  return {
-    structuredHtml: renderBirthCertificateHtml(parsed, {
-      pageCount: input.sourcePageCount,
-      orientation: input.detectedOrientation,
-    }),
-    orientationForKit: input.detectedOrientation,
-  };
 }

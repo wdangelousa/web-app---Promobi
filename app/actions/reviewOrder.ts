@@ -4,17 +4,13 @@ import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
 export async function approveTranslation(orderId: number) {
-    try {
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'COMPLETED' },
-        });
-        revalidatePath(`/revisar/${orderId}`);
-        return { success: true };
-    } catch (error) {
-        console.error('Error approving translation:', error);
-        throw new Error('Failed to approve translation');
-    }
+    console.error(
+        `[approveTranslation] blocked — legacy client review completion is disabled for order #${orderId}. ` +
+        `Use structured generation + release flow only.`,
+    );
+    throw new Error(
+        'Legacy client review completion is disabled. Delivery must go through structured generation and release.',
+    );
 }
 
 export async function requestAdjustment(orderId: number, comments: string) {

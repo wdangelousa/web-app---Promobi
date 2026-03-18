@@ -8,7 +8,7 @@
  *   - "order_received"      → sendOrderReceivedEmail (to client)
  *   - "payment_confirmed"   → sendPaymentConfirmedEmail (to client)
  *   - "translation_started" → sendTranslationStartedEmail (to client)
- *   - "delivery"            → sendDeliveryEmail (to client)
+ *   - "delivery"            → blocked (legacy manual delivery trigger disabled)
  *   - "brl_admin_alert"     → internal admin alert with full client contact data
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,7 +17,6 @@ import {
     sendOrderReceivedEmail,
     sendPaymentConfirmedEmail,
     sendTranslationStartedEmail,
-    sendDeliveryEmail,
 } from '@/lib/mail';
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
@@ -139,8 +138,19 @@ export async function POST(req: NextRequest) {
                 result = await sendTranslationStartedEmail(props);
                 break;
             case 'delivery':
-                result = await sendDeliveryEmail(props);
-                break;
+                console.error(
+                    '[notifications] blocked trigger=delivery — legacy/manual delivery email trigger is disabled. ' +
+                    'Use structured release flow (releaseToClient) only.',
+                );
+                return NextResponse.json(
+                    {
+                        ok: false,
+                        code: 'LEGACY_DELIVERY_TRIGGER_DISABLED',
+                        error:
+                            'Legacy/manual delivery notifications are disabled. Use structured release flow only.',
+                    },
+                    { status: 410 },
+                );
             case 'brl_admin_alert':
                 result = await sendBrlAdminAlert(props);
                 break;

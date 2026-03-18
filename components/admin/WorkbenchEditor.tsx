@@ -11,7 +11,6 @@ import {
 } from 'lucide-react'
 import { approveDocument, saveTranslationDraft } from '@/app/actions/workbench'
 import { retryTranslation } from '@/app/actions/retry-translation'
-import { sendDelivery } from '@/app/actions/sendDelivery'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,24 +106,15 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
 
     setUploading(selected.id)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('docId', String(selected.id))
-      form.append('orderId', String(order.id))
-
-      const res = await fetch('/api/workbench/upload-delivery', { method: 'POST', body: form })
-      const data = await res.json()
-      if (!res.ok || !data.url) throw new Error(data.error ?? 'Upload falhou')
-
-      updateDoc(selected.id, { delivery_pdf_url: data.url })
-      showToast('PDF carregado ✓')
-    } catch (err: any) {
-      showToast(err.message, 'err')
+      showToast(
+        'Upload manual de PDF foi removido. Use /admin/orders/{id} com geração estruturada.',
+        'err',
+      )
     } finally {
       setUploading(null)
       if (fileRef.current) fileRef.current.value = ''
     }
-  }, [selected, order.id])
+  }, [selected])
 
   // ── Approve document ──────────────────────────────────────────────────────
 
@@ -149,20 +139,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
 
   const handleRelease = () => {
     startRelease(async () => {
-      try {
-        // Envia apenas o ID do pedido. Evita erros de múltiplos argumentos.
-        const response = await sendDelivery(order.id)
-
-        if (response.success) {
-          setReleased(true)
-          showToast('E-mail enviado ao cliente ✅')
-        } else {
-          // Garante que o TS reconheça o fallback de erro de forma segura
-          showToast(('error' in response ? response.error : undefined) ?? 'Erro desconhecido ao enviar', 'err')
-        }
-      } catch (err: any) {
-        showToast('Erro interno no servidor', 'err')
-      }
+      showToast('Liberação manual removida. Use /admin/orders/{id} com fluxo estruturado.', 'err')
     })
   }
 
@@ -176,7 +153,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
         <div className="flex items-center justify-between px-5 py-3">
           <div className="flex items-center gap-4">
             <Link
-              href="/admin/workbench"
+              href="/admin/orders"
               className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors text-sm"
             >
               <ArrowLeft className="w-4 h-4" /> Fila

@@ -19,8 +19,6 @@ import { PDFDownloadLink } from '@react-pdf/renderer'
 import { ProposalPDF } from '../../../components/ProposalPDF'
 import { DetailOrder } from './types'
 import { updateOrderStatus, updateTrackingCode, deleteOrder, updateOrderCustomerInfo } from '../actions'
-import { uploadDelivery } from '../../actions/uploadDelivery'
-import { sendDelivery } from '../../actions/sendDelivery'
 import { OrderStatus } from '@prisma/client'
 import { getLogoBase64 } from '../../actions/get-logo-base64'
 import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
@@ -106,39 +104,12 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
 
     const handleUpload = async () => {
         if (!file || !order) return
-        setUploading(true)
-
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('orderId', order.id.toString())
-
-        const result = await uploadDelivery(formData)
-
-        if (result.success && result.deliveryUrl) {
-            setDeliveryUrl(result.deliveryUrl)
-            onUpdate({ ...order, deliveryUrl: result.deliveryUrl })
-            alert("Arquivo carregado com sucesso! Agora você pode enviar ao cliente.")
-        } else {
-            alert("Erro no upload: " + result.error)
-        }
-        setUploading(false)
+        alert('Upload manual de entrega foi desativado. Use o fluxo estruturado em /admin/orders/{id}.')
     }
 
     const handleSendDelivery = async () => {
         if (!order) return
-        if (!confirm("Tem certeza que deseja enviar a entrega final ao cliente? Isso marcará o pedido como CONCLUÍDO.")) return
-
-        setLoading(true)
-        const result = await sendDelivery(order.id)
-
-        if (result.success) {
-            alert("E-mail enviado com sucesso!")
-            onUpdate({ ...order, status: 'COMPLETED' })
-            onClose()
-        } else {
-            alert("Erro ao enviar e-mail: " + ('error' in result ? result.error : 'Desconhecido'))
-        }
-        setLoading(false)
+        alert('Envio manual de entrega foi desativado. Use o fluxo estruturado em /admin/orders/{id}.')
     }
 
     const handleDeleteOrder = async () => {
@@ -468,7 +439,7 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                             <div className="pt-6 border-t border-slate-100">
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Controle de Fluxo</h4>
                                 <div className="grid grid-cols-2 gap-2 mb-6">
-                                    {['PENDING', 'TRANSLATING', 'READY_FOR_REVIEW', 'NOTARIZING', 'COMPLETED'].map((s) => (
+                                    {['PENDING', 'TRANSLATING', 'READY_FOR_REVIEW', 'NOTARIZING'].map((s) => (
                                         <button
                                             key={s}
                                             onClick={() => handleStatusUpdate(s as any)}
@@ -487,7 +458,11 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                     <button
                                         onClick={() => {
                                             const hasNotarization = orderMetadata?.documents?.some((d: any) => d.notarized) || orderMetadata?.serviceType === 'notarization'
-                                            handleStatusUpdate(hasNotarization ? 'NOTARIZING' : 'COMPLETED')
+                                            if (hasNotarization) {
+                                                handleStatusUpdate('NOTARIZING')
+                                                return
+                                            }
+                                            alert('Conclusão manual foi bloqueada. Use o fluxo estruturado em /admin/orders/{id}.')
                                         }}
                                         disabled={loading}
                                         className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50"
@@ -500,27 +475,13 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                 {order.status === 'TRANSLATING' && (
                                     <button
                                         onClick={async () => {
-                                            if (!confirm("Gerar o Kit PDF (Certificado + Tradução + Original)? Isso enviará para a etapa de revisão.")) return;
-                                            setLoading(true);
-                                            const res = await fetch('/api/generate-pdf-kit', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ orderId: order.id })
-                                            });
-                                            const data = await res.json();
-                                            if (res.ok) {
-                                                alert("Kit PDF gerado com sucesso!");
-                                                onUpdate({ ...order, status: 'READY_FOR_REVIEW', deliveryUrl: data.deliveryUrl });
-                                            } else {
-                                                alert(data.error || "Erro ao gerar o kit PDF.");
-                                            }
-                                            setLoading(false);
+                                            alert('Este atalho legado foi bloqueado. Use o workbench estruturado em /admin/orders/{id}.')
                                         }}
                                         disabled={loading}
                                         className="w-full flex items-center justify-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-50"
                                     >
                                         <FileText className="h-5 w-5" />
-                                        {loading ? 'Processando Kit...' : 'Concluir Tradução & Gerar PDF'}
+                                        {loading ? 'Processando...' : 'Fluxo Legado Bloqueado'}
                                     </button>
                                 )}
                             </div>

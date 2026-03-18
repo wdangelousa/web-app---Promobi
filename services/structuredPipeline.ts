@@ -33,9 +33,14 @@ import {
 } from '@/lib/certificateLandscapePrompt';
 import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
 import {
+  detectDocumentFamily,
+  getFamilyRenderCapabilities,
+  isDocumentTypeInImplementedStructuredFamily,
+} from '@/services/documentFamilyRegistry';
+import {
   formatStructuredRenderingFailureMessage,
+  renderStructuredFamilyDocument,
   isSupportedStructuredDocumentType,
-  renderSupportedStructuredDocument,
   type SupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer';
 
@@ -80,7 +85,10 @@ export interface CertificateLandscapePipelineResult {
  * Both conditions must be met: flag enabled AND document type supported.
  */
 export function isEligibleForStructuredPipeline(documentType: DocumentType): boolean {
-  return FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION && isSupportedStructuredDocumentType(documentType);
+  return (
+    FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION &&
+    isDocumentTypeInImplementedStructuredFamily(documentType)
+  );
 }
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
@@ -651,14 +659,29 @@ export async function runCertificateLandscapeStructuredPipeline(
 const STRUCTURED_DOCUMENT_LABELS: Record<SupportedStructuredDocumentType, string> = {
   marriage_certificate_brazil: 'Marriage Certificate',
   birth_certificate_brazil: 'Birth Certificate',
+  civil_record_general: 'Civil Record',
+  identity_travel_record: 'Identity / Travel Record',
   academic_diploma_certificate: 'Academic Diploma',
   academic_transcript: 'Academic Transcript',
+  academic_record_general: 'Academic Record',
+  corporate_business_record: 'Corporate / Business Record',
+  publication_media_record: 'Publication / Media Evidence',
+  recommendation_letter: 'Recommendation / Expert Letter',
+  employment_record: 'Employment Record',
   course_certificate_landscape: 'Training Certificate',
 };
 
 async function runSharedStructuredPipeline(
   client: Anthropic,
   input: StructuredPipelineInput,
+  family:
+    | 'civil_records'
+    | 'identity_travel'
+    | 'academic_records'
+    | 'employment_records'
+    | 'corporate_business_records'
+    | 'publications_media'
+    | 'recommendation_letters',
   documentType: SupportedStructuredDocumentType,
 ): Promise<StructuredPipelineResult> {
   const ctx = `Order #${input.orderId ?? '?'} Doc #${input.documentId ?? '?'}`;
@@ -691,8 +714,9 @@ async function runSharedStructuredPipeline(
       log('orientation source: unavailable');
     }
 
-    const resolved = await renderSupportedStructuredDocument({
+    const resolved = await renderStructuredFamilyDocument({
       client,
+      family,
       documentType,
       originalFileBuffer: input.fileBuffer,
       originalFileUrl: input.fileUrl,
@@ -702,7 +726,7 @@ async function runSharedStructuredPipeline(
       logPrefix: `[structuredPipeline] ${ctx}`,
     });
 
-    log(`shared structured renderer used: yes | family: ${documentType}`);
+    log(`shared structured renderer used: yes | family: ${family} | documentType: ${documentType}`);
     log(`structured html generated: yes | length: ${resolved.structuredHtml.length} chars`);
 
     const previewEnabled = FEATURE_FLAGS.ENABLE_STRUCTURED_PREVIEW;
@@ -786,22 +810,42 @@ export async function dispatchStructuredPipeline(
   input: StructuredPipelineInput,
   documentType: DocumentType
 ): Promise<StructuredPipelineResult | CertificateLandscapePipelineResult> {
-  if (!isSupportedStructuredDocumentType(documentType)) {
+  const familyDetection = detectDocumentFamily({ documentType, fileUrl: input.fileUrl });
+  const familyCapabilities = getFamilyRenderCapabilities(familyDetection.family);
+
+  if (!familyCapabilities.structuredRendererImplemented || !isSupportedStructuredDocumentType(documentType)) {
     return {
       success: false,
       data: null,
       parseSuccess: false,
       validationSuccess: false,
-      error: `No structured pipeline registered for document type: ${documentType}`,
+      error:
+        `No structured pipeline registered for document family "${familyDetection.family}" and document type "${documentType}".`,
     };
   }
 
-  if (documentType === 'marriage_certificate_brazil') {
-    return runMarriageCertStructuredPipeline(client, input);
-  }
   if (documentType === 'course_certificate_landscape') {
     return runCertificateLandscapeStructuredPipeline(client, input);
   }
 
-  return runSharedStructuredPipeline(client, input, documentType);
+  if (
+    familyDetection.family !== 'civil_records' &&
+    familyDetection.family !== 'identity_travel' &&
+    familyDetection.family !== 'academic_records' &&
+    familyDetection.family !== 'employment_records' &&
+    familyDetection.family !== 'corporate_business_records' &&
+    familyDetection.family !== 'publications_media' &&
+    familyDetection.family !== 'recommendation_letters'
+  ) {
+    return {
+      success: false,
+      data: null,
+      parseSuccess: false,
+      validationSuccess: false,
+      error:
+        `No shared structured pipeline family bridge for "${familyDetection.family}" (document type: ${documentType}).`,
+    };
+  }
+
+  return runSharedStructuredPipeline(client, input, familyDetection.family, documentType);
 }

@@ -96,6 +96,14 @@ export async function getOrderDetails(orderId: number) {
 
 export async function updateOrderStatus(orderId: number, newStatus: OrderStatus) {
     try {
+        if (newStatus === 'COMPLETED') {
+            return {
+                success: false,
+                error:
+                    'Manual completion is disabled. Use structured release flow (generateDeliveryKit + releaseToClient).',
+            }
+        }
+
         const order = await prisma.order.update({
             where: { id: orderId },
             data: { status: newStatus },

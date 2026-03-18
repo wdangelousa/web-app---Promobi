@@ -15,6 +15,19 @@ import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+function isStructuredDeliveryArtifactUrl(url: string | null | undefined, orderId: number, docId: number): boolean {
+  if (!url) return false
+  const normalized = url.trim()
+  if (!normalized) return false
+
+  const hasCompletedPath = normalized.includes('/orders/completed/')
+  const hasTranslationsBucket = normalized.includes('/translations/')
+  const expectedFilename = `promobidocs-order-${orderId}-doc-${docId}.pdf`
+  const hasExpectedFilename = normalized.includes(expectedFilename)
+
+  return hasCompletedPath && hasTranslationsBucket && hasExpectedFilename
+}
+
 // ─── saveTranslationDraft ─────────────────────────────────────────────────────
 
 export async function saveTranslationDraft(
@@ -137,14 +150,24 @@ export async function releaseToClient(
 
     if (!order) return { success: false, error: `Pedido #${orderId} não encontrado.` }
 
-    // Safety check: all docs must be approved with PDFs
-    const notReady = order.documents.filter(
-      d => d.translation_status !== 'approved' || !d.delivery_pdf_url
-    )
+    // Safety check: all docs must be approved AND have structured-generated delivery artifacts.
+    const notReady = order.documents.filter((d) => {
+      if (d.translation_status !== 'approved') return true
+      if (!d.delivery_pdf_url) return true
+      return !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id)
+    })
     if (notReady.length > 0) {
+      const missingStructured = notReady.filter(
+        d => d.delivery_pdf_url && !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id),
+      ).length
       return {
         success: false,
-        error: `${notReady.length} documento(s) ainda não estão aprovados com PDF.`,
+        error:
+          `${notReady.length} documento(s) não estão prontos para liberação estruturada. ` +
+          `Aprovação e PDF estruturado são obrigatórios para todos os documentos.` +
+          (missingStructured > 0
+            ? ` ${missingStructured} documento(s) têm PDF fora do pipeline estruturado e foram bloqueados.`
+            : ''),
       }
     }
 
@@ -159,6 +182,7 @@ export async function releaseToClient(
     meta.delivery = {
       releasedBy,
       releasedAt: new Date().toISOString(),
+      structuredOnly: true,
     }
 
     await prisma.order.update({

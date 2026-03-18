@@ -3,8 +3,6 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { PDFDocument } from "pdf-lib";
-import fs from "fs/promises";
-import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { classifyDocument } from "@/services/documentClassifier";
 import {
@@ -15,9 +13,9 @@ import {
   type DocumentOrientation,
 } from "@/lib/documentOrientationDetector";
 import {
+  assertStructuredClientFacingRender,
   formatStructuredRenderingFailureMessage,
-  isSupportedStructuredDocumentType,
-  renderSupportedStructuredDocument,
+  renderStructuredFamilyDocument,
 } from "@/services/structuredDocumentRenderer";
 
 interface DeliveryKitResult {
@@ -33,130 +31,6 @@ interface DeliveryKitResult {
 interface GenerateOptions {
   preview?: boolean;
   coverLanguage?: string;
-}
-
-const GOTENBERG_URL =
-  process.env.GOTENBERG_URL?.trim() ||
-  "http://127.0.0.1:3001/forms/chromium/convert/html";
-
-// ── Helpers (used by legacy fallback renderer) ────────────────────────────────
-
-function sanitizeTranslatedHtml(html: string): string {
-  if (!html) return "";
-  return html
-    .replace(/<!DOCTYPE[^>]*>/gi, "")
-    .replace(/<html[^>]*>/gi, "")
-    .replace(/<\/html>/gi, "")
-    .replace(/<head[\s\S]*?<\/head>/gi, "")
-    .replace(/<body[^>]*>/gi, "")
-    .replace(/<\/body>/gi, "")
-    .replace(/```html/gi, "")
-    .replace(/```/gi, "")
-    .trim();
-}
-
-async function loadLetterheadBytes(): Promise<Buffer> {
-  const rootPath = path.join(process.cwd(), "letterhead.png");
-  const publicFallbackPath = path.join(process.cwd(), "public", "letterhead.png");
-  try {
-    return await fs.readFile(rootPath);
-  } catch {
-    try {
-      return await fs.readFile(publicFallbackPath);
-    } catch {
-      throw new Error("ERRO CRÍTICO: Imagem 'letterhead.png' não encontrada.");
-    }
-  }
-}
-
-/**
- * Legacy linear renderer — used only when the document family is truly
- * unsupported/unknown and no structured renderer exists.
- */
-async function renderTranslatedSectionWithLetterhead(
-  translatedHtml: string
-): Promise<Buffer> {
-  const cleanHtml = sanitizeTranslatedHtml(translatedHtml);
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    @page { size: letter; margin: 0; }
-    html, body {
-      margin: 0; padding: 0;
-      background: transparent !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      font-family: "Times New Roman", Times, serif;
-      color: black; width: 100%;
-    }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-size: 10.5pt; line-height: 1.28; word-break: break-word; overflow-wrap: break-word; }
-    .content-area { box-sizing: border-box; padding-top: 150px; padding-bottom: 90px; padding-left: 62px; padding-right: 62px; width: 100%; }
-    .translation-body { width: 100%; }
-    .translation-body h1, .translation-body h2, .translation-body h3,
-    .translation-body h4, .translation-body h5, .translation-body h6 {
-      font-family: "Times New Roman", Times, serif; color: #000; margin: 0 0 6pt 0; line-height: 1.15; font-weight: bold;
-    }
-    .translation-body h1 { font-size: 13pt; }
-    .translation-body h2 { font-size: 12pt; }
-    .translation-body h3 { font-size: 11.5pt; }
-    .translation-body h4, .translation-body h5, .translation-body h6 { font-size: 11pt; }
-    .translation-body p { margin: 0 0 5pt 0; text-align: justify; line-height: 1.28; }
-    .translation-body ul, .translation-body ol { margin: 0 0 6pt 18pt; padding: 0; }
-    .translation-body li { margin: 0 0 3pt 0; }
-    .translation-body table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; margin: 6pt 0; font-size: 9pt; page-break-inside: avoid; }
-    .translation-body th, .translation-body td { border: 0.75pt solid #000; padding: 4pt; vertical-align: top; text-align: left; word-break: break-word; overflow-wrap: break-word; }
-    .translation-body img { max-width: 100%; height: auto; }
-    .translation-body .text-center { text-align: center; }
-    .translation-body .text-right { text-align: right; }
-    .translation-body .text-left { text-align: left; }
-    .translation-body .no-break { page-break-inside: avoid; }
-  </style>
-</head>
-<body>
-  <div class="content-area">
-    <div class="translation-body">${cleanHtml}</div>
-  </div>
-</body>
-</html>`;
-
-  const formData = new FormData();
-  formData.append("files", new File([html], "index.html", { type: "text/html" }));
-  formData.append("paperWidth", "8.5");
-  formData.append("paperHeight", "11");
-  formData.append("marginTop", "0");
-  formData.append("marginBottom", "0");
-  formData.append("marginLeft", "0");
-  formData.append("marginRight", "0");
-  formData.append("printBackground", "true");
-  formData.append("preferCssPageSize", "false");
-  formData.append("skipNetworkIdleEvent", "true");
-
-  const gotenbergRes = await fetch(GOTENBERG_URL, { method: "POST", body: formData });
-  if (!gotenbergRes.ok) {
-    const errorText = await gotenbergRes.text();
-    throw new Error(`Gotenberg translated section failed: ${gotenbergRes.status} - ${errorText}`);
-  }
-
-  const translatedPdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
-  const letterheadBytes = await loadLetterheadBytes();
-
-  const finalPdf = await PDFDocument.create();
-  const translatedPdf = await PDFDocument.load(translatedPdfBuffer);
-  const embeddedPages = await finalPdf.embedPages(translatedPdf.getPages());
-  const letterheadImage = await finalPdf.embedPng(letterheadBytes);
-
-  for (const embeddedPage of embeddedPages) {
-    const { width, height } = embeddedPage;
-    const page = finalPdf.addPage([width, height]);
-    page.drawPage(embeddedPage, { x: 0, y: 0, width, height });
-    page.drawImage(letterheadImage, { x: 0, y: 0, width, height, opacity: 1 });
-  }
-
-  return Buffer.from(await finalPdf.save());
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -249,64 +123,76 @@ export async function generateDeliveryKit(
       `${logPrefix} — classified: ${classification.documentType} (${classification.confidence})`
     );
 
-    // ── Step 4: Resolve delivery PDF under the global structured policy ──────
+    // ── Step 4: Resolve delivery PDF under strict structured invariant ───────
     let finalPdfBuffer: Buffer;
+    try {
+      const renderAssertion = assertStructuredClientFacingRender({
+        documentType: classification.documentType,
+        documentLabel: documentLabelHint,
+        fileUrl: doc.originalFileUrl,
+        translatedText: doc.translatedText,
+        detectedOrientation,
+        surface: "delivery-kit",
+        logPrefix,
+      });
 
-    if (isSupportedStructuredDocumentType(classification.documentType)) {
-      let orientationForKit: DocumentOrientation = detectedOrientation;
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const resolved = await renderStructuredFamilyDocument({
+        client,
+        family: renderAssertion.family,
+        documentType: renderAssertion.documentType,
+        originalFileBuffer,
+        originalFileUrl: doc.originalFileUrl,
+        contentType,
+        sourcePageCount,
+        detectedOrientation,
+        logPrefix,
+      });
 
-      try {
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const resolved = await renderSupportedStructuredDocument({
-          client,
-          documentType: classification.documentType,
-          originalFileBuffer,
-          originalFileUrl: doc.originalFileUrl,
-          contentType,
-          sourcePageCount,
-          detectedOrientation,
-          logPrefix,
-        });
+      const orientationForKit = resolved.orientationForKit;
+      const coverVariant: "pt-en" | "es-en" =
+        (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
 
-        orientationForKit = resolved.orientationForKit;
+      const structuredKitBuffer = await buildStructuredKitBuffer({
+        structuredHtml: resolved.structuredHtml,
+        originalFileBuffer,
+        isOriginalPdf,
+        orderId,
+        documentId,
+        sourceLanguage: doc.sourceLanguage ?? undefined,
+        coverVariant,
+        orientation: orientationForKit === "landscape" ? "landscape" : undefined,
+        documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
+        sourcePageCount,
+      });
 
-        const coverVariant: "pt-en" | "es-en" =
-          (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
-
-        const structuredKitBuffer = await buildStructuredKitBuffer({
-          structuredHtml: resolved.structuredHtml,
-          originalFileBuffer,
-          isOriginalPdf,
-          orderId,
-          documentId,
-          sourceLanguage: doc.sourceLanguage ?? undefined,
-          coverVariant,
-          orientation: orientationForKit === "landscape" ? "landscape" : undefined,
-          documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
-          sourcePageCount,
-        });
-
-        if (!structuredKitBuffer) {
-          return {
-            success: false,
-            error: `Structured delivery kit assembly failed for "${classification.documentType}". Legacy fallback is blocked for supported document families. Check server logs for Gotenberg/assembly details.`,
-          };
-        }
-
-        finalPdfBuffer = structuredKitBuffer;
-        console.log(
-          `${logPrefix} — structured delivery kit assembled: ${finalPdfBuffer.length} bytes ` +
-            `(family: ${classification.documentType}, orientation: ${orientationForKit})`
-        );
-      } catch (err) {
+      if (!structuredKitBuffer) {
         return {
           success: false,
-          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
+          error: `Structured delivery kit assembly failed for "${classification.documentType}". Plain/linear fallback is blocked by invariant. Check server logs for Gotenberg/assembly details.`,
         };
       }
-    } else {
-      console.log(`${logPrefix} — unsupported family (${classification.documentType}), using legacy renderer`);
-      finalPdfBuffer = await renderTranslatedSectionWithLetterhead(doc.translatedText);
+
+      finalPdfBuffer = structuredKitBuffer;
+      console.log(
+        `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
+          `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
+          `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
+          `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
+          `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
+          `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
+          `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
+          `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
+          `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
+          `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
+          `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
+          `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
+      );
+    } catch (err) {
+      return {
+        success: false,
+        error: formatStructuredRenderingFailureMessage(classification.documentType, err),
+      };
     }
 
     // ── Step 6: Upload to storage ─────────────────────────────────────────────
@@ -368,22 +254,16 @@ export async function generateDeliveryKit(
 
 export async function previewDocumentPdf(
   documentId: number,
-  translatedHtml: string,
-  _documentType: string = "Document",
+  _translatedHtml: string,
+  documentType: string = "unknown",
   _sourceLanguage: string = "PT_BR"
 ): Promise<DeliveryKitResult> {
-  try {
-    const finalPdfBuffer = await renderTranslatedSectionWithLetterhead(translatedHtml);
-    return {
-      success: true,
-      pdfBase64: finalPdfBuffer.toString("base64"),
-      fileName: `preview-${documentId}.pdf`,
-    };
-  } catch (error) {
-    console.error("[PreviewPDF] Error:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  console.error(
+    `[previewDocumentPdf] blocked — legacy/plain preview renderer is forbidden for translated client-facing output (doc #${documentId}, family=${documentType})`
+  );
+  return {
+    success: false,
+    error:
+      `Structured rendering is mandatory for translated previews. Legacy/plain preview rendering is blocked by invariant for document family "${documentType}". Use Preview Kit structured generation instead.`,
+  };
 }

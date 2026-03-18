@@ -14,10 +14,10 @@
  *   3. Classifies the document type from available signals (using
  *      effectiveTranslatedText, not raw doc.translatedText, so editor content
  *      is factored in when the operator hasn't saved yet).
- *   4. If the family is supported, it MUST render through the shared
- *      structured renderer. Legacy output is blocked for that family.
- *   5. If the family is unknown/unsupported, it uses the legacy translated
- *      HTML wrapper as the only allowed fallback.
+ *   4. Enforces the global client-facing rendering invariant:
+ *      translated preview output MUST pass through a structured family renderer.
+ *      Missing/unknown family is an explicit blocking error.
+ *   5. Never falls back to linear/plain rendering.
  *   6. Calls assembleStructuredPreviewKit with the resolved HTML.
  *   7. Returns the preview kit URL.
  *
@@ -33,7 +33,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
 import {
   assembleStructuredPreviewKit,
-  buildTranslatedDocumentHtml,
 } from '@/services/structuredPreviewKit';
 import { classifyDocument } from '@/services/documentClassifier';
 import {
@@ -41,9 +40,9 @@ import {
   type DocumentOrientation,
 } from '@/lib/documentOrientationDetector';
 import {
+  assertStructuredClientFacingRender,
   formatStructuredRenderingFailureMessage,
-  isSupportedStructuredDocumentType,
-  renderSupportedStructuredDocument,
+  renderStructuredFamilyDocument,
 } from '@/services/structuredDocumentRenderer';
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -169,59 +168,58 @@ export async function previewStructuredKit(
       `(confidence: ${classification.confidence})`,
     );
 
-    // ── Step 4: Resolve preview HTML under the global structured policy ─────
-    //
-    // Supported family:
-    //   structured render succeeds → use it
-    //   structured render fails    → explicit product error
-    //   legacy fallback            → forbidden
-    //
-    // Unsupported / unknown family:
-    //   legacy translated HTML remains allowed.
+    // ── Step 4: Resolve preview HTML under strict structured invariant ──────
 
     let structuredHtml: string;
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
     // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
-    if (isSupportedStructuredDocumentType(classification.documentType)) {
-      try {
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const resolved = await renderSupportedStructuredDocument({
-          client,
-          documentType: classification.documentType,
-          originalFileBuffer,
-          originalFileUrl: doc.originalFileUrl,
-          contentType,
-          sourcePageCount,
-          detectedOrientation,
-          logPrefix,
-        });
+    try {
+      const renderAssertion = assertStructuredClientFacingRender({
+        documentType: classification.documentType,
+        documentLabel: documentLabelHint,
+        fileUrl: doc.originalFileUrl,
+        translatedText: effectiveTranslatedText,
+        detectedOrientation,
+        surface: 'preview-kit',
+        logPrefix,
+      });
 
-        structuredHtml = resolved.structuredHtml;
-        orientationForKit = resolved.orientationForKit;
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const resolved = await renderStructuredFamilyDocument({
+        client,
+        family: renderAssertion.family,
+        documentType: renderAssertion.documentType,
+        originalFileBuffer,
+        originalFileUrl: doc.originalFileUrl,
+        contentType,
+        sourcePageCount,
+        detectedOrientation,
+        logPrefix,
+      });
 
-        console.log(
-          `${logPrefix} — structured renderer enforced for ${classification.documentType} ` +
-          `(${structuredHtml.length} chars, pages: ${sourcePageCount ?? 'n/a'}, orientation: ${orientationForKit})`,
-        );
-      } catch (err) {
-        return {
-          success: false,
-          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
-        };
-      }
-    } else {
-      // Truly unsupported family (unknown) — legacy is the correct and only path.
+      structuredHtml = resolved.structuredHtml;
+      orientationForKit = resolved.orientationForKit;
+
       console.log(
-        `${logPrefix} — non-structured document type (${classification.documentType}); using legacy HTML`,
+        `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
+        `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? 'n/a'} | ` +
+        `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
+        `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
+        `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
+        `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
+        `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
+        `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
+        `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
+        `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
+        `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
+        `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`,
       );
-      if (!effectiveTranslatedText) {
-        return {
-          success: false,
-          error: 'This document has no translated content. Add the translation in the workbench editor, then generate the preview kit again.',
-        };
-      }
-      structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText, orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+    } catch (err) {
+      return {
+        success: false,
+        error: formatStructuredRenderingFailureMessage(classification.documentType, err),
+      };
     }
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
@@ -245,9 +243,7 @@ export async function previewStructuredKit(
     if (!kit.assembled) {
       return {
         success: false,
-        error: isSupportedStructuredDocumentType(classification.documentType)
-          ? `Structured preview kit assembly failed for "${classification.documentType}". Legacy fallback is blocked for supported document families. Check server logs for Gotenberg/assembly details.`
-          : 'Preview kit assembly failed — check server logs for details',
+        error: `Structured preview kit assembly failed for "${classification.documentType}". Plain/linear fallback is blocked by invariant. Check server logs for Gotenberg/assembly details.`,
       };
     }
 

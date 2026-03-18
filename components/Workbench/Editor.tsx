@@ -41,7 +41,6 @@ export default function Editor({
     const [showReference, setShowReference] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [showLangModal, setShowLangModal] = useState(false)
-    const [isExportingPdf, setIsExportingPdf] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const editor = useEditor({
@@ -62,47 +61,6 @@ export default function Editor({
 
     const handleSaveClick = () => {
         if (onSave) onSave(1)
-    }
-
-    const handleExportPDF = async () => {
-        if (!editor) return
-        setIsExportingPdf(true)
-        try {
-            const body = orderId
-                ? {
-                    template: 'generic',
-                    data: {
-                        orderNumber: String(orderId),
-                        documentType: documentType ?? 'Document',
-                        sourceLanguage: sourceLanguage ?? 'Portuguese (Brazil)',
-                        targetLanguage: 'English (United States)',
-                        translatedContent: editor.getHTML(),
-                    },
-                }
-                : { htmlContent: editor.getHTML(), fileName: 'traducao.pdf' }
-
-            const res = await fetch('/api/pdf/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            })
-            if (!res.ok) {
-                const err = await res.json()
-                alert(err.error || 'Erro ao gerar PDF')
-                return
-            }
-            const blob = await res.blob()
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = 'traducao.pdf'
-            a.click()
-            URL.revokeObjectURL(url)
-        } catch {
-            alert('Não foi possível conectar ao serviço de PDF. Verifique se o Docker está a correr.')
-        } finally {
-            setIsExportingPdf(false)
-        }
     }
 
     const handlePreviewClick = () => {
@@ -171,18 +129,12 @@ export default function Editor({
                     </button>
 
                     <button
-                        onClick={handleExportPDF}
-                        disabled={isExportingPdf}
-                        className="text-rose-700 bg-rose-50 border border-rose-200 px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        type="button"
+                        disabled
+                        title="Download PDF direto foi removido. Use Preview Kit e geração estruturada."
+                        className="text-slate-400 bg-slate-100 border border-slate-200 px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 cursor-not-allowed"
                     >
-                        {isExportingPdf ? (
-                            <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-rose-700 border-t-transparent" />
-                                Gerando...
-                            </>
-                        ) : (
-                            <>📄 Download PDF</>
-                        )}
+                        <>🔒 PDF Direto Bloqueado</>
                     </button>
 
                     <button

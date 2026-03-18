@@ -512,11 +512,9 @@ export function renderBirthCertificateHtml(
       `</body>\n` +
       `</html>`
     );
-  } catch {
-    return `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8" /><style>body{font-family:Arial;font-size:11pt;}</style></head>
-<body><p>[Birth certificate rendering error — see server logs]</p></body>
-</html>`;
+  } catch (err) {
+    throw new Error(
+      `Birth certificate renderer failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
