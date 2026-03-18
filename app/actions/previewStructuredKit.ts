@@ -296,7 +296,7 @@ export async function previewStructuredKit(
     // For all other document types, fall back to the simple HTML wrapper
     // around effectiveTranslatedText (legacy behaviour).
 
-    let structuredHtml: string;
+    let structuredHtml: string | null = null;
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
     // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
@@ -343,12 +343,10 @@ export async function previewStructuredKit(
               `orientation: ${detectedOrientation})`,
             );
           } catch (err) {
-            console.error(`${logPrefix} — marriage cert render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+            console.error(`${logPrefix} — marriage cert render failed: ${err}`);
           }
         } else {
-          console.warn(`${logPrefix} — marriage cert extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          console.warn(`${logPrefix} — marriage cert extraction failed`);
         }
 
       } else if (isCertLandscape) {
@@ -396,12 +394,10 @@ export async function previewStructuredKit(
               `effective orientation: ${effectiveOrientation})`,
             );
           } catch (err) {
-            console.error(`${logPrefix} — cert landscape render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+            console.error(`${logPrefix} — cert landscape render failed: ${err}`);
           }
         } else {
-          console.warn(`${logPrefix} — cert landscape extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          console.warn(`${logPrefix} — cert landscape extraction failed`);
         }
 
       } else if (isAcademicDiploma) {
@@ -450,12 +446,10 @@ export async function previewStructuredKit(
               `effective orientation: ${effectiveOrientation})`,
             );
           } catch (err) {
-            console.error(`${logPrefix} — academic diploma render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+            console.error(`${logPrefix} — academic diploma render failed: ${err}`);
           }
         } else {
-          console.warn(`${logPrefix} — academic diploma extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          console.warn(`${logPrefix} — academic diploma extraction failed`);
         }
 
       } else if (isAcademicTranscript) {
@@ -500,12 +494,10 @@ export async function previewStructuredKit(
               `orientation: ${detectedOrientation})`,
             );
           } catch (err) {
-            console.error(`${logPrefix} — academic transcript render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+            console.error(`${logPrefix} — academic transcript render failed: ${err}`);
           }
         } else {
-          console.warn(`${logPrefix} — academic transcript extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          console.warn(`${logPrefix} — academic transcript extraction failed`);
         }
 
       } else {
@@ -549,26 +541,24 @@ export async function previewStructuredKit(
               `orientation: ${detectedOrientation})`,
             );
           } catch (err) {
-            console.error(`${logPrefix} — birth cert render failed: ${err} — falling back`);
-            structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+            console.error(`${logPrefix} — birth cert render failed: ${err}`);
           }
         } else {
-          console.warn(`${logPrefix} — birth cert extraction failed — falling back`);
-          structuredHtml = buildTranslatedDocumentHtml(effectiveTranslatedText ?? '', orientationForKit === 'landscape' ? 'landscape' : 'portrait');
+          console.warn(`${logPrefix} — birth cert extraction failed`);
         }
       }
 
+    } else if (isEligible) {
+      // Eligible family but original file is missing — structured rendering requires it.
+      return {
+        success: false,
+        error: `Structured rendering is required for "${classification.documentType}" but the original file is not available. Re-upload the original document and try again.`,
+      };
     } else {
-      // Not eligible for structured rendering — use legacy simple HTML.
-      if (isEligible) {
-        console.warn(
-          `${logPrefix} — eligible document type but no original file available; using legacy HTML`,
-        );
-      } else {
-        console.log(
-          `${logPrefix} — non-structured document type (${classification.documentType}); using legacy HTML`,
-        );
-      }
+      // Truly unsupported family (unknown) — legacy is the correct and only path.
+      console.log(
+        `${logPrefix} — non-structured document type (${classification.documentType}); using legacy HTML`,
+      );
       if (!effectiveTranslatedText) {
         return {
           success: false,
@@ -580,6 +570,15 @@ export async function previewStructuredKit(
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
     //
+    // Structured-first enforcement: if this family was eligible but extraction
+    // or rendering failed, return an error rather than silently producing legacy output.
+    if (structuredHtml === null) {
+      return {
+        success: false,
+        error: `Structured rendering failed for "${classification.documentType}" — extraction or rendering error. Check server logs for details.`,
+      };
+    }
+
     // Cover logic, original-append logic, letterhead PNG overlay, and Gotenberg
     // margins are all handled inside assembleStructuredPreviewKit — unchanged.
 

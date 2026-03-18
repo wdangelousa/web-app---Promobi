@@ -550,24 +550,32 @@ export async function generateDeliveryKit(
             `(family: ${classification.documentType})`
           );
         } else {
-          console.warn(`${logPrefix} — buildStructuredKitBuffer failed, falling back to legacy`);
+          console.warn(`${logPrefix} — buildStructuredKitBuffer returned null for ${classification.documentType}`);
         }
       } else {
-        console.warn(`${logPrefix} — structured extraction failed, falling back to legacy`);
+        console.warn(`${logPrefix} — structured extraction produced no HTML for ${classification.documentType}`);
       }
 
+    } else if (isEligible) {
+      // Eligible family but original file is missing — structured rendering requires it.
+      return {
+        success: false,
+        error: `Structured rendering is required for "${classification.documentType}" but the original file is not available. Re-upload the original document and try again.`,
+      };
     } else {
-      if (isEligible) {
-        console.warn(`${logPrefix} — eligible family but no original file available, falling back to legacy`);
-      } else {
-        console.log(`${logPrefix} — unsupported family (${classification.documentType}), using legacy renderer`);
-      }
+      console.log(`${logPrefix} — unsupported family (${classification.documentType}), using legacy renderer`);
     }
 
     // ── Step 5: Legacy fallback ───────────────────────────────────────────────
-    // Used only when: family is unsupported (unknown), original file is missing,
-    // Claude extraction failed, or structured assembly failed.
+    // Used only when family is truly unsupported (unknown) and no structured renderer exists.
+    // Eligible families that fail at extraction or assembly return an error — never legacy.
     if (!finalPdfBuffer) {
+      if (isEligible) {
+        return {
+          success: false,
+          error: `Structured rendering failed for "${classification.documentType}" — extraction or rendering error. Check server logs for details.`,
+        };
+      }
       console.log(`${logPrefix} — using legacy renderTranslatedSectionWithLetterhead`);
       finalPdfBuffer = await renderTranslatedSectionWithLetterhead(doc.translatedText);
     }
