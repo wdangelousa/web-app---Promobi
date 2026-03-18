@@ -29,6 +29,9 @@ export type FamilyTranslationEnvelope =
   | 'regulatory-form'
   | 'financial-ledger';
 export type FamilyCapabilityLevel = 'none' | 'basic' | 'advanced';
+export type FamilyParityCompactionProfile = 'none' | 'light' | 'balanced' | 'aggressive';
+export type FamilyMaxSafeDensityProfile = 'conservative' | 'balanced' | 'tight';
+export type FamilyCertificationPagePolicy = 'strict-source-equals-translated' | 'unsupported';
 
 export type FamilyBlockType =
   | 'header'
@@ -75,6 +78,10 @@ export interface FamilyClientFacingCapabilityMap {
   orientationSupport: FamilyCapabilityLevel;
   tableSupport: FamilyCapabilityLevel;
   signatureBlockSupport: FamilyCapabilityLevel;
+  exactPageParitySupported: boolean;
+  parityCompactionProfile: FamilyParityCompactionProfile;
+  maxSafeDensityProfile: FamilyMaxSafeDensityProfile;
+  certificationPagePolicy: FamilyCertificationPagePolicy;
 }
 
 export type FamilyPriorityLevel = 1 | 2 | 3 | 'unassigned';
@@ -534,6 +541,23 @@ const FAMILY_RENDER_CAPABILITIES: Record<DocumentFamily, FamilyRenderCapabilitie
 const FAMILY_CLIENT_FACING_CAPABILITIES: Record<DocumentFamily, FamilyClientFacingCapabilityMap> =
   ALL_DOCUMENT_FAMILIES.reduce<Record<DocumentFamily, FamilyClientFacingCapabilityMap>>((acc, family) => {
     const row = DOCUMENT_FAMILY_IMPLEMENTATION_MATRIX[family];
+    const exactPageParitySupported =
+      row.previewRendererImplemented && row.finalDeliveryRendererImplemented;
+    const parityCompactionProfile: FamilyParityCompactionProfile =
+      !exactPageParitySupported
+        ? 'none'
+        : row.denseTableHandling
+          ? 'aggressive'
+          : row.tableCapability === 'advanced'
+            ? 'balanced'
+            : 'light';
+    const maxSafeDensityProfile: FamilyMaxSafeDensityProfile =
+      row.tableCapability === 'advanced'
+        ? 'tight'
+        : row.tableCapability === 'basic'
+          ? 'balanced'
+          : 'conservative';
+
     acc[family] = {
       family,
       previewSupported: row.previewRendererImplemented,
@@ -541,6 +565,12 @@ const FAMILY_CLIENT_FACING_CAPABILITIES: Record<DocumentFamily, FamilyClientFaci
       orientationSupport: row.orientationCapability,
       tableSupport: row.tableCapability,
       signatureBlockSupport: row.signatureCapability,
+      exactPageParitySupported,
+      parityCompactionProfile,
+      maxSafeDensityProfile,
+      certificationPagePolicy: exactPageParitySupported
+        ? 'strict-source-equals-translated'
+        : 'unsupported',
     };
     return acc;
   }, {} as Record<DocumentFamily, FamilyClientFacingCapabilityMap>);

@@ -190,6 +190,10 @@ export interface StructuredPreviewKitInput {
   documentTypeLabel?: string;
   sourcePageCount?: number;
   documentDate?: string;
+  documentFamily?: string;
+  rendererName?: string;
+  surface?: 'preview-kit' | 'delivery-kit' | 'unknown';
+  compactionAttempted?: boolean;
 }
 
 export interface StructuredPreviewKitResult {
@@ -203,6 +207,37 @@ export interface StructuredPreviewKitResult {
   kitLocalPath?: string;
   letterheadDetected: boolean;
   letterheadInjected: boolean;
+  sourcePageCount?: number;
+  translatedPageCount?: number;
+  pageParityStatus?: 'pass' | 'fail';
+  blockingReason?: string;
+  certificationGenerationBlocked?: boolean;
+  releaseBlocked?: boolean;
+}
+
+export interface PageParityDiagnostic {
+  orderId: string | number;
+  docId: string | number;
+  detected_family: string;
+  source_page_count: number | null;
+  translated_page_count: number | null;
+  parity_status: 'pass' | 'fail';
+  blocking_reason: string;
+  renderer_used: string;
+  orientation_used: string;
+  compaction_attempted: boolean;
+  certification_generation_blocked: boolean;
+  release_blocked: boolean;
+}
+
+export interface StructuredKitBuildResult {
+  success: boolean;
+  kitBuffer?: Buffer;
+  blockingReason?: string;
+  sourcePageCount?: number;
+  translatedPageCount?: number;
+  parityStatus?: 'pass' | 'fail';
+  diagnostics?: PageParityDiagnostic;
 }
 
 // ── Local fallback helper ─────────────────────────────────────────────────────
@@ -221,6 +256,15 @@ function saveLocalFallback(
     console.error(`${logPrefix} local fallback write error: ${err}`);
     return null;
   }
+}
+
+function logPageParityDiagnostics(
+  logPrefix: string,
+  diagnostics: PageParityDiagnostic,
+): void {
+  console.log(
+    `${logPrefix} — page parity diagnostics: ${JSON.stringify(diagnostics)}`,
+  );
 }
 
 // ── Cover variant derivation ──────────────────────────────────────────────────
@@ -813,13 +857,24 @@ async function callGotenberg(
  *   - assembleStructuredPreviewKit  (preview → orders/previews/ in documents bucket)
  *   - generateDeliveryKit           (official → orders/completed/ in translations bucket)
  *
- * Returns null on any internal failure (never throws).
+ * Returns a structured build result. On any failure, success=false and the
+ * blocking reason is included for upstream client-facing guards.
  */
 export async function buildStructuredKitBuffer(
   input: StructuredPreviewKitInput,
-): Promise<Buffer | null> {
+): Promise<StructuredKitBuildResult> {
   const logPrefix = `[buildStructuredKitBuffer] Order #${input.orderId} Doc #${input.documentId}`;
   const log = (msg: string) => console.log(`${logPrefix} — ${msg}`);
+  const surface = input.surface ?? 'unknown';
+  const baseDiagnostics = {
+    orderId: input.orderId,
+    docId: input.documentId,
+    detected_family: input.documentFamily ?? 'unknown',
+    renderer_used: input.rendererName ?? 'unknown',
+    orientation_used: input.orientation ?? 'portrait',
+    compaction_attempted: input.compactionAttempted ?? false,
+  } as const;
+  const shouldMarkReleaseBlocked = surface === 'delivery-kit';
 
   try {
     const coverVariant = input.coverVariant ?? deriveCoverVariant(input.sourceLanguage);
@@ -859,7 +914,22 @@ export async function buildStructuredKitBuffer(
 
     if (!translatedPdfBaseBuffer) {
       log(`translated section: Gotenberg failed`);
-      return null;
+      const diagnostics: PageParityDiagnostic = {
+        ...baseDiagnostics,
+        source_page_count: input.sourcePageCount ?? null,
+        translated_page_count: null,
+        parity_status: 'fail',
+        blocking_reason: 'translated_section_generation_failed',
+        certification_generation_blocked: true,
+        release_blocked: shouldMarkReleaseBlocked,
+      };
+      logPageParityDiagnostics(logPrefix, diagnostics);
+      return {
+        success: false,
+        blockingReason: diagnostics.blocking_reason,
+        parityStatus: 'fail',
+        diagnostics,
+      };
     }
 
     let translatedPdfBuffer = translatedPdfBaseBuffer;
@@ -886,6 +956,83 @@ export async function buildStructuredKitBuffer(
     const translatedPageCount = translatedPdfDoc.getPageCount();
     log(`translated pages: ${translatedPageCount}`);
 
+    let originalPdfDocForAssembly: PDFDocument | null = null;
+    let effectiveSourcePageCount =
+      typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
+        ? input.sourcePageCount
+        : undefined;
+
+    if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
+      try {
+        originalPdfDocForAssembly = await PDFDocument.load(input.originalFileBuffer, {
+          ignoreEncryption: true,
+        });
+        const extractedSourcePages = originalPdfDocForAssembly.getPageCount();
+        if (effectiveSourcePageCount === undefined) {
+          effectiveSourcePageCount = extractedSourcePages;
+        } else if (effectiveSourcePageCount !== extractedSourcePages) {
+          log(
+            `source page count corrected from ${effectiveSourcePageCount} to ${extractedSourcePages} using original PDF metadata`,
+          );
+          effectiveSourcePageCount = extractedSourcePages;
+        }
+      } catch (err) {
+        log(`source page extraction failed: ${err}`);
+      }
+    }
+
+    if (effectiveSourcePageCount === undefined) {
+      const diagnostics: PageParityDiagnostic = {
+        ...baseDiagnostics,
+        source_page_count: null,
+        translated_page_count: translatedPageCount,
+        parity_status: 'fail',
+        blocking_reason: 'page_parity_unverifiable_source_page_count',
+        certification_generation_blocked: true,
+        release_blocked: shouldMarkReleaseBlocked,
+      };
+      logPageParityDiagnostics(logPrefix, diagnostics);
+      return {
+        success: false,
+        blockingReason: diagnostics.blocking_reason,
+        translatedPageCount,
+        parityStatus: 'fail',
+        diagnostics,
+      };
+    }
+
+    if (translatedPageCount !== effectiveSourcePageCount) {
+      const diagnostics: PageParityDiagnostic = {
+        ...baseDiagnostics,
+        source_page_count: effectiveSourcePageCount,
+        translated_page_count: translatedPageCount,
+        parity_status: 'fail',
+        blocking_reason: 'page_parity_mismatch',
+        certification_generation_blocked: true,
+        release_blocked: shouldMarkReleaseBlocked,
+      };
+      logPageParityDiagnostics(logPrefix, diagnostics);
+      return {
+        success: false,
+        blockingReason: diagnostics.blocking_reason,
+        sourcePageCount: effectiveSourcePageCount,
+        translatedPageCount,
+        parityStatus: 'fail',
+        diagnostics,
+      };
+    }
+
+    const passDiagnostics: PageParityDiagnostic = {
+      ...baseDiagnostics,
+      source_page_count: effectiveSourcePageCount,
+      translated_page_count: translatedPageCount,
+      parity_status: 'pass',
+      blocking_reason: 'none',
+      certification_generation_blocked: false,
+      release_blocked: false,
+    };
+    logPageParityDiagnostics(logPrefix, passDiagnostics);
+
     // ── Part 1: HTML certification cover ─────────────────────────────────────
     const sourceLangLabel =
       SOURCE_LANGUAGE_LABELS[input.sourceLanguage ?? ''] ??
@@ -907,7 +1054,7 @@ export async function buildStructuredKitBuffer(
       {
         documentType: input.documentTypeLabel ?? 'Document',
         sourceLanguage: sourceLangLabel,
-        sourcePageCount: input.sourcePageCount ?? '\u2014',
+        sourcePageCount: effectiveSourcePageCount,
         translatedPageCount,
         orderId: input.orderId,
         dated,
@@ -928,7 +1075,24 @@ export async function buildStructuredKitBuffer(
 
     if (!coverPdfBuffer) {
       log(`cover page: Gotenberg failed`);
-      return null;
+      const diagnostics: PageParityDiagnostic = {
+        ...baseDiagnostics,
+        source_page_count: effectiveSourcePageCount,
+        translated_page_count: translatedPageCount,
+        parity_status: 'fail',
+        blocking_reason: 'certification_cover_generation_failed',
+        certification_generation_blocked: true,
+        release_blocked: shouldMarkReleaseBlocked,
+      };
+      logPageParityDiagnostics(logPrefix, diagnostics);
+      return {
+        success: false,
+        blockingReason: diagnostics.blocking_reason,
+        sourcePageCount: effectiveSourcePageCount,
+        translatedPageCount,
+        parityStatus: 'fail',
+        diagnostics,
+      };
     }
 
     log(`cover page generated: yes`);
@@ -947,7 +1111,15 @@ export async function buildStructuredKitBuffer(
 
     // Part 3: original intact (skipped if not PDF or unavailable)
     let originalPageCount = 0;
-    if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
+    if (originalPdfDocForAssembly) {
+      const originalPages = await finalPdf.copyPages(
+        originalPdfDocForAssembly,
+        originalPdfDocForAssembly.getPageIndices(),
+      );
+      originalPages.forEach(p => finalPdf.addPage(p));
+      originalPageCount = originalPdfDocForAssembly.getPageCount();
+      log(`original appended: yes (${originalPageCount} page(s))`);
+    } else if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
       try {
         const originalDoc = await PDFDocument.load(input.originalFileBuffer, { ignoreEncryption: true });
         const originalPages = await finalPdf.copyPages(originalDoc, originalDoc.getPageIndices());
@@ -970,11 +1142,33 @@ export async function buildStructuredKitBuffer(
       `total=${totalPages} pages, ${kitBuffer.length} bytes`,
     );
 
-    return kitBuffer;
+    return {
+      success: true,
+      kitBuffer,
+      sourcePageCount: effectiveSourcePageCount,
+      translatedPageCount,
+      parityStatus: 'pass',
+      diagnostics: passDiagnostics,
+    };
 
   } catch (err) {
     console.error(`[buildStructuredKitBuffer] unexpected error: ${err}`);
-    return null;
+    const diagnostics: PageParityDiagnostic = {
+      ...baseDiagnostics,
+      source_page_count: input.sourcePageCount ?? null,
+      translated_page_count: null,
+      parity_status: 'fail',
+      blocking_reason: 'kit_assembly_unexpected_error',
+      certification_generation_blocked: true,
+      release_blocked: shouldMarkReleaseBlocked,
+    };
+    logPageParityDiagnostics(logPrefix, diagnostics);
+    return {
+      success: false,
+      blockingReason: diagnostics.blocking_reason,
+      parityStatus: 'fail',
+      diagnostics,
+    };
   }
 }
 
@@ -1007,12 +1201,21 @@ export async function assembleStructuredPreviewKit(
     }
 
     // ── Assemble the 3-part PDF buffer ────────────────────────────────────────
-    const kitBuffer = await buildStructuredKitBuffer(input);
+    const buildResult = await buildStructuredKitBuffer(input);
 
-    if (!kitBuffer) {
+    result.sourcePageCount = buildResult.sourcePageCount;
+    result.translatedPageCount = buildResult.translatedPageCount;
+    result.pageParityStatus = buildResult.parityStatus;
+    result.blockingReason = buildResult.blockingReason;
+    result.certificationGenerationBlocked =
+      buildResult.diagnostics?.certification_generation_blocked ?? false;
+    result.releaseBlocked = buildResult.diagnostics?.release_blocked ?? false;
+
+    if (!buildResult.success || !buildResult.kitBuffer) {
       log(`kit assembly failed`);
       return result;
     }
+    const kitBuffer = buildResult.kitBuffer;
 
     result.coverGenerated = true;
     result.coverMetadataApplied = true;

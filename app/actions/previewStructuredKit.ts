@@ -174,6 +174,8 @@ export async function previewStructuredKit(
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
     // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
+    let resolvedFamilyForKit: string = 'unknown';
+    let resolvedRendererForKit: string = 'unknown';
     try {
       const renderAssertion = assertStructuredClientFacingRender({
         documentType: classification.documentType,
@@ -200,6 +202,8 @@ export async function previewStructuredKit(
 
       structuredHtml = resolved.structuredHtml;
       orientationForKit = resolved.orientationForKit;
+      resolvedFamilyForKit = renderAssertion.family;
+      resolvedRendererForKit = resolved.rendererName;
 
       console.log(
         `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
@@ -238,12 +242,26 @@ export async function previewStructuredKit(
       documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
       sourcePageCount,
       orientation: orientationForKit === 'landscape' ? 'landscape' : undefined,
+      documentFamily: resolvedFamilyForKit,
+      rendererName: resolvedRendererForKit,
+      surface: 'preview-kit',
+      compactionAttempted: false,
     });
 
     if (!kit.assembled) {
+      const parityDetail =
+        kit.blockingReason === 'page_parity_mismatch'
+          ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
+          : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
+            ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
+            : '';
       return {
         success: false,
-        error: `Structured preview kit assembly failed for "${classification.documentType}". Plain/linear fallback is blocked by invariant. Check server logs for Gotenberg/assembly details.`,
+        error:
+          `Structured preview kit assembly failed for "${classification.documentType}". ` +
+          `Client-facing translated preview output is blocked by invariant.` +
+          parityDetail +
+          ` Check server logs for parity diagnostics and kit assembly details.`,
       };
     }
 

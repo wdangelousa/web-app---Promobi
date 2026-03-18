@@ -153,7 +153,7 @@ export async function generateDeliveryKit(
       const coverVariant: "pt-en" | "es-en" =
         (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
 
-      const structuredKitBuffer = await buildStructuredKitBuffer({
+      const buildResult = await buildStructuredKitBuffer({
         structuredHtml: resolved.structuredHtml,
         originalFileBuffer,
         isOriginalPdf,
@@ -164,16 +164,30 @@ export async function generateDeliveryKit(
         orientation: orientationForKit === "landscape" ? "landscape" : undefined,
         documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
         sourcePageCount,
+        documentFamily: renderAssertion.family,
+        rendererName: resolved.rendererName,
+        surface: preview ? "preview-kit" : "delivery-kit",
+        compactionAttempted: false,
       });
 
-      if (!structuredKitBuffer) {
+      if (!buildResult.success || !buildResult.kitBuffer) {
+        const parityDetail =
+          buildResult.blockingReason === "page_parity_mismatch"
+            ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
+            : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
+              ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+              : "";
         return {
           success: false,
-          error: `Structured delivery kit assembly failed for "${classification.documentType}". Plain/linear fallback is blocked by invariant. Check server logs for Gotenberg/assembly details.`,
+          error:
+            `Structured delivery kit assembly failed for "${classification.documentType}". ` +
+            `Client-facing translated output is blocked by invariant.` +
+            parityDetail +
+            ` Check server logs for parity diagnostics and kit assembly details.`,
         };
       }
 
-      finalPdfBuffer = structuredKitBuffer;
+      finalPdfBuffer = buildResult.kitBuffer;
       console.log(
         `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
           `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +

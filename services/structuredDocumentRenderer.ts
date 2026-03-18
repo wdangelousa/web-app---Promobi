@@ -229,7 +229,11 @@ function summarizeCapabilityMap(capability: FamilyClientFacingCapabilityMap): st
     `delivery=${capability.deliverySupported ? 'yes' : 'no'} ` +
     `orientation=${capability.orientationSupport} ` +
     `table=${capability.tableSupport} ` +
-    `signature=${capability.signatureBlockSupport}`
+    `signature=${capability.signatureBlockSupport} ` +
+    `pageParity=${capability.exactPageParitySupported ? 'yes' : 'no'} ` +
+    `compaction=${capability.parityCompactionProfile} ` +
+    `maxDensity=${capability.maxSafeDensityProfile} ` +
+    `certPagePolicy=${capability.certificationPagePolicy}`
   );
 }
 
@@ -321,6 +325,17 @@ export function assertStructuredClientFacingRender(
     const message =
       `Document family detected: ${family}. Structured translated renderer capability is missing for ${expectedSurface}. ` +
       `Surface: ${surface}. Client-facing translated output is blocked; linear/plain fallback is not allowed.`;
+    console.error(
+      `${logPrefix} — structured render guard: blocked | ${message} ` +
+      `capabilities=${summarizeCapabilityMap(familyClientFacingCapability)} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,
+    );
+    throw new StructuredRenderingRequiredError(documentType, message);
+  }
+
+  if (!familyClientFacingCapability.exactPageParitySupported) {
+    const message =
+      `Document family detected: ${family}. Page-parity capability is not supported in the client-facing matrix. ` +
+      `Surface: ${surface}. Output is blocked because translated_page_count must equal source_page_count.`;
     console.error(
       `${logPrefix} — structured render guard: blocked | ${message} ` +
       `capabilities=${summarizeCapabilityMap(familyClientFacingCapability)} matrix=${summarizeImplementationMatrixRow(implementationMatrixRow)}`,

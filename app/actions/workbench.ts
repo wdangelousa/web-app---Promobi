@@ -12,6 +12,13 @@
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/app/actions/auth'
 import { Resend } from 'resend'
+import { PDFDocument } from 'pdf-lib'
+import { classifyDocument } from '@/services/documentClassifier'
+import { detectDocumentFamily } from '@/services/documentFamilyRegistry'
+import {
+  getStructuredRendererName,
+  isSupportedStructuredDocumentType,
+} from '@/services/structuredDocumentRenderer'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -26,6 +33,37 @@ function isStructuredDeliveryArtifactUrl(url: string | null | undefined, orderId
   const hasExpectedFilename = normalized.includes(expectedFilename)
 
   return hasCompletedPath && hasTranslationsBucket && hasExpectedFilename
+}
+
+interface ReleasePageParityDiagnostics {
+  orderId: number
+  docId: number
+  detected_family: string
+  source_page_count: number | null
+  translated_page_count: number | null
+  parity_status: 'pass' | 'fail'
+  blocking_reason: string
+  renderer_used: string
+  orientation_used: string
+  compaction_attempted: boolean
+  certification_generation_blocked: boolean
+  release_blocked: boolean
+}
+
+function logReleasePageParityDiagnostics(diagnostics: ReleasePageParityDiagnostics) {
+  console.log(`[releaseToClient] page parity diagnostics: ${JSON.stringify(diagnostics)}`)
+}
+
+async function getPdfPageCountFromUrl(url: string): Promise<number | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const buf = await res.arrayBuffer()
+    const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true })
+    return pdfDoc.getPageCount()
+  } catch {
+    return null
+  }
 }
 
 // ─── saveTranslationDraft ─────────────────────────────────────────────────────
@@ -141,6 +179,10 @@ export async function releaseToClient(
           select: {
             id: true,
             exactNameOnDoc: true,
+            docType: true,
+            originalFileUrl: true,
+            translatedText: true,
+            sourceLanguage: true,
             delivery_pdf_url: true,
             translation_status: true,
           },
@@ -168,6 +210,126 @@ export async function releaseToClient(
           (missingStructured > 0
             ? ` ${missingStructured} documento(s) têm PDF fora do pipeline estruturado e foram bloqueados.`
             : ''),
+      }
+    }
+
+    // Absolute page-parity release guard:
+    // translated_page_count MUST equal source_page_count for every document.
+    const parityFailures: Array<{
+      docId: number
+      reason: string
+      sourcePageCount: number | null
+      translatedPageCount: number | null
+    }> = []
+
+    for (const d of order.documents) {
+      const documentLabelHint =
+        [d.exactNameOnDoc, d.docType].filter(Boolean).join(' ').trim() || undefined
+      const classification = classifyDocument({
+        fileUrl: d.originalFileUrl ?? undefined,
+        documentLabel: documentLabelHint,
+        translatedText: d.translatedText ?? undefined,
+        sourceLanguage: d.sourceLanguage ?? undefined,
+      })
+      const family = detectDocumentFamily({
+        documentType: classification.documentType,
+        documentLabel: documentLabelHint,
+        fileUrl: d.originalFileUrl,
+        translatedText: d.translatedText,
+      }).family
+      const rendererUsed = isSupportedStructuredDocumentType(classification.documentType)
+        ? getStructuredRendererName(classification.documentType)
+        : 'unknown'
+
+      const sourcePageCount = d.originalFileUrl
+        ? await getPdfPageCountFromUrl(d.originalFileUrl)
+        : null
+      const deliveryTotalPageCount = d.delivery_pdf_url
+        ? await getPdfPageCountFromUrl(d.delivery_pdf_url)
+        : null
+
+      if (sourcePageCount === null || deliveryTotalPageCount === null) {
+        const diagnostics: ReleasePageParityDiagnostics = {
+          orderId,
+          docId: d.id,
+          detected_family: family,
+          source_page_count: sourcePageCount,
+          translated_page_count: null,
+          parity_status: 'fail',
+          blocking_reason: 'page_parity_unverifiable_source_or_delivery_page_count',
+          renderer_used: rendererUsed,
+          orientation_used: 'unknown-at-release-guard',
+          compaction_attempted: false,
+          certification_generation_blocked: false,
+          release_blocked: true,
+        }
+        logReleasePageParityDiagnostics(diagnostics)
+        parityFailures.push({
+          docId: d.id,
+          reason: diagnostics.blocking_reason,
+          sourcePageCount,
+          translatedPageCount: null,
+        })
+        continue
+      }
+
+      // Final kit shape: cover(1) + translated(T) + original(source_page_count)
+      const translatedPageCount = deliveryTotalPageCount - 1 - sourcePageCount
+
+      if (translatedPageCount !== sourcePageCount) {
+        const diagnostics: ReleasePageParityDiagnostics = {
+          orderId,
+          docId: d.id,
+          detected_family: family,
+          source_page_count: sourcePageCount,
+          translated_page_count: translatedPageCount,
+          parity_status: 'fail',
+          blocking_reason: 'page_parity_mismatch',
+          renderer_used: rendererUsed,
+          orientation_used: 'unknown-at-release-guard',
+          compaction_attempted: false,
+          certification_generation_blocked: false,
+          release_blocked: true,
+        }
+        logReleasePageParityDiagnostics(diagnostics)
+        parityFailures.push({
+          docId: d.id,
+          reason: diagnostics.blocking_reason,
+          sourcePageCount,
+          translatedPageCount,
+        })
+        continue
+      }
+
+      const diagnostics: ReleasePageParityDiagnostics = {
+        orderId,
+        docId: d.id,
+        detected_family: family,
+        source_page_count: sourcePageCount,
+        translated_page_count: translatedPageCount,
+        parity_status: 'pass',
+        blocking_reason: 'none',
+        renderer_used: rendererUsed,
+        orientation_used: 'unknown-at-release-guard',
+        compaction_attempted: false,
+        certification_generation_blocked: false,
+        release_blocked: false,
+      }
+      logReleasePageParityDiagnostics(diagnostics)
+    }
+
+    if (parityFailures.length > 0) {
+      const details = parityFailures
+        .map(
+          f =>
+            `doc#${f.docId} reason=${f.reason} source=${f.sourcePageCount ?? 'n/a'} translated=${f.translatedPageCount ?? 'n/a'}`,
+        )
+        .join('; ')
+      return {
+        success: false,
+        error:
+          `Release blocked by absolute page-parity rule. ${parityFailures.length} document(s) failed parity validation. ` +
+          details,
       }
     }
 
