@@ -203,6 +203,15 @@ export interface StructuredRenderLanguageIntegrity {
   missingTranslatedZones: string[];
   sourceContentAttempted: boolean;
   sourceLanguageMarkers: string[];
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  sourceLanguageContaminatedZones: string[];
+  mappedGenericZones: string[];
+  languageIssueType:
+    | 'none'
+    | 'missing_translated_zones'
+    | 'source_language_mismatch'
+    | 'missing_and_source_language_mismatch';
 }
 
 export interface StructuredRenderOutput {
@@ -744,6 +753,356 @@ function assertBirthPayloadCompliance(parsed: unknown): void {
   }
 }
 
+type BirthRendererZoneId =
+  | 'z_document_header'
+  | 'z_document_title'
+  | 'z_child_identity'
+  | 'z_mother_identity'
+  | 'z_father_identity'
+  | 'z_registration_block'
+  | 'z_annotations_endorsements'
+  | 'z_certification_block'
+  | 'z_registry_office_contact'
+  | 'z_validation_block';
+
+interface BirthRendererZoneDefinition {
+  zoneId: BirthRendererZoneId;
+  requiredPaths: string[];
+  translatablePaths: string[];
+}
+
+const BIRTH_RENDERER_ZONE_DEFINITIONS: BirthRendererZoneDefinition[] = [
+  {
+    zoneId: 'z_document_header',
+    requiredPaths: [
+      'country_header',
+      'registry_office_header',
+      'registration_number',
+    ],
+    translatablePaths: [
+      'country_header',
+      'registry_office_header',
+    ],
+  },
+  {
+    zoneId: 'z_document_title',
+    requiredPaths: ['certificate_title'],
+    translatablePaths: ['certificate_title'],
+  },
+  {
+    zoneId: 'z_child_identity',
+    requiredPaths: [
+      'child_name',
+      'date_of_birth',
+      'time_of_birth',
+      'place_of_birth',
+      'gender',
+      'nationality',
+    ],
+    translatablePaths: [
+      'date_of_birth',
+      'gender',
+      'nationality',
+    ],
+  },
+  {
+    zoneId: 'z_mother_identity',
+    requiredPaths: [
+      'mother.name',
+      'mother.nationality',
+      'mother.date_of_birth',
+      'mother.cpf',
+      'mother.parents',
+    ],
+    translatablePaths: [
+      'mother.nationality',
+      'mother.date_of_birth',
+    ],
+  },
+  {
+    zoneId: 'z_father_identity',
+    requiredPaths: [
+      'father.name',
+      'father.nationality',
+      'father.date_of_birth',
+      'father.cpf',
+      'father.parents',
+    ],
+    translatablePaths: [
+      'father.nationality',
+      'father.date_of_birth',
+    ],
+  },
+  {
+    zoneId: 'z_registration_block',
+    requiredPaths: [
+      'declarant_name',
+      'declarant_relationship',
+      'registration_date',
+    ],
+    translatablePaths: [
+      'declarant_relationship',
+      'registration_date',
+    ],
+  },
+  {
+    zoneId: 'z_annotations_endorsements',
+    requiredPaths: [
+      'annotations_endorsements.text',
+      'voluntary_registry_annotations',
+    ],
+    translatablePaths: [
+      'annotations_endorsements.text',
+      'voluntary_registry_annotations',
+    ],
+  },
+  {
+    zoneId: 'z_certification_block',
+    requiredPaths: [
+      'certification.attestation',
+      'certification.date_location',
+      'certification.digital_seal',
+      'certification.amount_charged',
+      'certification.qr_notice',
+      'certification.electronic_signature',
+    ],
+    translatablePaths: [
+      'certification.attestation',
+      'certification.date_location',
+      'certification.amount_charged',
+      'certification.qr_notice',
+      'certification.electronic_signature',
+    ],
+  },
+  {
+    zoneId: 'z_registry_office_contact',
+    requiredPaths: [
+      'officer_contact.cns_number',
+      'officer_contact.officer_role',
+      'officer_contact.location',
+      'officer_contact.officer_name',
+      'officer_contact.address',
+      'officer_contact.cep',
+      'officer_contact.phone',
+      'officer_contact.email',
+    ],
+    translatablePaths: [
+      'officer_contact.officer_role',
+      'officer_contact.location',
+      'officer_contact.address',
+    ],
+  },
+  {
+    zoneId: 'z_validation_block',
+    requiredPaths: [
+      'validation.cns_clerk_reference',
+      'validation.validation_url',
+      'validation.validation_code',
+    ],
+    translatablePaths: [
+      'validation.cns_clerk_reference',
+    ],
+  },
+];
+
+function normalizeAsciiToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getObjectPathValue(value: unknown, path: string): unknown {
+  const segments = path.split('.');
+  let cursor: unknown = value;
+  for (const segment of segments) {
+    if (!isPlainObject(cursor) || !(segment in cursor)) {
+      return undefined;
+    }
+    cursor = cursor[segment];
+  }
+  return cursor;
+}
+
+function hasObjectPath(value: unknown, path: string): boolean {
+  return getObjectPathValue(value, path) !== undefined;
+}
+
+function collectStringValuesAtPaths(
+  payload: unknown,
+  paths: string[],
+): string[] {
+  const collected: string[] = [];
+  for (const path of paths) {
+    collectStringSegments(getObjectPathValue(payload, path), collected);
+  }
+  return collected
+    .map((entry) => normalizeWhitespace(entry))
+    .filter(Boolean);
+}
+
+function mapBirthGenericZoneIdToSemanticZone(
+  zoneIdRaw: string,
+  zoneTypeRaw: string,
+  contentRaw: string,
+): BirthRendererZoneId | null {
+  const signal = normalizeAsciiToken(`${zoneIdRaw} ${zoneTypeRaw} ${contentRaw}`);
+
+  if (/(^| )z?0?1($| )|header|logo|country|registry office|cartorio/.test(signal)) {
+    return 'z_document_header';
+  }
+  if (/(^| )z?0?2($| )|title|certificate title|certidao de nascimento|birth certificate/.test(signal)) {
+    return 'z_document_title';
+  }
+  if (/(^| )z?0?3($| )|child|newborn|registered person|date of birth|place of birth/.test(signal)) {
+    return 'z_child_identity';
+  }
+  if (/(^| )z?0?4($| )|mother|mae|mãe|maternal/.test(signal)) {
+    return 'z_mother_identity';
+  }
+  if (/(^| )z?0?5($| )|father|pai|paternal/.test(signal)) {
+    return 'z_father_identity';
+  }
+  if (/(^| )z?0?6($| )|declarant|registration date|registered on/.test(signal)) {
+    return 'z_registration_block';
+  }
+  if (/(^| )z?0?7($| )|annotation|endorsement|averbacao|averba[çc][aã]o/.test(signal)) {
+    return 'z_annotations_endorsements';
+  }
+  if (/(^| )z?0?8($| )|certification|attestation|digital seal|amount charged/.test(signal)) {
+    return 'z_certification_block';
+  }
+  if (/(^| )z?0?9($| )|officer|registry office contact|cns number|address/.test(signal)) {
+    return 'z_registry_office_contact';
+  }
+  if (/z?1?0($| )|validation|validation code|validation url/.test(signal)) {
+    return 'z_validation_block';
+  }
+
+  return null;
+}
+
+function collectBirthGenericSemanticZones(payload: unknown): string[] {
+  if (!isPlainObject(payload)) return [];
+
+  const rootEntries: unknown[] = Array.isArray(payload.TRANSLATED_CONTENT_BY_ZONE)
+    ? payload.TRANSLATED_CONTENT_BY_ZONE
+    : [];
+  const pageEntries: unknown[] = Array.isArray(payload.PAGES)
+    ? payload.PAGES.flatMap((page) => {
+        if (!isPlainObject(page)) return [];
+        return Array.isArray(page.TRANSLATED_CONTENT_BY_ZONE)
+          ? page.TRANSLATED_CONTENT_BY_ZONE
+          : [];
+      })
+    : [];
+
+  const mapped = new Set<string>();
+  const candidates = [...rootEntries, ...pageEntries];
+  for (const candidate of candidates) {
+    if (!isPlainObject(candidate)) continue;
+    const zoneIdRaw = normalizeWhitespace(
+      typeof candidate.zone_id === 'string' ? candidate.zone_id : '',
+    );
+    const zoneTypeRaw = normalizeWhitespace(
+      typeof candidate.zone_type === 'string' ? candidate.zone_type : '',
+    );
+    const contentRaw = normalizeWhitespace(
+      typeof candidate.content === 'string'
+        ? candidate.content
+        : typeof candidate.text === 'string'
+          ? candidate.text
+          : '',
+    );
+    if (!zoneIdRaw && !zoneTypeRaw && !contentRaw) continue;
+
+    const semantic = mapBirthGenericZoneIdToSemanticZone(
+      zoneIdRaw,
+      zoneTypeRaw,
+      contentRaw,
+    );
+    if (semantic) mapped.add(semantic);
+  }
+
+  return Array.from(mapped);
+}
+
+function resolveLanguageIssueType(
+  hasMissingTranslatedZones: boolean,
+  hasSourceLanguageContamination: boolean,
+): StructuredRenderLanguageIntegrity['languageIssueType'] {
+  if (hasMissingTranslatedZones && hasSourceLanguageContamination) {
+    return 'missing_and_source_language_mismatch';
+  }
+  if (hasMissingTranslatedZones) return 'missing_translated_zones';
+  if (hasSourceLanguageContamination) return 'source_language_mismatch';
+  return 'none';
+}
+
+function buildBirthLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: BirthCertificateBrazil,
+): StructuredRenderLanguageIntegrity {
+  const diagnostics = buildDefaultLanguageIntegrity(input);
+  diagnostics.translatedPayloadFound = true;
+  diagnostics.requiredZones = BIRTH_RENDERER_ZONE_DEFINITIONS.map(
+    (zone) => zone.zoneId,
+  );
+  diagnostics.sourceZonesCount = diagnostics.requiredZones.length;
+
+  const translatedZonesFound: string[] = [];
+  const missingTranslatedZones: string[] = [];
+  const sourceLanguageContaminatedZones: string[] = [];
+  const sourceLanguageMarkers = new Set<string>();
+
+  for (const zone of BIRTH_RENDERER_ZONE_DEFINITIONS) {
+    const zonePresent = zone.requiredPaths.every((path) => hasObjectPath(payload, path));
+    if (!zonePresent) {
+      missingTranslatedZones.push(zone.zoneId);
+      continue;
+    }
+
+    translatedZonesFound.push(zone.zoneId);
+    const translatableSegments = collectStringValuesAtPaths(
+      payload,
+      zone.translatablePaths,
+    );
+    if (translatableSegments.length === 0) continue;
+
+    const leakage = detectSourceLanguageLeakageFromSegments(
+      translatableSegments,
+      {
+        sourceLanguage: diagnostics.sourceLanguage,
+        targetLanguage: diagnostics.targetLanguage,
+      },
+    );
+    if (!leakage.detected) continue;
+
+    sourceLanguageContaminatedZones.push(zone.zoneId);
+    for (const marker of leakage.matchedMarkers) {
+      sourceLanguageMarkers.add(`${zone.zoneId}:${marker}`);
+    }
+  }
+
+  diagnostics.translatedZonesFound = translatedZonesFound;
+  diagnostics.translatedZonesCount = translatedZonesFound.length;
+  diagnostics.missingTranslatedZones = missingTranslatedZones;
+  diagnostics.sourceLanguageContaminatedZones = sourceLanguageContaminatedZones;
+  diagnostics.sourceLanguageMarkers = Array.from(sourceLanguageMarkers);
+  diagnostics.sourceContentAttempted =
+    missingTranslatedZones.length > 0 ||
+    sourceLanguageContaminatedZones.length > 0;
+  diagnostics.languageIssueType = resolveLanguageIssueType(
+    missingTranslatedZones.length > 0,
+    sourceLanguageContaminatedZones.length > 0,
+  );
+  diagnostics.mappedGenericZones = collectBirthGenericSemanticZones(payload);
+
+  return diagnostics;
+}
+
 function assertMarriagePayloadCompliance(parsed: unknown): void {
   assertExpectedDocumentTypeTag('marriage_certificate_brazil', parsed);
 
@@ -867,6 +1226,11 @@ function buildDefaultLanguageIntegrity(
     missingTranslatedZones: [],
     sourceContentAttempted: false,
     sourceLanguageMarkers: [],
+    requiredZones: [],
+    translatedZonesFound: [],
+    sourceLanguageContaminatedZones: [],
+    mappedGenericZones: [],
+    languageIssueType: 'none',
   };
 }
 
@@ -914,6 +1278,10 @@ function assertPayloadLanguageIntegrity(
 
   diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
   diagnostics.sourceContentAttempted = diagnostics.sourceContentAttempted || leakage.detected;
+  diagnostics.sourceLanguageContaminatedZones = leakage.detected ? ['payload'] : [];
+  diagnostics.languageIssueType = leakage.detected
+    ? 'source_language_mismatch'
+    : 'none';
 
   if (!leakage.detected) return;
 
@@ -959,10 +1327,25 @@ function buildCompactCivilLanguageIntegrity(
 ): StructuredRenderLanguageIntegrity {
   const diagnostics = buildDefaultLanguageIntegrity(input);
   diagnostics.translatedPayloadFound = true;
+  diagnostics.requiredZones = payload.PAGES.flatMap((page) => {
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    return (page.LAYOUT_ZONES ?? [])
+      .map((zone) => normalizeWhitespace(zone.zone_id))
+      .filter(Boolean)
+      .map((zoneId) => `page_${pageNumber}:${zoneId}`);
+  });
   diagnostics.sourceZonesCount = payload.PAGES.reduce(
     (sum, page) => sum + (page.LAYOUT_ZONES?.length ?? 0),
     0,
   );
+  diagnostics.translatedZonesFound = payload.PAGES.flatMap((page) => {
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    return (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .filter((entry) => normalizeWhitespace(entry.content).length > 0)
+      .map((entry) => normalizeWhitespace(entry.zone_id))
+      .filter(Boolean)
+      .map((zoneId) => `page_${pageNumber}:${zoneId}`);
+  });
   diagnostics.translatedZonesCount = payload.PAGES.reduce(
     (sum, page) =>
       sum +
@@ -984,7 +1367,12 @@ function buildCompactCivilLanguageIntegrity(
     targetLanguage: diagnostics.targetLanguage,
   });
   diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
+  diagnostics.sourceLanguageContaminatedZones = leakage.detected ? ['payload'] : [];
   diagnostics.sourceContentAttempted = diagnostics.sourceContentAttempted || leakage.detected;
+  diagnostics.languageIssueType = resolveLanguageIssueType(
+    diagnostics.missingTranslatedZones.length > 0,
+    leakage.detected,
+  );
 
   return diagnostics;
 }
@@ -1590,11 +1978,45 @@ export async function renderSupportedStructuredDocument(
         rawJson,
       );
       assertBirthPayloadCompliance(parsed);
-      const languageIntegrity: StructuredRenderLanguageIntegrity = {
-        ...defaultLanguageIntegrity,
-        translatedPayloadFound: true,
-      };
-      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
+      const languageIntegrity = buildBirthLanguageIntegrity(input, parsed);
+      console.log(
+        `${input.logPrefix} [birth-cert] language integrity diagnostics: ` +
+          JSON.stringify({
+            orderId: input.orderId ?? null,
+            docId: input.documentId ?? null,
+            family: 'civil_records',
+            subtype: 'birth_certificate_brazil',
+            targetLanguage: languageIntegrity.targetLanguage,
+            sourceLanguage: languageIntegrity.sourceLanguage,
+            requiredZones: languageIntegrity.requiredZones,
+            translatedZonesFound: languageIntegrity.translatedZonesFound,
+            missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+            sourceLanguageContaminatedZones:
+              languageIntegrity.sourceLanguageContaminatedZones,
+            sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+            mappedGenericZones: languageIntegrity.mappedGenericZones,
+            issueType: languageIntegrity.languageIssueType,
+            issueIsMissingContent:
+              languageIntegrity.languageIssueType ===
+                'missing_translated_zones' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+            issueIsLanguageMismatch:
+              languageIntegrity.languageIssueType ===
+                'source_language_mismatch' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+          }),
+      );
+      if (languageIntegrity.languageIssueType !== 'none') {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            'Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.',
+          ),
+        );
+      }
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;

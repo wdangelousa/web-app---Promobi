@@ -211,6 +211,15 @@ export interface StructuredLanguageIntegritySignal {
   missingTranslatedZones: string[];
   sourceContentAttempted: boolean;
   sourceLanguageMarkers: string[];
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  sourceLanguageContaminatedZones: string[];
+  mappedGenericZones: string[];
+  languageIssueType:
+    | 'none'
+    | 'missing_translated_zones'
+    | 'source_language_mismatch'
+    | 'missing_and_source_language_mismatch';
 }
 
 export interface StructuredPreviewKitResult {
@@ -242,6 +251,11 @@ export interface PageParityDiagnostic {
   translated_zones_count: number | null;
   source_zones_count: number | null;
   missing_translated_zones: string[];
+  required_zones: string[];
+  translated_zones_found: string[];
+  source_language_contaminated_zones: string[];
+  mapped_generic_zones: string[];
+  language_issue_type: string;
   source_content_attempted: boolean;
   source_language_markers: string[];
   source_page_count: number | null;
@@ -306,6 +320,13 @@ function buildLanguageIntegritySignal(
     missingTranslatedZones: [...(input.languageIntegrity?.missingTranslatedZones ?? [])],
     sourceContentAttempted: input.languageIntegrity?.sourceContentAttempted ?? false,
     sourceLanguageMarkers: [...(input.languageIntegrity?.sourceLanguageMarkers ?? [])],
+    requiredZones: [...(input.languageIntegrity?.requiredZones ?? [])],
+    translatedZonesFound: [...(input.languageIntegrity?.translatedZonesFound ?? [])],
+    sourceLanguageContaminatedZones: [
+      ...(input.languageIntegrity?.sourceLanguageContaminatedZones ?? []),
+    ],
+    mappedGenericZones: [...(input.languageIntegrity?.mappedGenericZones ?? [])],
+    languageIssueType: input.languageIntegrity?.languageIssueType ?? 'none',
   };
 }
 
@@ -325,6 +346,11 @@ function logLanguageIntegrityDiagnostics(
     translatedZonesCount: number | null;
     sourceZonesCount: number | null;
     missingTranslatedZones: string[];
+    requiredZones: string[];
+    translatedZonesFound: string[];
+    sourceLanguageContaminatedZones: string[];
+    mappedGenericZones: string[];
+    languageIssueType: string;
     sourceContentAttempted: boolean;
     sourceLanguageMarkers: string[];
     blockingReason: string;
@@ -945,6 +971,12 @@ export async function buildStructuredKitBuffer(
     translated_zones_count: languageIntegrity.translatedZonesCount,
     source_zones_count: languageIntegrity.sourceZonesCount,
     missing_translated_zones: languageIntegrity.missingTranslatedZones,
+    required_zones: languageIntegrity.requiredZones,
+    translated_zones_found: languageIntegrity.translatedZonesFound,
+    source_language_contaminated_zones:
+      languageIntegrity.sourceLanguageContaminatedZones,
+    mapped_generic_zones: languageIntegrity.mappedGenericZones,
+    language_issue_type: languageIntegrity.languageIssueType,
     source_content_attempted: languageIntegrity.sourceContentAttempted,
     source_language_markers: languageIntegrity.sourceLanguageMarkers,
     renderer_used: input.rendererName ?? 'unknown',
@@ -1015,6 +1047,12 @@ export async function buildStructuredKitBuffer(
       translatedZonesCount: languageIntegrity.translatedZonesCount,
       sourceZonesCount: languageIntegrity.sourceZonesCount,
       missingTranslatedZones,
+      requiredZones: languageIntegrity.requiredZones,
+      translatedZonesFound: languageIntegrity.translatedZonesFound,
+      sourceLanguageContaminatedZones:
+        languageIntegrity.sourceLanguageContaminatedZones,
+      mappedGenericZones: languageIntegrity.mappedGenericZones,
+      languageIssueType: languageIntegrity.languageIssueType,
       sourceContentAttempted:
         languageIntegrity.sourceContentAttempted || shouldBlockForLanguageIntegrity,
       sourceLanguageMarkers: combinedSourceLanguageMarkers,

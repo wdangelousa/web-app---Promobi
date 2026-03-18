@@ -59,8 +59,14 @@ EXTRACTION RULES
 ═══════════════════════════════════════════════════
 
 TRANSLATION:
-- Translate all labels, titles, and institutional text to English.
-- Preserve proper nouns exactly: names of people, cities, states, institutions.
+- Translate all labels, titles, field names, institutional text, and narrative body blocks to English.
+- Do NOT keep Portuguese or Spanish body text in translated client-facing fields.
+- Preserve proper nouns exactly only when they are literal names (people, cities, states).
+- Preserve source literals only when appropriate:
+  - personal names
+  - official acronyms
+  - registry numbers / IDs / CPF
+  - validation codes and URLs
 - Preserve all numbers exactly: registration numbers, CPF values, postal codes.
 - Dates: translate to American format — "Month DD, YYYY" (e.g., "March 15, 2001").
 - Do NOT translate personal names under any circumstances.

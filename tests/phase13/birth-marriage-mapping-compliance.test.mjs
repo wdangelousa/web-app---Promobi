@@ -46,3 +46,21 @@ test('label and URL hints support plain-space birth\/marriage certificate names'
   assert.match(classifier, /birth\(\?:\[-_\\s\]\+cert\(\?:ificate\)\?\)\?/)
 })
 
+test('birth renderer enforces semantic translated-zone binding diagnostics', () => {
+  const renderer = read('services/structuredDocumentRenderer.ts')
+
+  assert.match(renderer, /const BIRTH_RENDERER_ZONE_DEFINITIONS: BirthRendererZoneDefinition\[\] = \[/)
+  assert.match(renderer, /function mapBirthGenericZoneIdToSemanticZone\(/)
+  assert.match(renderer, /function buildBirthLanguageIntegrity\(/)
+  assert.match(renderer, /requiredZones: languageIntegrity\.requiredZones/)
+  assert.match(renderer, /translatedZonesFound: languageIntegrity\.translatedZonesFound/)
+  assert.match(renderer, /sourceLanguageContaminatedZones:/)
+  assert.match(renderer, /issueType: languageIntegrity\.languageIssueType/)
+})
+
+test('birth structured prompt enforces English translated body text policy', () => {
+  const prompt = read('lib/birthCertificatePrompt.ts')
+
+  assert.match(prompt, /Do NOT keep Portuguese or Spanish body text in translated client-facing fields\./)
+  assert.match(prompt, /Preserve source literals only when appropriate:/)
+})

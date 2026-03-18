@@ -186,6 +186,11 @@ export async function previewStructuredKit(
       missingTranslatedZones: [],
       sourceContentAttempted: false,
       sourceLanguageMarkers: [],
+      requiredZones: [],
+      translatedZonesFound: [],
+      sourceLanguageContaminatedZones: [],
+      mappedGenericZones: [],
+      languageIssueType: 'none',
     };
     try {
       const renderAssertion = assertStructuredClientFacingRender({
