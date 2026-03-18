@@ -55,6 +55,10 @@ import {
   getTranslatedPageSafeArea,
   injectTranslatedPageSafeArea,
 } from '@/lib/translatedPageSafeArea';
+import {
+  detectSourceLanguageLeakageFromHtml,
+  normalizeLanguageCode,
+} from '@/lib/translatedLanguageIntegrity';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -185,6 +189,7 @@ export interface StructuredPreviewKitInput {
   orderId: string | number;
   documentId: string | number;
   sourceLanguage?: string;
+  targetLanguage?: string;
   coverVariant?: 'pt-en' | 'es-en';
   orientation?: DocumentOrientation;
   documentTypeLabel?: string;
@@ -194,6 +199,18 @@ export interface StructuredPreviewKitInput {
   rendererName?: string;
   surface?: 'preview-kit' | 'delivery-kit' | 'unknown';
   compactionAttempted?: boolean;
+  languageIntegrity?: StructuredLanguageIntegritySignal;
+}
+
+export interface StructuredLanguageIntegritySignal {
+  targetLanguage: string;
+  sourceLanguage: string;
+  translatedPayloadFound: boolean;
+  translatedZonesCount: number | null;
+  sourceZonesCount: number | null;
+  missingTranslatedZones: string[];
+  sourceContentAttempted: boolean;
+  sourceLanguageMarkers: string[];
 }
 
 export interface StructuredPreviewKitResult {
@@ -219,6 +236,14 @@ export interface PageParityDiagnostic {
   orderId: string | number;
   docId: string | number;
   detected_family: string;
+  source_language: string;
+  target_language: string;
+  translated_payload_found: boolean;
+  translated_zones_count: number | null;
+  source_zones_count: number | null;
+  missing_translated_zones: string[];
+  source_content_attempted: boolean;
+  source_language_markers: string[];
   source_page_count: number | null;
   translated_page_count: number | null;
   parity_status: 'pass' | 'fail';
@@ -264,6 +289,49 @@ function logPageParityDiagnostics(
 ): void {
   console.log(
     `${logPrefix} — page parity diagnostics: ${JSON.stringify(diagnostics)}`,
+  );
+}
+
+function buildLanguageIntegritySignal(
+  input: StructuredPreviewKitInput,
+): StructuredLanguageIntegritySignal {
+  const sourceLanguage = (input.languageIntegrity?.sourceLanguage ?? input.sourceLanguage ?? 'unknown').toUpperCase();
+  const targetLanguage = (input.languageIntegrity?.targetLanguage ?? input.targetLanguage ?? 'EN').toUpperCase();
+  return {
+    targetLanguage,
+    sourceLanguage,
+    translatedPayloadFound: input.languageIntegrity?.translatedPayloadFound ?? false,
+    translatedZonesCount: input.languageIntegrity?.translatedZonesCount ?? null,
+    sourceZonesCount: input.languageIntegrity?.sourceZonesCount ?? null,
+    missingTranslatedZones: [...(input.languageIntegrity?.missingTranslatedZones ?? [])],
+    sourceContentAttempted: input.languageIntegrity?.sourceContentAttempted ?? false,
+    sourceLanguageMarkers: [...(input.languageIntegrity?.sourceLanguageMarkers ?? [])],
+  };
+}
+
+function isEnglishTargetLanguage(targetLanguage: string): boolean {
+  return normalizeLanguageCode(targetLanguage) === 'EN';
+}
+
+function logLanguageIntegrityDiagnostics(
+  logPrefix: string,
+  diagnostics: {
+    orderId: string | number;
+    docId: string | number;
+    family: string;
+    targetLanguage: string;
+    sourceLanguage: string;
+    translatedPayloadFound: boolean;
+    translatedZonesCount: number | null;
+    sourceZonesCount: number | null;
+    missingTranslatedZones: string[];
+    sourceContentAttempted: boolean;
+    sourceLanguageMarkers: string[];
+    blockingReason: string;
+  },
+): void {
+  console.log(
+    `${logPrefix} — language integrity diagnostics: ${JSON.stringify(diagnostics)}`,
   );
 }
 
@@ -866,10 +934,19 @@ export async function buildStructuredKitBuffer(
   const logPrefix = `[buildStructuredKitBuffer] Order #${input.orderId} Doc #${input.documentId}`;
   const log = (msg: string) => console.log(`${logPrefix} — ${msg}`);
   const surface = input.surface ?? 'unknown';
+  const languageIntegrity = buildLanguageIntegritySignal(input);
   const baseDiagnostics = {
     orderId: input.orderId,
     docId: input.documentId,
     detected_family: input.documentFamily ?? 'unknown',
+    source_language: languageIntegrity.sourceLanguage,
+    target_language: languageIntegrity.targetLanguage,
+    translated_payload_found: languageIntegrity.translatedPayloadFound,
+    translated_zones_count: languageIntegrity.translatedZonesCount,
+    source_zones_count: languageIntegrity.sourceZonesCount,
+    missing_translated_zones: languageIntegrity.missingTranslatedZones,
+    source_content_attempted: languageIntegrity.sourceContentAttempted,
+    source_language_markers: languageIntegrity.sourceLanguageMarkers,
     renderer_used: input.rendererName ?? 'unknown',
     orientation_used: input.orientation ?? 'portrait',
     compaction_attempted: input.compactionAttempted ?? false,
@@ -903,6 +980,67 @@ export async function buildStructuredKitBuffer(
       input.structuredHtml,
       translatedOrientation,
     );
+    const htmlLeakage = detectSourceLanguageLeakageFromHtml(
+      safeAreaStructuredHtml,
+      {
+        sourceLanguage: languageIntegrity.sourceLanguage,
+        targetLanguage: languageIntegrity.targetLanguage,
+      },
+    );
+    const combinedSourceLanguageMarkers = Array.from(
+      new Set([
+        ...languageIntegrity.sourceLanguageMarkers,
+        ...htmlLeakage.matchedMarkers,
+      ]),
+    );
+    const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
+    const shouldBlockForLanguageIntegrity =
+      isEnglishTargetLanguage(languageIntegrity.targetLanguage) &&
+      (
+        missingTranslatedZones.length > 0 ||
+        htmlLeakage.detected ||
+        combinedSourceLanguageMarkers.length > 0
+      );
+    const languageBlockingReason = shouldBlockForLanguageIntegrity
+      ? 'translated_zone_content_missing_or_source_language_detected'
+      : 'none';
+
+    logLanguageIntegrityDiagnostics(logPrefix, {
+      orderId: input.orderId,
+      docId: input.documentId,
+      family: input.documentFamily ?? 'unknown',
+      targetLanguage: languageIntegrity.targetLanguage,
+      sourceLanguage: languageIntegrity.sourceLanguage,
+      translatedPayloadFound: languageIntegrity.translatedPayloadFound,
+      translatedZonesCount: languageIntegrity.translatedZonesCount,
+      sourceZonesCount: languageIntegrity.sourceZonesCount,
+      missingTranslatedZones,
+      sourceContentAttempted:
+        languageIntegrity.sourceContentAttempted || shouldBlockForLanguageIntegrity,
+      sourceLanguageMarkers: combinedSourceLanguageMarkers,
+      blockingReason: languageBlockingReason,
+    });
+
+    if (shouldBlockForLanguageIntegrity) {
+      const diagnostics: PageParityDiagnostic = {
+        ...baseDiagnostics,
+        source_language_markers: combinedSourceLanguageMarkers,
+        source_content_attempted: true,
+        source_page_count: input.sourcePageCount ?? null,
+        translated_page_count: null,
+        parity_status: 'fail',
+        blocking_reason: languageBlockingReason,
+        certification_generation_blocked: true,
+        release_blocked: shouldMarkReleaseBlocked,
+      };
+      logPageParityDiagnostics(logPrefix, diagnostics);
+      return {
+        success: false,
+        blockingReason: diagnostics.blocking_reason,
+        parityStatus: 'fail',
+        diagnostics,
+      };
+    }
 
     const translatedPdfBaseBuffer = await callGotenberg(
       safeAreaStructuredHtml,

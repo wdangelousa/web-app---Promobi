@@ -67,6 +67,10 @@ import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
 import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
 import { renderRecommendationLetterHtml } from '@/lib/recommendationLetterRenderer';
 import { renderPublicationMediaRecordHtml } from '@/lib/publicationMediaRecordRenderer';
+import {
+  detectSourceLanguageLeakageFromSegments,
+  normalizeLanguageCode,
+} from '@/lib/translatedLanguageIntegrity';
 import type { DocumentType } from '@/services/documentClassifier';
 import {
   detectDocumentFamily,
@@ -184,12 +188,28 @@ export interface StructuredRenderInput {
   sourcePageCount?: number;
   detectedOrientation: DocumentOrientation;
   logPrefix: string;
+  orderId?: string | number;
+  documentId?: string | number;
+  sourceLanguage?: string | null;
+  targetLanguage?: string | null;
+}
+
+export interface StructuredRenderLanguageIntegrity {
+  targetLanguage: string;
+  sourceLanguage: string;
+  translatedPayloadFound: boolean;
+  translatedZonesCount: number | null;
+  sourceZonesCount: number | null;
+  missingTranslatedZones: string[];
+  sourceContentAttempted: boolean;
+  sourceLanguageMarkers: string[];
 }
 
 export interface StructuredRenderOutput {
   structuredHtml: string;
   orientationForKit: DocumentOrientation;
   rendererName: string;
+  languageIntegrity: StructuredRenderLanguageIntegrity;
 }
 
 export interface StructuredFamilyRenderInput extends StructuredRenderInput {
@@ -823,6 +843,152 @@ function inferCivilZoneOrientation(
   return pageHint === 'landscape' ? 'landscape' : 'portrait';
 }
 
+function resolveTargetLanguage(input: StructuredRenderInput): string {
+  const normalized = normalizeLanguageCode(input.targetLanguage ?? 'EN');
+  return normalized === 'EN' ? 'EN' : (input.targetLanguage ?? 'EN').toUpperCase();
+}
+
+function resolveSourceLanguage(input: StructuredRenderInput): string {
+  const normalized = normalizeLanguageCode(input.sourceLanguage);
+  if (normalized === 'PT') return 'PT';
+  if (normalized === 'ES') return 'ES';
+  return (input.sourceLanguage ?? 'unknown').toUpperCase();
+}
+
+function buildDefaultLanguageIntegrity(
+  input: StructuredRenderInput,
+): StructuredRenderLanguageIntegrity {
+  return {
+    targetLanguage: resolveTargetLanguage(input),
+    sourceLanguage: resolveSourceLanguage(input),
+    translatedPayloadFound: false,
+    translatedZonesCount: null,
+    sourceZonesCount: null,
+    missingTranslatedZones: [],
+    sourceContentAttempted: false,
+    sourceLanguageMarkers: [],
+  };
+}
+
+function normalizeWhitespace(value: string | undefined | null): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function collectStringSegments(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) out.push(trimmed);
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringSegments(item, out);
+    return out;
+  }
+
+  if (!isPlainObject(value)) {
+    return out;
+  }
+
+  for (const nested of Object.values(value)) {
+    collectStringSegments(nested, out);
+  }
+  return out;
+}
+
+function assertPayloadLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: unknown,
+  diagnostics: StructuredRenderLanguageIntegrity,
+  payloadLabel: string,
+): void {
+  const targetLanguage = resolveTargetLanguage(input);
+  if (normalizeLanguageCode(targetLanguage) !== 'EN') return;
+
+  const sourceLanguage = resolveSourceLanguage(input);
+  const segments = collectStringSegments(payload);
+  const leakage = detectSourceLanguageLeakageFromSegments(segments, {
+    sourceLanguage,
+    targetLanguage,
+  });
+
+  diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
+  diagnostics.sourceContentAttempted = diagnostics.sourceContentAttempted || leakage.detected;
+
+  if (!leakage.detected) return;
+
+  throw new StructuredRenderingRequiredError(
+    input.documentType,
+    buildStructuredFailureMessage(
+      input.documentType,
+      `Structured translated ${payloadLabel} blocked: translated zone content missing or source-language content detected in translated client-facing surface.`,
+    ),
+  );
+}
+
+function collectMissingTranslatedZoneIds(
+  payload: CivilRecordGeneralZoneBlueprint,
+): string[] {
+  const missing: string[] = [];
+
+  for (const page of payload.PAGES ?? []) {
+    const translatedByZone = new Map<string, string>();
+    for (const entry of page.TRANSLATED_CONTENT_BY_ZONE ?? []) {
+      const zoneId = normalizeWhitespace(entry.zone_id);
+      const content = normalizeWhitespace(entry.content);
+      if (!zoneId || !content) continue;
+      translatedByZone.set(zoneId, content);
+    }
+
+    for (const zone of page.LAYOUT_ZONES ?? []) {
+      const zoneId = normalizeWhitespace(zone.zone_id);
+      if (!zoneId) continue;
+      if (!translatedByZone.has(zoneId)) {
+        const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+        missing.push(`page_${pageNumber}:${zoneId}`);
+      }
+    }
+  }
+
+  return missing;
+}
+
+function buildCompactCivilLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: CivilRecordGeneralZoneBlueprint,
+): StructuredRenderLanguageIntegrity {
+  const diagnostics = buildDefaultLanguageIntegrity(input);
+  diagnostics.translatedPayloadFound = true;
+  diagnostics.sourceZonesCount = payload.PAGES.reduce(
+    (sum, page) => sum + (page.LAYOUT_ZONES?.length ?? 0),
+    0,
+  );
+  diagnostics.translatedZonesCount = payload.PAGES.reduce(
+    (sum, page) =>
+      sum +
+      (page.TRANSLATED_CONTENT_BY_ZONE ?? []).filter((entry) => normalizeWhitespace(entry.content).length > 0)
+        .length,
+    0,
+  );
+  diagnostics.missingTranslatedZones = collectMissingTranslatedZoneIds(payload);
+  diagnostics.sourceContentAttempted = diagnostics.missingTranslatedZones.length > 0;
+
+  const translatedSegments = payload.PAGES.flatMap((page) =>
+    (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .map((entry) => normalizeWhitespace(entry.content))
+      .filter(Boolean),
+  );
+
+  const leakage = detectSourceLanguageLeakageFromSegments(translatedSegments, {
+    sourceLanguage: diagnostics.sourceLanguage,
+    targetLanguage: diagnostics.targetLanguage,
+  });
+  diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
+  diagnostics.sourceContentAttempted = diagnostics.sourceContentAttempted || leakage.detected;
+
+  return diagnostics;
+}
+
 export async function renderSupportedStructuredDocument(
   input: StructuredRenderInput,
 ): Promise<StructuredRenderOutput> {
@@ -840,6 +1006,7 @@ export async function renderSupportedStructuredDocument(
       input.contentType,
       userMessage,
     );
+  const defaultLanguageIntegrity = buildDefaultLanguageIntegrity(input);
 
   switch (input.documentType) {
     case 'marriage_certificate_brazil': {
@@ -859,6 +1026,11 @@ export async function renderSupportedStructuredDocument(
         rawJson,
       );
       assertMarriagePayloadCompliance(parsed);
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       const structuredHtml = renderMarriageCertificateHtml(parsed, {
         pageCount: input.sourcePageCount,
@@ -874,6 +1046,7 @@ export async function renderSupportedStructuredDocument(
         structuredHtml,
         orientationForKit: input.detectedOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -921,6 +1094,43 @@ export async function renderSupportedStructuredDocument(
         }
 
         const normalizedCompactPayload = normalizeCivilCompactZonePayload(parsed);
+        const languageIntegrity = buildCompactCivilLanguageIntegrity(
+          input,
+          normalizedCompactPayload,
+        );
+        const compactCivilBlockingReason =
+          languageIntegrity.missingTranslatedZones.length > 0 ||
+          languageIntegrity.sourceLanguageMarkers.length > 0
+            ? 'translated_zone_content_missing_or_source_language_detected'
+            : 'none';
+        console.log(
+          `${input.logPrefix} [${civilPromptLabel}] language integrity diagnostics: ` +
+            JSON.stringify({
+              orderId: input.orderId ?? null,
+              docId: input.documentId ?? null,
+              family: 'civil_records',
+              subtype: normalizedCompactPayload.document_subtype,
+              targetLanguage: languageIntegrity.targetLanguage,
+              sourceLanguage: languageIntegrity.sourceLanguage,
+              translatedPayloadFound: languageIntegrity.translatedPayloadFound ? 'yes' : 'no',
+              translatedZonesCount: languageIntegrity.translatedZonesCount,
+              sourceZonesCount: languageIntegrity.sourceZonesCount,
+              missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+              sourceContentAttempted: languageIntegrity.sourceContentAttempted ? 'yes' : 'no',
+              sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+              blockingReason: compactCivilBlockingReason,
+            }),
+        );
+        if (compactCivilBlockingReason !== 'none') {
+          throw new StructuredRenderingRequiredError(
+            input.documentType,
+            buildStructuredFailureMessage(
+              input.documentType,
+              'Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.',
+            ),
+          );
+        }
+
         if (
           typeof input.sourcePageCount === 'number' &&
           input.sourcePageCount > 0 &&
@@ -963,10 +1173,16 @@ export async function renderSupportedStructuredDocument(
           }),
           orientationForKit: effectiveOrientation,
           rendererName,
+          languageIntegrity,
         };
       }
 
       const parsedLegacy = parsed as CivilRecordGeneral;
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsedLegacy, languageIntegrity, 'preview');
 
       parsedLegacy.orientation = input.detectedOrientation;
       parsedLegacy.page_count = input.sourcePageCount ?? null;
@@ -995,6 +1211,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1014,6 +1231,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1028,6 +1250,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1047,6 +1270,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       let effectiveOrientation: DocumentOrientation = input.detectedOrientation;
       if (input.detectedOrientation === 'portrait' && input.sourcePageCount === 1) {
@@ -1065,6 +1293,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1084,6 +1313,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       const effectiveOrientation: DocumentOrientation =
         input.detectedOrientation === 'unknown' ? 'landscape' : input.detectedOrientation;
@@ -1098,6 +1332,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1117,6 +1352,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1128,6 +1368,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: input.detectedOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1147,6 +1388,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1166,6 +1412,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1185,6 +1432,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1200,6 +1452,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1219,6 +1472,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1233,6 +1491,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1252,6 +1511,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1266,6 +1530,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1285,6 +1550,11 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1299,6 +1569,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: effectiveOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 
@@ -1319,6 +1590,11 @@ export async function renderSupportedStructuredDocument(
         rawJson,
       );
       assertBirthPayloadCompliance(parsed);
+      const languageIntegrity: StructuredRenderLanguageIntegrity = {
+        ...defaultLanguageIntegrity,
+        translatedPayloadFound: true,
+      };
+      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;
@@ -1330,6 +1606,7 @@ export async function renderSupportedStructuredDocument(
         }),
         orientationForKit: input.detectedOrientation,
         rendererName,
+        languageIntegrity,
       };
     }
 

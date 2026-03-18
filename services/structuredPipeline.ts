@@ -723,6 +723,10 @@ async function runSharedStructuredPipeline(
       contentType: input.contentType,
       sourcePageCount,
       detectedOrientation,
+      orderId: input.orderId,
+      documentId: input.documentId,
+      sourceLanguage: input.sourceLanguage ?? null,
+      targetLanguage: 'EN',
       logPrefix: `[structuredPipeline] ${ctx}`,
     });
 
@@ -761,9 +765,11 @@ async function runSharedStructuredPipeline(
         orderId: input.orderId ?? 'unknown',
         documentId: input.documentId ?? 'unknown',
         sourceLanguage: input.sourceLanguage,
+        targetLanguage: resolved.languageIntegrity.targetLanguage,
         orientation: resolved.orientationForKit,
         documentTypeLabel: STRUCTURED_DOCUMENT_LABELS[documentType],
         sourcePageCount,
+        languageIntegrity: resolved.languageIntegrity,
       });
       log(`certification cover generated: ${kit.coverGenerated ? 'yes' : 'no'}`);
       log(`translated section generated: ${kit.translatedSectionGenerated ? 'yes' : 'no'}`);

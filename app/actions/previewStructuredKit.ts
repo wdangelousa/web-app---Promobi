@@ -42,6 +42,7 @@ import {
 import {
   assertStructuredClientFacingRender,
   formatStructuredRenderingFailureMessage,
+  type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
 } from '@/services/structuredDocumentRenderer';
 
@@ -176,6 +177,16 @@ export async function previewStructuredKit(
     let orientationForKit: DocumentOrientation = detectedOrientation;
     let resolvedFamilyForKit: string = 'unknown';
     let resolvedRendererForKit: string = 'unknown';
+    let resolvedLanguageIntegrityForKit: StructuredRenderLanguageIntegrity = {
+      targetLanguage: 'EN',
+      sourceLanguage: (doc.sourceLanguage ?? 'unknown').toUpperCase(),
+      translatedPayloadFound: false,
+      translatedZonesCount: null,
+      sourceZonesCount: null,
+      missingTranslatedZones: [],
+      sourceContentAttempted: false,
+      sourceLanguageMarkers: [],
+    };
     try {
       const renderAssertion = assertStructuredClientFacingRender({
         documentType: classification.documentType,
@@ -197,6 +208,10 @@ export async function previewStructuredKit(
         contentType,
         sourcePageCount,
         detectedOrientation,
+        orderId,
+        documentId,
+        sourceLanguage: doc.sourceLanguage ?? null,
+        targetLanguage: 'EN',
         logPrefix,
       });
 
@@ -204,6 +219,7 @@ export async function previewStructuredKit(
       orientationForKit = resolved.orientationForKit;
       resolvedFamilyForKit = renderAssertion.family;
       resolvedRendererForKit = resolved.rendererName;
+      resolvedLanguageIntegrityForKit = resolved.languageIntegrity;
 
       console.log(
         `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
@@ -238,6 +254,7 @@ export async function previewStructuredKit(
       orderId,
       documentId,
       sourceLanguage: doc.sourceLanguage ?? 'pt',
+      targetLanguage: resolvedLanguageIntegrityForKit.targetLanguage,
       coverVariant,
       documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
       sourcePageCount,
@@ -246,6 +263,7 @@ export async function previewStructuredKit(
       rendererName: resolvedRendererForKit,
       surface: 'preview-kit',
       compactionAttempted: false,
+      languageIntegrity: resolvedLanguageIntegrityForKit,
     });
 
     if (!kit.assembled) {
@@ -254,6 +272,8 @@ export async function previewStructuredKit(
           ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
           : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
             ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
+            : kit.blockingReason === 'translated_zone_content_missing_or_source_language_detected'
+              ? ' Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.'
             : '';
       return {
         success: false,

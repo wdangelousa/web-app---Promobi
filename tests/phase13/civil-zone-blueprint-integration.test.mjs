@@ -16,6 +16,8 @@ test('compact civil prompt requires Anthropic zone blueprint sections', () => {
   assert.match(prompt, /"QUALITY_FLAGS"/)
   assert.match(prompt, /birth_certificate_full_content_compact/)
   assert.match(prompt, /civil_registry_full_text_single_page/)
+  assert.match(prompt, /TRANSLATION LANGUAGE RULE:/)
+  assert.match(prompt, /Translate all translatable labels and body content into English\./)
 })
 
 test('structured dispatcher enforces zone-model rendering for one-page civil records', () => {

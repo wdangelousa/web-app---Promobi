@@ -146,6 +146,10 @@ export async function generateDeliveryKit(
         contentType,
         sourcePageCount,
         detectedOrientation,
+        orderId,
+        documentId,
+        sourceLanguage: doc.sourceLanguage ?? null,
+        targetLanguage: 'EN',
         logPrefix,
       });
 
@@ -160,6 +164,7 @@ export async function generateDeliveryKit(
         orderId,
         documentId,
         sourceLanguage: doc.sourceLanguage ?? undefined,
+        targetLanguage: resolved.languageIntegrity.targetLanguage,
         coverVariant,
         orientation: orientationForKit === "landscape" ? "landscape" : undefined,
         documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
@@ -168,6 +173,7 @@ export async function generateDeliveryKit(
         rendererName: resolved.rendererName,
         surface: preview ? "preview-kit" : "delivery-kit",
         compactionAttempted: false,
+        languageIntegrity: resolved.languageIntegrity,
       });
 
       if (!buildResult.success || !buildResult.kitBuffer) {
@@ -176,6 +182,8 @@ export async function generateDeliveryKit(
             ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
             : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
               ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+              : buildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
+                ? " Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface."
               : "";
         return {
           success: false,

@@ -27,6 +27,16 @@ MANDATORY INVARIANTS:
 - Do not invent missing values.
 - If text is unreadable, use "[illegible]".
 
+TRANSLATION LANGUAGE RULE:
+- Translate all translatable labels and body content into English.
+- Do NOT keep source-language Portuguese/Spanish body text in translated zones.
+- Preserve source literals only when appropriate:
+  - proper names
+  - official acronyms
+  - registry/document numbers
+  - validation codes and URLs
+  - policy-approved bracketed literals
+
 PAGE PARITY:
 - This flow is for compact civil records.
 - If source page count is 1, output exactly 1 item in PAGES.

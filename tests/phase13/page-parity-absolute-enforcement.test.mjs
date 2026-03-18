@@ -12,6 +12,7 @@ test('structured kit builder enforces absolute source/translated page parity', (
   assert.match(kit, /translatedPageCount !== effectiveSourcePageCount/)
   assert.match(kit, /blocking_reason: 'page_parity_mismatch'/)
   assert.match(kit, /blocking_reason: 'page_parity_unverifiable_source_page_count'/)
+  assert.match(kit, /translated_zone_content_missing_or_source_language_detected/)
   assert.match(kit, /parity_status: 'pass'/)
   assert.match(kit, /parity_status: 'fail'/)
   assert.match(kit, /certification_generation_blocked: true/)
@@ -24,9 +25,11 @@ test('preview and delivery kit actions propagate parity hard-failure to callers'
 
   assert.match(previewAction, /kit\.blockingReason === 'page_parity_mismatch'/)
   assert.match(previewAction, /kit\.blockingReason === 'page_parity_unverifiable_source_page_count'/)
+  assert.match(previewAction, /kit\.blockingReason === 'translated_zone_content_missing_or_source_language_detected'/)
 
   assert.match(deliveryAction, /buildResult\.blockingReason === "page_parity_mismatch"/)
   assert.match(deliveryAction, /buildResult\.blockingReason === "page_parity_unverifiable_source_page_count"/)
+  assert.match(deliveryAction, /buildResult\.blockingReason === "translated_zone_content_missing_or_source_language_detected"/)
 })
 
 test('release guard blocks client release on parity mismatch or unverifiable counts', () => {
@@ -58,4 +61,3 @@ test('legacy manual completion path remains blocked while parity is mandatory fo
   assert.match(adminOrdersAction, /Manual completion is disabled/i)
   assert.match(workbench, /absolute page-parity rule/i)
 })
-
