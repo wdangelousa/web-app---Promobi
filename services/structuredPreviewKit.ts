@@ -50,6 +50,11 @@ import { createClient } from '@supabase/supabase-js';
 import { PDFDocument } from 'pdf-lib';
 import type { DocumentOrientation } from '@/lib/documentOrientationDetector';
 import {
+  renderHtmlWithGotenberg,
+  type GotenbergExtraFile,
+  type GotenbergFailure,
+} from '@/lib/gotenbergClient';
+import {
   buildTranslatedGotenbergSettings,
   buildTranslatedSafeAreaPageCss,
   getTranslatedPageSafeArea,
@@ -63,9 +68,6 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STORAGE_BUCKET = 'documents';
-
-const GOTENBERG_URL =
-  process.env.GOTENBERG_URL ?? 'http://127.0.0.1:3001/forms/chromium/convert/html';
 
 const LETTERHEAD_PATH = join(process.cwd(), 'public', 'letterhead.png');
 const LETTERHEAD_LANDSCAPE_PATH = join(process.cwd(), 'public', 'letterhead-landscape.png');
@@ -104,13 +106,7 @@ const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
   en: 'English',
 };
 
-// ── Gotenberg extra file type ─────────────────────────────────────────────────
-
-interface GotenbergExtraFile {
-  filename: string;
-  buffer: Buffer;
-  mimeType: string;
-}
+type LanguageGateSource = 'upstream_language_integrity' | 'fallback_html_scan';
 
 // ── Cover asset specs ─────────────────────────────────────────────────────────
 
@@ -184,6 +180,7 @@ function loadCoverAssets(logPrefix: string): GotenbergExtraFile[] {
 
 export interface StructuredPreviewKitInput {
   structuredHtml: string;
+  externalTranslatedPdfBuffer?: ArrayBuffer;
   originalFileBuffer: ArrayBuffer;
   isOriginalPdf: boolean;
   orderId: string | number;
@@ -258,8 +255,17 @@ export interface PageParityDiagnostic {
   language_issue_type: string;
   source_content_attempted: boolean;
   source_language_markers: string[];
+  true_source_content_leakage: string[];
+  allowed_literal_content: string[];
+  false_positive_source_language_marker: string[];
+  missing_translated_zone_content: string[];
+  language_gate_source: LanguageGateSource;
   source_page_count: number | null;
   translated_page_count: number | null;
+  gotenberg_endpoint_used: string | null;
+  gotenberg_failure_type: string | null;
+  gotenberg_failure_detail: string | null;
+  gotenberg_status_code: number | null;
   parity_status: 'pass' | 'fail';
   blocking_reason: string;
   renderer_used: string;
@@ -334,6 +340,76 @@ function isEnglishTargetLanguage(targetLanguage: string): boolean {
   return normalizeLanguageCode(targetLanguage) === 'EN';
 }
 
+interface SourceLanguageMarkerClassification {
+  trueSourceContentLeakage: string[];
+  allowedLiteralContent: string[];
+  falsePositiveSourceLanguageMarker: string[];
+}
+
+function markerZonePrefix(marker: string): string | null {
+  const separatorIndex = marker.indexOf(':');
+  if (separatorIndex <= 0) return null;
+  const prefix = marker.slice(0, separatorIndex).trim();
+  return prefix || null;
+}
+
+function classifySourceLanguageMarkers(
+  markers: string[],
+  options: {
+    sourceLanguageContaminatedZones?: string[];
+    treatUnscopedAsFalsePositive?: boolean;
+  } = {},
+): SourceLanguageMarkerClassification {
+  const trueSourceContentLeakage: string[] = [];
+  const falsePositiveSourceLanguageMarker: string[] = [];
+  const allowedLiteralContent: string[] = [];
+  const contaminatedZones = new Set(
+    (options.sourceLanguageContaminatedZones ?? [])
+      .map((zone) => zone.trim())
+      .filter(Boolean),
+  );
+
+  for (const marker of markers) {
+    const zone = markerZonePrefix(marker);
+    if (zone) {
+      if (contaminatedZones.has(zone)) {
+        trueSourceContentLeakage.push(marker);
+      } else {
+        falsePositiveSourceLanguageMarker.push(marker);
+      }
+      continue;
+    }
+
+    if (options.treatUnscopedAsFalsePositive) {
+      falsePositiveSourceLanguageMarker.push(marker);
+      continue;
+    }
+
+    trueSourceContentLeakage.push(marker);
+  }
+
+  return {
+    trueSourceContentLeakage: Array.from(new Set(trueSourceContentLeakage)),
+    allowedLiteralContent: Array.from(new Set(allowedLiteralContent)),
+    falsePositiveSourceLanguageMarker: Array.from(
+      new Set(falsePositiveSourceLanguageMarker),
+    ),
+  };
+}
+
+function hasUpstreamLanguageIntegrityEvidence(
+  signal: StructuredLanguageIntegritySignal,
+): boolean {
+  return (
+    signal.translatedPayloadFound ||
+    signal.requiredZones.length > 0 ||
+    signal.translatedZonesFound.length > 0 ||
+    signal.sourceZonesCount !== null ||
+    signal.translatedZonesCount !== null ||
+    signal.languageIssueType !== 'none'
+  );
+}
+
 function logLanguageIntegrityDiagnostics(
   logPrefix: string,
   diagnostics: {
@@ -353,6 +429,11 @@ function logLanguageIntegrityDiagnostics(
     languageIssueType: string;
     sourceContentAttempted: boolean;
     sourceLanguageMarkers: string[];
+    trueSourceContentLeakage: string[];
+    allowedLiteralContent: string[];
+    falsePositiveSourceLanguageMarker: string[];
+    missingTranslatedZoneContent: string[];
+    languageGateSource: LanguageGateSource;
     blockingReason: string;
   },
 ): void {
@@ -901,44 +982,49 @@ async function applyLetterheadOverlayToPdf(
 
 // ── Gotenberg helper ──────────────────────────────────────────────────────────
 
+interface GotenbergCallResult {
+  buffer: Buffer | null;
+  endpointUsed: string | null;
+  failure: GotenbergFailure | null;
+}
+
+function formatGotenbergFailureDetail(failure: GotenbergFailure | null): string | null {
+  if (!failure) return null;
+  const parts = [
+    failure.message,
+    failure.causeCode ? `cause=${failure.causeCode}` : '',
+    failure.responseSnippet ? `response=${failure.responseSnippet}` : '',
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
+
 async function callGotenberg(
   html: string,
   settings: Record<string, string>,
   logPrefix: string,
   label: string,
   extraFiles?: GotenbergExtraFile[],
-): Promise<Buffer | null> {
-  try {
-    console.log(`${logPrefix} — MARGINS (${label}):`, JSON.stringify(settings));
-
-    const formData = new FormData();
-    formData.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-
-    for (const file of extraFiles ?? []) {
-      formData.append(
-        'files',
-        new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }),
-        file.filename,
-      );
-    }
-
-    for (const [k, v] of Object.entries(settings)) {
-      formData.append(k, v);
-    }
-
-    const res = await fetch(GOTENBERG_URL, { method: 'POST', body: formData });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`${logPrefix} — ${label} Gotenberg error ${res.status}: ${errText}`);
-      return null;
-    }
-
-    return Buffer.from(await res.arrayBuffer());
-  } catch (err) {
-    console.error(`${logPrefix} — ${label} Gotenberg unexpected error: ${err}`);
-    return null;
+): Promise<GotenbergCallResult> {
+  console.log(`${logPrefix} — MARGINS (${label}):`, JSON.stringify(settings));
+  const result = await renderHtmlWithGotenberg({
+    html,
+    settings,
+    logPrefix,
+    label,
+    extraFiles,
+  });
+  if (!result.ok || !result.buffer) {
+    return {
+      buffer: null,
+      endpointUsed: result.endpointUsed,
+      failure: result.failure,
+    };
   }
+  return {
+    buffer: result.buffer,
+    endpointUsed: result.endpointUsed,
+    failure: null,
+  };
 }
 
 // ── Shared kit buffer builder ─────────────────────────────────────────────────
@@ -961,6 +1047,13 @@ export async function buildStructuredKitBuffer(
   const log = (msg: string) => console.log(`${logPrefix} — ${msg}`);
   const surface = input.surface ?? 'unknown';
   const languageIntegrity = buildLanguageIntegritySignal(input);
+  const upstreamMarkerClassification = classifySourceLanguageMarkers(
+    languageIntegrity.sourceLanguageMarkers,
+    {
+      sourceLanguageContaminatedZones:
+        languageIntegrity.sourceLanguageContaminatedZones,
+    },
+  );
   const baseDiagnostics = {
     orderId: input.orderId,
     docId: input.documentId,
@@ -979,6 +1072,17 @@ export async function buildStructuredKitBuffer(
     language_issue_type: languageIntegrity.languageIssueType,
     source_content_attempted: languageIntegrity.sourceContentAttempted,
     source_language_markers: languageIntegrity.sourceLanguageMarkers,
+    true_source_content_leakage:
+      upstreamMarkerClassification.trueSourceContentLeakage,
+    allowed_literal_content: upstreamMarkerClassification.allowedLiteralContent,
+    false_positive_source_language_marker:
+      upstreamMarkerClassification.falsePositiveSourceLanguageMarker,
+    missing_translated_zone_content: languageIntegrity.missingTranslatedZones,
+    language_gate_source: 'upstream_language_integrity' as const,
+    gotenberg_endpoint_used: null as string | null,
+    gotenberg_failure_type: null as string | null,
+    gotenberg_failure_detail: null as string | null,
+    gotenberg_status_code: null as number | null,
     renderer_used: input.rendererName ?? 'unknown',
     orientation_used: input.orientation ?? 'portrait',
     compaction_attempted: input.compactionAttempted ?? false,
@@ -999,6 +1103,9 @@ export async function buildStructuredKitBuffer(
     );
 
     // ── Part 2: Translated document PDF ──────────────────────────────────────
+    const hasExternalTranslatedPdfOverride =
+      input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
+      input.externalTranslatedPdfBuffer.byteLength > 0;
     const targetLhPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
     const letterheadBuffer = loadLetterheadBuffer(targetLhPath);
 
@@ -1008,128 +1115,256 @@ export async function buildStructuredKitBuffer(
       log(`letterhead detected: no (${targetLhPath})`);
     }
 
-    const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
-      input.structuredHtml,
-      translatedOrientation,
-    );
-    const htmlLeakage = detectSourceLanguageLeakageFromHtml(
-      safeAreaStructuredHtml,
-      {
-        sourceLanguage: languageIntegrity.sourceLanguage,
-        targetLanguage: languageIntegrity.targetLanguage,
-      },
-    );
-    const combinedSourceLanguageMarkers = Array.from(
-      new Set([
-        ...languageIntegrity.sourceLanguageMarkers,
-        ...htmlLeakage.matchedMarkers,
-      ]),
-    );
-    const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
-    const shouldBlockForLanguageIntegrity =
-      isEnglishTargetLanguage(languageIntegrity.targetLanguage) &&
-      (
-        missingTranslatedZones.length > 0 ||
-        htmlLeakage.detected ||
-        combinedSourceLanguageMarkers.length > 0
-      );
-    const languageBlockingReason = shouldBlockForLanguageIntegrity
-      ? 'translated_zone_content_missing_or_source_language_detected'
-      : 'none';
+    let translatedPdfBuffer: Buffer;
+    let translatedPdfDoc: PDFDocument;
+    let translatedPageCount: number;
 
-    logLanguageIntegrityDiagnostics(logPrefix, {
-      orderId: input.orderId,
-      docId: input.documentId,
-      family: input.documentFamily ?? 'unknown',
-      targetLanguage: languageIntegrity.targetLanguage,
-      sourceLanguage: languageIntegrity.sourceLanguage,
-      translatedPayloadFound: languageIntegrity.translatedPayloadFound,
-      translatedZonesCount: languageIntegrity.translatedZonesCount,
-      sourceZonesCount: languageIntegrity.sourceZonesCount,
-      missingTranslatedZones,
-      requiredZones: languageIntegrity.requiredZones,
-      translatedZonesFound: languageIntegrity.translatedZonesFound,
-      sourceLanguageContaminatedZones:
-        languageIntegrity.sourceLanguageContaminatedZones,
-      mappedGenericZones: languageIntegrity.mappedGenericZones,
-      languageIssueType: languageIntegrity.languageIssueType,
-      sourceContentAttempted:
-        languageIntegrity.sourceContentAttempted || shouldBlockForLanguageIntegrity,
-      sourceLanguageMarkers: combinedSourceLanguageMarkers,
-      blockingReason: languageBlockingReason,
-    });
-
-    if (shouldBlockForLanguageIntegrity) {
-      const diagnostics: PageParityDiagnostic = {
-        ...baseDiagnostics,
-        source_language_markers: combinedSourceLanguageMarkers,
-        source_content_attempted: true,
-        source_page_count: input.sourcePageCount ?? null,
-        translated_page_count: null,
-        parity_status: 'fail',
-        blocking_reason: languageBlockingReason,
-        certification_generation_blocked: true,
-        release_blocked: shouldMarkReleaseBlocked,
-      };
-      logPageParityDiagnostics(logPrefix, diagnostics);
-      return {
-        success: false,
-        blockingReason: diagnostics.blocking_reason,
-        parityStatus: 'fail',
-        diagnostics,
-      };
-    }
-
-    const translatedPdfBaseBuffer = await callGotenberg(
-      safeAreaStructuredHtml,
-      paperSettings,
-      logPrefix,
-      'translated-section',
-      [],
-    );
-
-    if (!translatedPdfBaseBuffer) {
-      log(`translated section: Gotenberg failed`);
-      const diagnostics: PageParityDiagnostic = {
-        ...baseDiagnostics,
-        source_page_count: input.sourcePageCount ?? null,
-        translated_page_count: null,
-        parity_status: 'fail',
-        blocking_reason: 'translated_section_generation_failed',
-        certification_generation_blocked: true,
-        release_blocked: shouldMarkReleaseBlocked,
-      };
-      logPageParityDiagnostics(logPrefix, diagnostics);
-      return {
-        success: false,
-        blockingReason: diagnostics.blocking_reason,
-        parityStatus: 'fail',
-        diagnostics,
-      };
-    }
-
-    let translatedPdfBuffer = translatedPdfBaseBuffer;
-
-    if (letterheadBuffer) {
-      const overlayBuffer = await applyLetterheadOverlayToPdf(
-        translatedPdfBaseBuffer,
-        letterheadBuffer,
-        logPrefix,
-      );
-      if (overlayBuffer) {
-        translatedPdfBuffer = overlayBuffer;
-        log(`letterhead overlay applied: yes`);
-      } else {
-        log(`letterhead overlay applied: no (overlay failed)`);
+    if (hasExternalTranslatedPdfOverride) {
+      log(`translated section source: external PDF override`);
+      translatedPdfBuffer = Buffer.from(input.externalTranslatedPdfBuffer!);
+      try {
+        translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer, {
+          ignoreEncryption: true,
+        });
+      } catch (err) {
+        const diagnostics: PageParityDiagnostic = {
+          ...baseDiagnostics,
+          source_page_count: input.sourcePageCount ?? null,
+          translated_page_count: null,
+          parity_status: 'fail',
+          blocking_reason: 'external_translation_pdf_invalid',
+          certification_generation_blocked: true,
+          release_blocked: shouldMarkReleaseBlocked,
+        };
+        logPageParityDiagnostics(logPrefix, diagnostics);
+        return {
+          success: false,
+          blockingReason: diagnostics.blocking_reason,
+          parityStatus: 'fail',
+          diagnostics,
+        };
       }
+
+      translatedPageCount = translatedPdfDoc.getPageCount();
+      logLanguageIntegrityDiagnostics(logPrefix, {
+        orderId: input.orderId,
+        docId: input.documentId,
+        family: input.documentFamily ?? 'unknown',
+        targetLanguage: languageIntegrity.targetLanguage,
+        sourceLanguage: languageIntegrity.sourceLanguage,
+        translatedPayloadFound: languageIntegrity.translatedPayloadFound,
+        translatedZonesCount: languageIntegrity.translatedZonesCount,
+        sourceZonesCount: languageIntegrity.sourceZonesCount,
+        missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+        requiredZones: languageIntegrity.requiredZones,
+        translatedZonesFound: languageIntegrity.translatedZonesFound,
+        sourceLanguageContaminatedZones:
+          languageIntegrity.sourceLanguageContaminatedZones,
+        mappedGenericZones: languageIntegrity.mappedGenericZones,
+        languageIssueType: languageIntegrity.languageIssueType,
+        sourceContentAttempted: languageIntegrity.sourceContentAttempted,
+        sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+        trueSourceContentLeakage:
+          upstreamMarkerClassification.trueSourceContentLeakage,
+        allowedLiteralContent: upstreamMarkerClassification.allowedLiteralContent,
+        falsePositiveSourceLanguageMarker:
+          upstreamMarkerClassification.falsePositiveSourceLanguageMarker,
+        missingTranslatedZoneContent: languageIntegrity.missingTranslatedZones,
+        languageGateSource: 'upstream_language_integrity',
+        blockingReason: 'none',
+      });
     } else {
-      log(`letterhead overlay applied: no (file not found)`);
+      const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
+        input.structuredHtml,
+        translatedOrientation,
+      );
+      const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
+      let languageGateSource: LanguageGateSource = 'upstream_language_integrity';
+      let combinedSourceLanguageMarkers = [...languageIntegrity.sourceLanguageMarkers];
+      let trueSourceContentLeakage = [
+        ...upstreamMarkerClassification.trueSourceContentLeakage,
+      ];
+      let allowedLiteralContent = [
+        ...upstreamMarkerClassification.allowedLiteralContent,
+      ];
+      let falsePositiveSourceLanguageMarker = [
+        ...upstreamMarkerClassification.falsePositiveSourceLanguageMarker,
+      ];
+
+      let shouldBlockForLanguageIntegrity =
+        isEnglishTargetLanguage(languageIntegrity.targetLanguage) &&
+        (
+          missingTranslatedZones.length > 0 ||
+          languageIntegrity.languageIssueType !== 'none' ||
+          trueSourceContentLeakage.length > 0
+        );
+
+      if (
+        isEnglishTargetLanguage(languageIntegrity.targetLanguage) &&
+        !hasUpstreamLanguageIntegrityEvidence(languageIntegrity)
+      ) {
+        languageGateSource = 'fallback_html_scan';
+        const htmlLeakage = detectSourceLanguageLeakageFromHtml(
+          safeAreaStructuredHtml,
+          {
+            sourceLanguage: languageIntegrity.sourceLanguage,
+            targetLanguage: languageIntegrity.targetLanguage,
+          },
+        );
+        const fallbackClassification = classifySourceLanguageMarkers(
+          htmlLeakage.matchedMarkers,
+          {
+            sourceLanguageContaminatedZones: [],
+            treatUnscopedAsFalsePositive: false,
+          },
+        );
+        trueSourceContentLeakage = Array.from(
+          new Set([
+            ...trueSourceContentLeakage,
+            ...fallbackClassification.trueSourceContentLeakage,
+          ]),
+        );
+        allowedLiteralContent = Array.from(
+          new Set([
+            ...allowedLiteralContent,
+            ...fallbackClassification.allowedLiteralContent,
+          ]),
+        );
+        falsePositiveSourceLanguageMarker = Array.from(
+          new Set([
+            ...falsePositiveSourceLanguageMarker,
+            ...fallbackClassification.falsePositiveSourceLanguageMarker,
+          ]),
+        );
+        combinedSourceLanguageMarkers = Array.from(
+          new Set([
+            ...combinedSourceLanguageMarkers,
+            ...htmlLeakage.matchedMarkers,
+          ]),
+        );
+        shouldBlockForLanguageIntegrity =
+          shouldBlockForLanguageIntegrity ||
+          fallbackClassification.trueSourceContentLeakage.length > 0;
+      }
+
+      const resolvedSourceContentAttempted =
+        languageIntegrity.sourceContentAttempted ||
+        trueSourceContentLeakage.length > 0 ||
+        missingTranslatedZones.length > 0;
+      const languageBlockingReason = shouldBlockForLanguageIntegrity
+        ? 'translated_zone_content_missing_or_source_language_detected'
+        : 'none';
+
+      logLanguageIntegrityDiagnostics(logPrefix, {
+        orderId: input.orderId,
+        docId: input.documentId,
+        family: input.documentFamily ?? 'unknown',
+        targetLanguage: languageIntegrity.targetLanguage,
+        sourceLanguage: languageIntegrity.sourceLanguage,
+        translatedPayloadFound: languageIntegrity.translatedPayloadFound,
+        translatedZonesCount: languageIntegrity.translatedZonesCount,
+        sourceZonesCount: languageIntegrity.sourceZonesCount,
+        missingTranslatedZones,
+        requiredZones: languageIntegrity.requiredZones,
+        translatedZonesFound: languageIntegrity.translatedZonesFound,
+        sourceLanguageContaminatedZones:
+          languageIntegrity.sourceLanguageContaminatedZones,
+        mappedGenericZones: languageIntegrity.mappedGenericZones,
+        languageIssueType: languageIntegrity.languageIssueType,
+        sourceContentAttempted: resolvedSourceContentAttempted,
+        sourceLanguageMarkers: combinedSourceLanguageMarkers,
+        trueSourceContentLeakage,
+        allowedLiteralContent,
+        falsePositiveSourceLanguageMarker,
+        missingTranslatedZoneContent: missingTranslatedZones,
+        languageGateSource,
+        blockingReason: languageBlockingReason,
+      });
+
+      if (shouldBlockForLanguageIntegrity) {
+        const diagnostics: PageParityDiagnostic = {
+          ...baseDiagnostics,
+          source_language_markers: combinedSourceLanguageMarkers,
+          true_source_content_leakage: trueSourceContentLeakage,
+          allowed_literal_content: allowedLiteralContent,
+          false_positive_source_language_marker:
+            falsePositiveSourceLanguageMarker,
+          missing_translated_zone_content: missingTranslatedZones,
+          language_gate_source: languageGateSource,
+          source_content_attempted: resolvedSourceContentAttempted,
+          source_page_count: input.sourcePageCount ?? null,
+          translated_page_count: null,
+          parity_status: 'fail',
+          blocking_reason: languageBlockingReason,
+          certification_generation_blocked: true,
+          release_blocked: shouldMarkReleaseBlocked,
+        };
+        logPageParityDiagnostics(logPrefix, diagnostics);
+        return {
+          success: false,
+          blockingReason: diagnostics.blocking_reason,
+          parityStatus: 'fail',
+          diagnostics,
+        };
+      }
+
+      const translatedPdfBase = await callGotenberg(
+        safeAreaStructuredHtml,
+        paperSettings,
+        logPrefix,
+        'translated-section',
+        [],
+      );
+
+      if (!translatedPdfBase.buffer) {
+        log(`translated section: Gotenberg failed`);
+        const diagnostics: PageParityDiagnostic = {
+          ...baseDiagnostics,
+          gotenberg_endpoint_used: translatedPdfBase.endpointUsed,
+          gotenberg_failure_type: translatedPdfBase.failure?.type ?? null,
+          gotenberg_failure_detail: formatGotenbergFailureDetail(
+            translatedPdfBase.failure,
+          ),
+          gotenberg_status_code: translatedPdfBase.failure?.statusCode ?? null,
+          source_page_count: input.sourcePageCount ?? null,
+          translated_page_count: null,
+          parity_status: 'fail',
+          blocking_reason: 'translated_section_generation_failed',
+          certification_generation_blocked: true,
+          release_blocked: shouldMarkReleaseBlocked,
+        };
+        logPageParityDiagnostics(logPrefix, diagnostics);
+        return {
+          success: false,
+          blockingReason: diagnostics.blocking_reason,
+          parityStatus: 'fail',
+          diagnostics,
+        };
+      }
+
+      translatedPdfBuffer = translatedPdfBase.buffer;
+
+      if (letterheadBuffer) {
+        const overlayBuffer = await applyLetterheadOverlayToPdf(
+          translatedPdfBase.buffer,
+          letterheadBuffer,
+          logPrefix,
+        );
+        if (overlayBuffer) {
+          translatedPdfBuffer = overlayBuffer;
+          log(`letterhead overlay applied: yes`);
+        } else {
+          log(`letterhead overlay applied: no (overlay failed)`);
+        }
+      } else {
+        log(`letterhead overlay applied: no (file not found)`);
+      }
+
+      log(`translated section generated: yes`);
+      translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
+      translatedPageCount = translatedPdfDoc.getPageCount();
     }
 
-    log(`translated section generated: yes`);
-
-    const translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
-    const translatedPageCount = translatedPdfDoc.getPageCount();
     log(`translated pages: ${translatedPageCount}`);
 
     let originalPdfDocForAssembly: PDFDocument | null = null;
@@ -1241,7 +1476,7 @@ export async function buildStructuredKitBuffer(
 
     log(`cover assets loaded: [${Array.from(loadedCoverAssets).join(', ')}]`);
 
-    const coverPdfBuffer = await callGotenberg(
+    const coverPdf = await callGotenberg(
       coverHtml,
       GOTENBERG_COVER,
       logPrefix,
@@ -1249,10 +1484,14 @@ export async function buildStructuredKitBuffer(
       coverAssets,
     );
 
-    if (!coverPdfBuffer) {
+    if (!coverPdf.buffer) {
       log(`cover page: Gotenberg failed`);
       const diagnostics: PageParityDiagnostic = {
         ...baseDiagnostics,
+        gotenberg_endpoint_used: coverPdf.endpointUsed,
+        gotenberg_failure_type: coverPdf.failure?.type ?? null,
+        gotenberg_failure_detail: formatGotenbergFailureDetail(coverPdf.failure),
+        gotenberg_status_code: coverPdf.failure?.statusCode ?? null,
         source_page_count: effectiveSourcePageCount,
         translated_page_count: translatedPageCount,
         parity_status: 'fail',
@@ -1277,7 +1516,7 @@ export async function buildStructuredKitBuffer(
     const finalPdf = await PDFDocument.create();
 
     // Part 1: cover intact
-    const coverDoc = await PDFDocument.load(coverPdfBuffer);
+    const coverDoc = await PDFDocument.load(coverPdf.buffer);
     const coverPages = await finalPdf.copyPages(coverDoc, coverDoc.getPageIndices());
     coverPages.forEach(p => finalPdf.addPage(p));
 
@@ -1396,7 +1635,12 @@ export async function assembleStructuredPreviewKit(
     result.coverGenerated = true;
     result.coverMetadataApplied = true;
     result.translatedSectionGenerated = true;
-    result.letterheadInjected = result.letterheadDetected;
+    result.letterheadInjected =
+      result.letterheadDetected &&
+      !(
+        input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
+        input.externalTranslatedPdfBuffer.byteLength > 0
+      );
     result.originalAppended = input.isOriginalPdf && input.originalFileBuffer.byteLength > 0;
 
     // ── Persist: Supabase Storage with local fallback ─────────────────────────

@@ -22,6 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createClient } from '@supabase/supabase-js';
+import { renderHtmlWithGotenberg } from '@/lib/gotenbergClient';
 import {
   buildTranslatedGotenbergSettings,
   getTranslatedPageSafeArea,
@@ -31,11 +32,6 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STORAGE_BUCKET = 'documents';
-
-// Gotenberg endpoint — same service used by generateDeliveryKit.ts.
-// Allow override via env var for environments where the port differs.
-const GOTENBERG_URL =
-  process.env.GOTENBERG_URL ?? 'http://127.0.0.1:3001/forms/chromium/convert/html';
 
 // Letterhead: public/letterhead.png — confirmed present in the project root.
 // Loaded as a base64 data URI and injected into each .page block of the preview HTML.
@@ -285,30 +281,24 @@ export async function saveStructuredPreview(
   // ── Optional: Generate PDF via Gotenberg ──────────────────────────────────
   if (options.generatePdf) {
     try {
-      const formData = new FormData();
-      const htmlBlob = new Blob([htmlForSaving], { type: 'text/html' });
-      formData.append('files', htmlBlob, 'index.html');
       const gotenbergSettings = buildTranslatedGotenbergSettings(
         translatedOrientation,
         { scale: '0.85' },
       );
-      for (const [k, v] of Object.entries(gotenbergSettings)) {
-        formData.append(k, v);
-      }
-
-      const gotenbergRes = await fetch(GOTENBERG_URL, {
-        method: 'POST',
-        body: formData,
+      const gotenbergResult = await renderHtmlWithGotenberg({
+        html: htmlForSaving,
+        settings: gotenbergSettings,
+        logPrefix: `[structuredPreview] Order #${orderId} Doc #${documentId}`,
+        label: 'structured-preview-pdf',
       });
 
-      if (!gotenbergRes.ok) {
-        const errText = await gotenbergRes.text();
+      if (!gotenbergResult.ok || !gotenbergResult.buffer) {
         console.error(
           `[structuredPreview] Order #${orderId} Doc #${documentId} — ` +
-          `Gotenberg error ${gotenbergRes.status}: ${errText}`,
+            `Gotenberg PDF generation failed: ${JSON.stringify(gotenbergResult.failure)}`,
         );
       } else {
-        const pdfBuffer = Buffer.from(await gotenbergRes.arrayBuffer());
+        const pdfBuffer = gotenbergResult.buffer;
         const { error: pdfUploadErr } = await supabase.storage
           .from(STORAGE_BUCKET)
           .upload(pdfPath, pdfBuffer, {
