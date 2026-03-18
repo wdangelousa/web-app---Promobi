@@ -1294,31 +1294,160 @@ function assertPayloadLanguageIntegrity(
   );
 }
 
-function collectMissingTranslatedZoneIds(
+function normalizeZoneBindingId(value: string | undefined | null): string {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function isGenericCivilZoneId(value: string): boolean {
+  return /^z?_?\d{1,3}$/.test(value);
+}
+
+interface CompactCivilZoneBindingResolution {
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  missingTranslatedZones: string[];
+  mappedGenericZones: string[];
+  resolvedZoneContents: Array<{ zoneLabel: string; content: string }>;
+  allTranslatedSegments: string[];
+}
+
+function resolveCompactCivilZoneBindings(
   payload: CivilRecordGeneralZoneBlueprint,
-): string[] {
-  const missing: string[] = [];
+): CompactCivilZoneBindingResolution {
+  const requiredZones: string[] = [];
+  const translatedZonesFound: string[] = [];
+  const missingTranslatedZones: string[] = [];
+  const mappedGenericZones: string[] = [];
+  const resolvedZoneContent = new Map<string, string>();
+  const allTranslatedSegments: string[] = [];
 
   for (const page of payload.PAGES ?? []) {
-    const translatedByZone = new Map<string, string>();
-    for (const entry of page.TRANSLATED_CONTENT_BY_ZONE ?? []) {
-      const zoneId = normalizeWhitespace(entry.zone_id);
-      const content = normalizeWhitespace(entry.content);
-      if (!zoneId || !content) continue;
-      translatedByZone.set(zoneId, content);
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    const layoutZones = (page.LAYOUT_ZONES ?? [])
+      .map((zone, index) => {
+        const originalId = normalizeWhitespace(zone.zone_id);
+        const normalizedId = normalizeZoneBindingId(zone.zone_id);
+        if (!originalId || !normalizedId) return null;
+        return {
+          index,
+          originalId,
+          normalizedId,
+          label: `page_${pageNumber}:${originalId}`,
+        };
+      })
+      .filter((zone): zone is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        label: string;
+      } => zone !== null);
+
+    const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .map((entry, index) => {
+        const originalId = normalizeWhitespace(entry.zone_id);
+        const normalizedId = normalizeZoneBindingId(entry.zone_id);
+        const content = normalizeWhitespace(entry.content);
+        if (!originalId || !normalizedId || !content) return null;
+        return { index, originalId, normalizedId, content };
+      })
+      .filter((entry): entry is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        content: string;
+      } => entry !== null);
+
+    for (const entry of translatedEntries) {
+      allTranslatedSegments.push(entry.content);
     }
 
-    for (const zone of page.LAYOUT_ZONES ?? []) {
-      const zoneId = normalizeWhitespace(zone.zone_id);
-      if (!zoneId) continue;
-      if (!translatedByZone.has(zoneId)) {
-        const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
-        missing.push(`page_${pageNumber}:${zoneId}`);
+    requiredZones.push(...layoutZones.map((zone) => zone.label));
+
+    const layoutByNormalizedId = new Map<string, number[]>();
+    for (const zone of layoutZones) {
+      const existing = layoutByNormalizedId.get(zone.normalizedId) ?? [];
+      existing.push(zone.index);
+      layoutByNormalizedId.set(zone.normalizedId, existing);
+    }
+
+    const consumedTranslatedIndexes = new Set<number>();
+    const consumedLayoutIndexes = new Set<number>();
+
+    const assign = (
+      layoutIndex: number,
+      translatedIndex: number,
+      mappedGenericSource?: string,
+    ): void => {
+      const layoutZone = layoutZones.find((zone) => zone.index === layoutIndex);
+      const translatedEntry = translatedEntries.find(
+        (entry) => entry.index === translatedIndex,
+      );
+      if (!layoutZone || !translatedEntry) return;
+
+      consumedLayoutIndexes.add(layoutZone.index);
+      consumedTranslatedIndexes.add(translatedEntry.index);
+      translatedZonesFound.push(layoutZone.label);
+      const existing = resolvedZoneContent.get(layoutZone.label) ?? '';
+      resolvedZoneContent.set(
+        layoutZone.label,
+        existing ? `${existing}\n${translatedEntry.content}` : translatedEntry.content,
+      );
+
+      if (mappedGenericSource) {
+        mappedGenericZones.push(
+          `page_${pageNumber}:${mappedGenericSource}->${layoutZone.originalId}`,
+        );
+      }
+    };
+
+    for (const entry of translatedEntries) {
+      const candidates = layoutByNormalizedId.get(entry.normalizedId) ?? [];
+      const availableLayout = candidates.find(
+        (candidateIndex) => !consumedLayoutIndexes.has(candidateIndex),
+      );
+      if (availableLayout === undefined) continue;
+      assign(availableLayout, entry.index);
+    }
+
+    const unmatchedLayout = layoutZones.filter(
+      (zone) => !consumedLayoutIndexes.has(zone.index),
+    );
+    const unmatchedGenericTranslated = translatedEntries.filter(
+      (entry) =>
+        !consumedTranslatedIndexes.has(entry.index) &&
+        isGenericCivilZoneId(entry.normalizedId),
+    );
+
+    const fallbackMappings = Math.min(
+      unmatchedLayout.length,
+      unmatchedGenericTranslated.length,
+    );
+    for (let i = 0; i < fallbackMappings; i += 1) {
+      const zone = unmatchedLayout[i];
+      const entry = unmatchedGenericTranslated[i];
+      assign(zone.index, entry.index, entry.originalId);
+    }
+
+    for (const zone of layoutZones) {
+      if (!consumedLayoutIndexes.has(zone.index)) {
+        missingTranslatedZones.push(zone.label);
       }
     }
   }
 
-  return missing;
+  return {
+    requiredZones,
+    translatedZonesFound: Array.from(new Set(translatedZonesFound)),
+    missingTranslatedZones,
+    mappedGenericZones,
+    resolvedZoneContents: Array.from(resolvedZoneContent.entries()).map(
+      ([zoneLabel, content]) => ({ zoneLabel, content }),
+    ),
+    allTranslatedSegments,
+  };
 }
 
 function buildCompactCivilLanguageIntegrity(
@@ -1326,53 +1455,70 @@ function buildCompactCivilLanguageIntegrity(
   payload: CivilRecordGeneralZoneBlueprint,
 ): StructuredRenderLanguageIntegrity {
   const diagnostics = buildDefaultLanguageIntegrity(input);
+  const resolvedBindings = resolveCompactCivilZoneBindings(payload);
   diagnostics.translatedPayloadFound = true;
-  diagnostics.requiredZones = payload.PAGES.flatMap((page) => {
-    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
-    return (page.LAYOUT_ZONES ?? [])
-      .map((zone) => normalizeWhitespace(zone.zone_id))
-      .filter(Boolean)
-      .map((zoneId) => `page_${pageNumber}:${zoneId}`);
-  });
-  diagnostics.sourceZonesCount = payload.PAGES.reduce(
-    (sum, page) => sum + (page.LAYOUT_ZONES?.length ?? 0),
-    0,
-  );
-  diagnostics.translatedZonesFound = payload.PAGES.flatMap((page) => {
-    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
-    return (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
-      .filter((entry) => normalizeWhitespace(entry.content).length > 0)
-      .map((entry) => normalizeWhitespace(entry.zone_id))
-      .filter(Boolean)
-      .map((zoneId) => `page_${pageNumber}:${zoneId}`);
-  });
-  diagnostics.translatedZonesCount = payload.PAGES.reduce(
-    (sum, page) =>
-      sum +
-      (page.TRANSLATED_CONTENT_BY_ZONE ?? []).filter((entry) => normalizeWhitespace(entry.content).length > 0)
-        .length,
-    0,
-  );
-  diagnostics.missingTranslatedZones = collectMissingTranslatedZoneIds(payload);
+  diagnostics.requiredZones = resolvedBindings.requiredZones;
+  diagnostics.sourceZonesCount = resolvedBindings.requiredZones.length;
+  diagnostics.translatedZonesFound = resolvedBindings.translatedZonesFound;
+  diagnostics.translatedZonesCount = resolvedBindings.translatedZonesFound.length;
+  diagnostics.missingTranslatedZones = resolvedBindings.missingTranslatedZones;
+  diagnostics.mappedGenericZones = resolvedBindings.mappedGenericZones;
   diagnostics.sourceContentAttempted = diagnostics.missingTranslatedZones.length > 0;
 
-  const translatedSegments = payload.PAGES.flatMap((page) =>
-    (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
-      .map((entry) => normalizeWhitespace(entry.content))
-      .filter(Boolean),
-  );
+  const sourceLanguageContaminatedZones: string[] = [];
+  const sourceLanguageMarkers = new Set<string>();
+  for (const resolvedZone of resolvedBindings.resolvedZoneContents) {
+    const zoneLeakage = detectSourceLanguageLeakageFromSegments(
+      [resolvedZone.content],
+      {
+        sourceLanguage: diagnostics.sourceLanguage,
+        targetLanguage: diagnostics.targetLanguage,
+      },
+    );
+    if (!zoneLeakage.detected) continue;
+    sourceLanguageContaminatedZones.push(resolvedZone.zoneLabel);
+    for (const marker of zoneLeakage.matchedMarkers) {
+      sourceLanguageMarkers.add(`${resolvedZone.zoneLabel}:${marker}`);
+    }
+  }
 
-  const leakage = detectSourceLanguageLeakageFromSegments(translatedSegments, {
-    sourceLanguage: diagnostics.sourceLanguage,
-    targetLanguage: diagnostics.targetLanguage,
-  });
-  diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
-  diagnostics.sourceLanguageContaminatedZones = leakage.detected ? ['payload'] : [];
-  diagnostics.sourceContentAttempted = diagnostics.sourceContentAttempted || leakage.detected;
+  const globalLeakage = detectSourceLanguageLeakageFromSegments(
+    resolvedBindings.allTranslatedSegments,
+    {
+      sourceLanguage: diagnostics.sourceLanguage,
+      targetLanguage: diagnostics.targetLanguage,
+    },
+  );
+  for (const marker of globalLeakage.matchedMarkers) {
+    sourceLanguageMarkers.add(marker);
+  }
+  if (
+    globalLeakage.detected &&
+    sourceLanguageContaminatedZones.length === 0
+  ) {
+    sourceLanguageContaminatedZones.push('payload');
+  }
+
+  diagnostics.sourceLanguageMarkers = Array.from(sourceLanguageMarkers);
+  diagnostics.sourceLanguageContaminatedZones = sourceLanguageContaminatedZones;
+  diagnostics.sourceContentAttempted =
+    diagnostics.sourceContentAttempted ||
+    sourceLanguageContaminatedZones.length > 0;
   diagnostics.languageIssueType = resolveLanguageIssueType(
     diagnostics.missingTranslatedZones.length > 0,
-    leakage.detected,
+    sourceLanguageContaminatedZones.length > 0,
   );
+
+  const leakage = detectSourceLanguageLeakageFromSegments(
+    resolvedBindings.allTranslatedSegments,
+    {
+    sourceLanguage: diagnostics.sourceLanguage,
+    targetLanguage: diagnostics.targetLanguage,
+    },
+  );
+  if (leakage.detected && diagnostics.sourceLanguageMarkers.length === 0) {
+    diagnostics.sourceLanguageMarkers = leakage.matchedMarkers;
+  }
 
   return diagnostics;
 }
@@ -1487,8 +1633,7 @@ export async function renderSupportedStructuredDocument(
           normalizedCompactPayload,
         );
         const compactCivilBlockingReason =
-          languageIntegrity.missingTranslatedZones.length > 0 ||
-          languageIntegrity.sourceLanguageMarkers.length > 0
+          languageIntegrity.languageIssueType !== 'none'
             ? 'translated_zone_content_missing_or_source_language_detected'
             : 'none';
         console.log(
@@ -1501,11 +1646,27 @@ export async function renderSupportedStructuredDocument(
               targetLanguage: languageIntegrity.targetLanguage,
               sourceLanguage: languageIntegrity.sourceLanguage,
               translatedPayloadFound: languageIntegrity.translatedPayloadFound ? 'yes' : 'no',
+              requiredZones: languageIntegrity.requiredZones,
+              translatedZonesFound: languageIntegrity.translatedZonesFound,
               translatedZonesCount: languageIntegrity.translatedZonesCount,
               sourceZonesCount: languageIntegrity.sourceZonesCount,
               missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+              sourceLanguageContaminatedZones:
+                languageIntegrity.sourceLanguageContaminatedZones,
               sourceContentAttempted: languageIntegrity.sourceContentAttempted ? 'yes' : 'no',
               sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+              mappedGenericZones: languageIntegrity.mappedGenericZones,
+              issueType: languageIntegrity.languageIssueType,
+              issueIsMissingContent:
+                languageIntegrity.languageIssueType ===
+                  'missing_translated_zones' ||
+                languageIntegrity.languageIssueType ===
+                  'missing_and_source_language_mismatch',
+              issueIsLanguageMismatch:
+                languageIntegrity.languageIssueType ===
+                  'source_language_mismatch' ||
+                languageIntegrity.languageIssueType ===
+                  'missing_and_source_language_mismatch',
               blockingReason: compactCivilBlockingReason,
             }),
         );

@@ -62,6 +62,17 @@ function normalizeWhitespace(value: string | undefined | null): string {
   return (value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeZoneBindingId(value: string | undefined | null): string {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function isGenericZoneBindingId(value: string): boolean {
+  return /^z?_?\d{1,3}$/.test(value);
+}
+
 function normalizeToken(value: string | undefined | null): string {
   return normalizeWhitespace(value).toLowerCase().replace(/[\s-]+/g, '_');
 }
@@ -71,16 +82,80 @@ function nonEmpty(value: string | undefined | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function contentByZoneId(entries: CivilRecordZoneTranslatedContent[]): Map<string, string> {
+function buildResolvedContentByZoneId(
+  page: CivilRecordStructuredPage,
+): Map<string, string> {
   const map = new Map<string, string>();
-  for (const entry of entries ?? []) {
-    const zoneId = normalizeWhitespace(entry?.zone_id);
-    if (!zoneId) continue;
+  const layoutZones = (page.LAYOUT_ZONES ?? [])
+    .map((zone, index) => {
+      const zoneId = normalizeWhitespace(zone.zone_id);
+      const normalizedId = normalizeZoneBindingId(zone.zone_id);
+      if (!zoneId || !normalizedId) return null;
+      return { index, zoneId, normalizedId };
+    })
+    .filter((zone): zone is { index: number; zoneId: string; normalizedId: string } => zone !== null);
+
+  const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+    .map((entry, index) => {
+      const zoneId = normalizeWhitespace(entry?.zone_id);
+      const normalizedId = normalizeZoneBindingId(entry?.zone_id);
+      const content = normalizeWhitespace(entry?.content);
+      if (!zoneId || !normalizedId || !content) return null;
+      return { index, zoneId, normalizedId, content };
+    })
+    .filter((entry): entry is {
+      index: number;
+      zoneId: string;
+      normalizedId: string;
+      content: string;
+    } => entry !== null);
+
+  const append = (zoneId: string, content: string): void => {
     const current = map.get(zoneId) ?? '';
-    const next = normalizeWhitespace(entry?.content);
-    if (!next) continue;
-    map.set(zoneId, current ? `${current}\n${next}` : next);
+    map.set(zoneId, current ? `${current}\n${content}` : content);
+  };
+
+  const layoutByNormalizedId = new Map<string, number[]>();
+  for (const zone of layoutZones) {
+    const existing = layoutByNormalizedId.get(zone.normalizedId) ?? [];
+    existing.push(zone.index);
+    layoutByNormalizedId.set(zone.normalizedId, existing);
   }
+
+  const consumedTranslated = new Set<number>();
+  const consumedLayout = new Set<number>();
+
+  for (const entry of translatedEntries) {
+    const candidates = layoutByNormalizedId.get(entry.normalizedId) ?? [];
+    const matchedLayout = candidates.find((candidate) => !consumedLayout.has(candidate));
+    if (matchedLayout === undefined) continue;
+    const layoutZone = layoutZones.find((zone) => zone.index === matchedLayout);
+    if (!layoutZone) continue;
+    consumedTranslated.add(entry.index);
+    consumedLayout.add(layoutZone.index);
+    append(layoutZone.zoneId, entry.content);
+  }
+
+  const unmatchedLayout = layoutZones.filter((zone) => !consumedLayout.has(zone.index));
+  const unmatchedGenericTranslated = translatedEntries.filter(
+    (entry) =>
+      !consumedTranslated.has(entry.index) &&
+      isGenericZoneBindingId(entry.normalizedId),
+  );
+  const fallbackMappings = Math.min(unmatchedLayout.length, unmatchedGenericTranslated.length);
+  for (let i = 0; i < fallbackMappings; i += 1) {
+    const layoutZone = unmatchedLayout[i];
+    const translatedEntry = unmatchedGenericTranslated[i];
+    consumedTranslated.add(translatedEntry.index);
+    consumedLayout.add(layoutZone.index);
+    append(layoutZone.zoneId, translatedEntry.content);
+  }
+
+  for (const entry of translatedEntries) {
+    if (consumedTranslated.has(entry.index)) continue;
+    append(entry.zoneId, entry.content);
+  }
+
   return map;
 }
 
@@ -181,7 +256,7 @@ function buildBuckets(page: CivilRecordStructuredPage): BucketedZones {
   };
 
   const layoutZones = page.LAYOUT_ZONES ?? [];
-  const contentMap = contentByZoneId(page.TRANSLATED_CONTENT_BY_ZONE ?? []);
+  const contentMap = buildResolvedContentByZoneId(page);
 
   const resolvedZones: ZoneWithContent[] = layoutZones
     .map((zone) => ({
@@ -304,13 +379,9 @@ function renderTranscription(zones: ZoneWithContent[]): string {
   if (zones.length === 0) return '';
 
   const body = zones
-    .map((zone) => {
-      const title = nonEmpty(zone.zone.zone_id);
-      return `<div class="transcription-zone">
-  ${title ? `<div class="transcription-zone-id">${escapeHtml(title)}</div>` : ''}
+    .map((zone) => `<div class="transcription-zone">
   ${renderParagraphs(zone.content, 'transcription-paragraph')}
-</div>`;
-    })
+</div>`)
     .join('');
 
   return renderZoneBox('Certified Transcription', body, 'transcription-zone-box');
