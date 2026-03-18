@@ -77,6 +77,13 @@ function firstPageNumber(el: { boundingRegions?: { pageNumber: number }[] }): nu
   return el.boundingRegions?.[0]?.pageNumber ?? 1
 }
 
+const FISCAL_CONFIDENTIALITY_NOTICE_RX =
+  /\b(sigilo fiscal|fiscal secrecy|tax confidentiality|confidential tax information|uso restrito|confidencial|protected by fiscal secrecy|protected by tax confidentiality)\b/i
+
+function shouldPreserveHeaderFooterText(content: string): boolean {
+  return FISCAL_CONFIDENTIALITY_NOTICE_RX.test(content)
+}
+
 function buildHtml(analyzeResult: any): string {
   const paragraphs: any[] = analyzeResult.paragraphs ?? []
   const tables: any[] = analyzeResult.tables ?? []
@@ -98,10 +105,16 @@ function buildHtml(analyzeResult: any): string {
   for (const para of paragraphs) {
     const offset = firstOffset(para)
     if (isInsideTable(offset)) continue
-    // Skip running headers / footers — reduces noise in Quill
-    if (para.role === 'pageHeader' || para.role === 'pageFooter') continue
     const content = (para.content as string | undefined)?.trim()
     if (!content) continue
+    // Skip running headers/footers to reduce noise, except confidentiality notices
+    // which must be preserved and translated as documentary content.
+    if (
+      (para.role === 'pageHeader' || para.role === 'pageFooter') &&
+      !shouldPreserveHeaderFooterText(content)
+    ) {
+      continue
+    }
     elements.push({ offset, pageNumber: firstPageNumber(para), html: `<p>${content}</p>` })
   }
 

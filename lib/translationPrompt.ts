@@ -30,6 +30,8 @@ ${BRACKET_NOTATION}
 
 ${NON_TEXTUAL_ELEMENTS}
 
+${TAX_CONFIDENTIALITY_POLICY}
+
 ${domainExpertise}
 
 ${OUTPUT_RULES}`;
@@ -128,7 +130,22 @@ const NON_TEXTUAL_ELEMENTS = `NON-TEXTUAL ELEMENTS (describe in brackets):
   [Coat of Arms: Federative Republic of Brazil]
   [Barcode: number if visible]
   [Vertical text on left margin: ...]
-  [Apostille stamp: number, date, authority]`;
+  [Apostille stamp: number, date, authority]
+
+If a watermark, stamp, or notice contains readable text, translate that text faithfully.
+Do not omit documentary notices that carry legal, confidentiality, validation, or authentication meaning.`;
+
+const TAX_CONFIDENTIALITY_POLICY = `BRAZILIAN TAX DOCUMENT POLICY (DIRPF / DECLARAÇÃO DE AJUSTE ANUAL / IRPF AND SIMILAR FISCAL DOCUMENTS):
+- Fiscal secrecy / tax confidentiality notices are documentary content, not translator instructions to withhold text.
+- Examples: "sigilo fiscal", "protected by fiscal secrecy", "protected by tax confidentiality", "uso restrito", "confidencial", "confidential tax information".
+- ALWAYS translate these notices faithfully and preserve them as documentary marks/notices.
+- NEVER treat these notices as a reason to omit, summarize, suppress, or stop translating any section.
+- For tax returns, continue full translation of ALL sections, including:
+  taxpayer identification, taxable income, exempt/non-taxable income, exclusive/final taxation,
+  payments made, assets and rights, debts and encumbrances, summary/calculation/refund/balance due,
+  patrimonial evolution, other information, and validation/authentication notes.
+- If the notice appears as watermark/vertical text/header/footer, include it explicitly
+  (e.g., [Watermark: ...] or [Confidentiality Notice: ...]) and continue full field-by-field translation.`;
 
 const PT_BR_EXPERTISE = `BRAZILIAN DOCUMENT EXPERTISE:
 
@@ -158,7 +175,19 @@ Academic Documents:
 Digital Certificates:
 - Translate authentication text faithfully including law references (Lei nº 6.015/73, etc.).
 - "Assinado eletronicamente" = "Electronically signed"
-- "Código de validação" = "Validation code"`;
+- "Código de validação" = "Validation code"
+
+Tax Documents (DIRPF / IRPF):
+- "Declaração de Ajuste Anual" = "Annual Tax Adjustment Return [Declaração de Ajuste Anual]"
+- "Imposto de Renda Pessoa Física (IRPF)" = "Individual Income Tax (IRPF) [Imposto de Renda Pessoa Física]"
+- "Rendimentos Tributáveis" = "Taxable Income"
+- "Rendimentos Isentos e Não Tributáveis" = "Exempt and Non-Taxable Income"
+- "Rendimentos Sujeitos à Tributação Exclusiva/Definitiva" = "Income Subject to Exclusive/Final Taxation"
+- "Pagamentos Efetuados" = "Payments Made"
+- "Bens e Direitos" = "Assets and Rights"
+- "Dívidas e Ônus Reais" = "Debts and Encumbrances"
+- "Evolução Patrimonial" = "Patrimonial Evolution"
+- "sigilo fiscal" = "fiscal secrecy [sigilo fiscal]"`;
 
 const ES_EXPERTISE = `SPANISH DOCUMENT EXPERTISE:
 
@@ -327,9 +356,11 @@ Validation Code: i2is-6va6
 DO NOT INCLUDE
 ══════════════════════════════════════════════
 
-- Coat of Arms, Logo, QR Code image, Watermark — OMIT entirely
-- Decorative vertical/marginal text — OMIT entirely
-- Exception: [Handwritten Signature: Name] and [Seal] markers — KEEP
+- Do NOT omit fiscal-confidentiality/tax-secrecy notices or watermarks; translate and preserve them.
+- Do NOT omit documentary marks that carry legal, confidentiality, validation, or authentication meaning.
+- Purely decorative graphics with no readable documentary content may be omitted.
+- Decorative vertical/marginal text may be omitted only when it has no readable documentary content.
+- [Handwritten Signature: Name], [Seal], watermark text, and validation notices — KEEP.
 - Electronic signature block and QR code validation notice — ALWAYS INCLUDE (legally required)
 - Do NOT reorder sections
 - Do NOT convert R$ to USD
