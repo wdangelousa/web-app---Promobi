@@ -50,6 +50,16 @@ FIDELITY:
 - Do not infer data not visible in the source.
 - Use empty string "" for missing scalar fields, [] for missing arrays, null only where schema requires.
 
+DEDUPLICATION AND CONTENT PLACEMENT:
+- Preserve every unique source detail exactly once in the structured payload.
+- Do NOT duplicate the same sentence/paragraph across multiple fields.
+- Prefer concise factual placement:
+  - factual label/value content -> document_metadata or event_person_data
+  - narrative event statement -> event_summary
+  - registry annotations/endnotes -> annotations_marginal_notes / documentary_notes
+  - footer/legal attestation text -> certification_footer fields
+- Avoid dumping full-page OCR text into multiple arrays/fields.
+
 STYLE CLASSIFICATION:
 Set document_style using strongest signal:
 - certificate_style: certificate title + registry/certification language.
@@ -192,7 +202,19 @@ No explanatory text.
 }`;
 }
 
-export function buildCivilRecordGeneralUserMessage(): string {
-  return 'Extract all fields from this civil record into the JSON schema. Return ONLY the JSON object.';
+export interface CivilRecordGeneralUserMessageOptions {
+  sourcePageCount?: number | null;
 }
 
+export function buildCivilRecordGeneralUserMessage(
+  options: CivilRecordGeneralUserMessageOptions = {},
+): string {
+  const pageHint =
+    options.sourcePageCount === 1
+      ? 'Source page count: 1. Preserve full content integrity, but keep extraction compact and non-duplicative across fields so one-page rendering remains feasible.'
+      : typeof options.sourcePageCount === 'number' && options.sourcePageCount > 1
+        ? `Source page count: ${options.sourcePageCount}. Preserve complete content while avoiding duplicate cross-field text.`
+        : 'Source page count unavailable. Preserve complete content while avoiding duplicate cross-field text.';
+
+  return `Extract all fields from this civil record into the JSON schema. Return ONLY the JSON object. ${pageHint}`;
+}

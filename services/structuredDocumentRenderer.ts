@@ -53,7 +53,10 @@ import { renderAcademicDiplomaHtml } from '@/lib/academicDiplomaRenderer';
 import { renderAcademicTranscriptHtml } from '@/lib/academicTranscriptRenderer';
 import { renderAcademicRecordGeneralHtml } from '@/lib/academicRecordGeneralRenderer';
 import { renderBirthCertificateHtml } from '@/lib/birthCertificateRenderer';
-import { renderCivilRecordGeneralHtml } from '@/lib/civilRecordGeneralRenderer';
+import {
+  prepareCivilRecordGeneralForRender,
+  renderCivilRecordGeneralHtml,
+} from '@/lib/civilRecordGeneralRenderer';
 import { renderIdentityTravelRecordHtml } from '@/lib/identityTravelRecordRenderer';
 import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
 import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
@@ -796,7 +799,11 @@ export async function renderSupportedStructuredDocument(
         await callClaudeForJson(
           input.client,
           buildCivilRecordGeneralSystemPrompt(),
-          messageContentFor(buildCivilRecordGeneralUserMessage()),
+          messageContentFor(
+            buildCivilRecordGeneralUserMessage({
+              sourcePageCount: input.sourcePageCount ?? null,
+            }),
+          ),
           12288,
           `${input.logPrefix} [civil-record-general]`,
         ),
@@ -812,9 +819,22 @@ export async function renderSupportedStructuredDocument(
 
       const effectiveOrientation: DocumentOrientation =
         input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+      const preparedCivil = prepareCivilRecordGeneralForRender(parsed, {
+        targetPageCount: input.sourcePageCount,
+      });
+
+      console.log(
+        `${input.logPrefix} [civil-record-general] layout diagnostics | ` +
+          `pageTarget=${input.sourcePageCount ?? 'n/a'} compactOnePage=${preparedCivil.compactOnePage ? 'yes' : 'no'} ` +
+          `compactionRecommended=${preparedCivil.compactionRecommended ? 'yes' : 'no'} ` +
+          `rows(before->after)=${preparedCivil.densityBefore.totalRows}->${preparedCivil.densityAfter.totalRows} ` +
+          `narrativeChars(before->after)=${preparedCivil.densityBefore.totalNarrativeChars}->${preparedCivil.densityAfter.totalNarrativeChars} ` +
+          `dedupeRowsRemoved=${preparedCivil.duplicateEntryRowsRemoved} ` +
+          `dedupeNarrativeRemoved=${preparedCivil.duplicateNarrativeBlocksRemoved}`,
+      );
 
       return {
-        structuredHtml: renderCivilRecordGeneralHtml(parsed, {
+        structuredHtml: renderCivilRecordGeneralHtml(preparedCivil.data, {
           pageCount: input.sourcePageCount,
           orientation: effectiveOrientation,
         }),
