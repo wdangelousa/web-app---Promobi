@@ -279,10 +279,11 @@ function renderVisualElements(elements: VisualElement[] | undefined): string {
 }
 
 function buildCss(orientation: 'portrait' | 'landscape', registryStyle: boolean): string {
+  // Margins are enforced globally by the translated-page safe-area policy.
   const pageRule =
     orientation === 'landscape'
-      ? '@page { size: letter landscape; margin: 0.4in; }'
-      : '@page { size: letter portrait; margin: 0.48in; }';
+      ? '@page { size: letter landscape; }'
+      : '@page { size: letter portrait; }';
 
   return `
 ${pageRule}

@@ -281,10 +281,11 @@ function buildCss(
   orientation: 'portrait' | 'landscape',
   style: 'certificate_style' | 'registry_extract_style' | 'judgment_order_style',
 ): string {
+  // Margins are enforced globally by the translated-page safe-area policy.
   const pageRule =
     orientation === 'landscape'
-      ? '@page { size: letter landscape; margin: 0.4in; }'
-      : '@page { size: letter portrait; margin: 0.48in; }';
+      ? '@page { size: letter landscape; }'
+      : '@page { size: letter portrait; }';
 
   const titleColor =
     style === 'judgment_order_style'
@@ -422,4 +423,3 @@ export function renderCivilRecordGeneralHtml(
 </body>
 </html>`;
 }
-

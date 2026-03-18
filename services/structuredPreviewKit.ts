@@ -49,6 +49,12 @@ import { join } from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { PDFDocument } from 'pdf-lib';
 import type { DocumentOrientation } from '@/lib/documentOrientationDetector';
+import {
+  buildTranslatedGotenbergSettings,
+  buildTranslatedSafeAreaPageCss,
+  getTranslatedPageSafeArea,
+  injectTranslatedPageSafeArea,
+} from '@/lib/translatedPageSafeArea';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -76,41 +82,6 @@ const GOTENBERG_COVER: Record<string, string> = {
   marginBottom: '0',
   marginLeft: '0',
   marginRight: '0',
-  printBackground: 'true',
-  preferCssPageSize: 'false',
-  skipNetworkIdleEvent: 'true',
-};
-
-/**
- * Translated section — US Letter portrait.
- *
- * These margins are the key fix:
- * they reserve the top branding zone and the bottom footer zone BEFORE the
- * PDF overlay is applied, so Gotenberg delivers the content inside the safe area.
- */
-const GOTENBERG_PORTRAIT: Record<string, string> = {
-  paperWidth: '8.5',
-  paperHeight: '11',
-  marginTop: '1.85',
-  marginBottom: '0.75',
-  marginLeft: '1.0',
-  marginRight: '0.7',
-  printBackground: 'true',
-  preferCssPageSize: 'false',
-  skipNetworkIdleEvent: 'true',
-};
-
-/**
- * Translated section — US Letter landscape.
- * Same physical margin values as portrait.
- */
-const GOTENBERG_LANDSCAPE: Record<string, string> = {
-  paperWidth: '11',
-  paperHeight: '8.5',
-  marginTop: '1.85',
-  marginBottom: '0.75',
-  marginLeft: '1.0',
-  marginRight: '0.7',
   printBackground: 'true',
   preferCssPageSize: 'false',
   skipNetworkIdleEvent: 'true',
@@ -633,11 +604,16 @@ export function buildTranslatedDocumentHtml(
   orientation?: 'portrait' | 'landscape',
 ): string {
   const isLandscape = orientation === 'landscape';
+  const safeAreaPageCss = buildTranslatedSafeAreaPageCss(
+    isLandscape ? 'landscape' : 'portrait',
+  );
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
   <style>
+    ${safeAreaPageCss}
+
     *, *::before, *::after { box-sizing: border-box; }
 
     html, body {
@@ -848,8 +824,15 @@ export async function buildStructuredKitBuffer(
   try {
     const coverVariant = input.coverVariant ?? deriveCoverVariant(input.sourceLanguage);
     const isLandscape = input.orientation === 'landscape';
-    const paperSettings = isLandscape ? GOTENBERG_LANDSCAPE : GOTENBERG_PORTRAIT;
+    const translatedOrientation = isLandscape ? 'landscape' : 'portrait';
+    const safeArea = getTranslatedPageSafeArea(translatedOrientation);
+    const paperSettings = buildTranslatedGotenbergSettings(translatedOrientation);
     log(`orientation: ${input.orientation ?? 'portrait (default)'}`);
+    log(
+      `translated safe area policy: orientation=${safeArea.orientation} ` +
+      `margins(top/right/bottom/left)=${safeArea.marginTopIn}/${safeArea.marginRightIn}/` +
+      `${safeArea.marginBottomIn}/${safeArea.marginLeftIn} in`,
+    );
 
     // ── Part 2: Translated document PDF ──────────────────────────────────────
     const targetLhPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
@@ -861,8 +844,13 @@ export async function buildStructuredKitBuffer(
       log(`letterhead detected: no (${targetLhPath})`);
     }
 
-    const translatedPdfBaseBuffer = await callGotenberg(
+    const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
       input.structuredHtml,
+      translatedOrientation,
+    );
+
+    const translatedPdfBaseBuffer = await callGotenberg(
+      safeAreaStructuredHtml,
       paperSettings,
       logPrefix,
       'translated-section',

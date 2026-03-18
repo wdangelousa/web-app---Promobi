@@ -254,10 +254,11 @@ function buildCss(
   isCover: boolean,
   useColumns: boolean,
 ): string {
+  // Margins are enforced globally by the translated-page safe-area policy.
   const pageRule =
     orientation === 'landscape'
-      ? '@page { size: letter landscape; margin: 0.46in; }'
-      : '@page { size: letter portrait; margin: 0.56in; }';
+      ? '@page { size: letter landscape; }'
+      : '@page { size: letter portrait; }';
 
   return `
 ${pageRule}

@@ -586,6 +586,141 @@ function parseStructuredJson<T>(
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertExpectedDocumentTypeTag(
+  expectedType: SupportedStructuredDocumentType,
+  parsed: unknown,
+): void {
+  if (!isPlainObject(parsed)) {
+    throw new StructuredRenderingRequiredError(
+      expectedType,
+      buildStructuredFailureMessage(
+        expectedType,
+        'Structured payload is not a valid JSON object.',
+      ),
+    );
+  }
+
+  const actual = parsed.document_type;
+  if (typeof actual !== 'string') {
+    throw new StructuredRenderingRequiredError(
+      expectedType,
+      buildStructuredFailureMessage(
+        expectedType,
+        'Structured payload missing required "document_type" discriminator.',
+      ),
+    );
+  }
+
+  if (actual !== expectedType) {
+    throw new StructuredRenderingRequiredError(
+      expectedType,
+      buildStructuredFailureMessage(
+        expectedType,
+        `Structured payload discriminator mismatch: expected "${expectedType}" but got "${actual}".`,
+      ),
+    );
+  }
+}
+
+const BIRTH_FORBIDDEN_MARRIAGE_KEYS = new Set([
+  'spouse_1',
+  'spouse_2',
+  'spouse_1_current',
+  'spouse_2_current',
+  'property_regime',
+  'celebration_date',
+]);
+
+function collectForbiddenKeyPaths(
+  value: unknown,
+  forbiddenKeys: ReadonlySet<string>,
+  path = 'root',
+): string[] {
+  if (Array.isArray(value)) {
+    const paths: string[] = [];
+    for (let i = 0; i < value.length; i += 1) {
+      paths.push(...collectForbiddenKeyPaths(value[i], forbiddenKeys, `${path}[${i}]`));
+    }
+    return paths;
+  }
+
+  if (!isPlainObject(value)) {
+    return [];
+  }
+
+  const paths: string[] = [];
+  for (const [key, nested] of Object.entries(value)) {
+    const keyPath = `${path}.${key}`;
+    if (forbiddenKeys.has(key)) {
+      paths.push(keyPath);
+    }
+    paths.push(...collectForbiddenKeyPaths(nested, forbiddenKeys, keyPath));
+  }
+  return paths;
+}
+
+function assertBirthPayloadCompliance(parsed: unknown): void {
+  assertExpectedDocumentTypeTag('birth_certificate_brazil', parsed);
+
+  if (!isPlainObject(parsed)) return;
+
+  const forbiddenPaths = collectForbiddenKeyPaths(parsed, BIRTH_FORBIDDEN_MARRIAGE_KEYS);
+  if (forbiddenPaths.length > 0) {
+    throw new StructuredRenderingRequiredError(
+      'birth_certificate_brazil',
+      buildStructuredFailureMessage(
+        'birth_certificate_brazil',
+        `Birth-certificate compliance check failed: marriage-only fields detected (${forbiddenPaths.join(', ')}).`,
+      ),
+    );
+  }
+
+  const requiredBirthKeys: Array<keyof Record<string, unknown>> = [
+    'child_name',
+    'mother',
+    'father',
+  ];
+  const missingBirthKeys = requiredBirthKeys.filter((key) => !(key in parsed));
+
+  if (missingBirthKeys.length > 0) {
+    throw new StructuredRenderingRequiredError(
+      'birth_certificate_brazil',
+      buildStructuredFailureMessage(
+        'birth_certificate_brazil',
+        `Birth-certificate compliance check failed: missing required birth fields (${missingBirthKeys.join(', ')}).`,
+      ),
+    );
+  }
+}
+
+function assertMarriagePayloadCompliance(parsed: unknown): void {
+  assertExpectedDocumentTypeTag('marriage_certificate_brazil', parsed);
+
+  if (!isPlainObject(parsed)) return;
+
+  const requiredMarriageKeys: Array<keyof Record<string, unknown>> = [
+    'spouse_1',
+    'spouse_2',
+    'property_regime',
+    'celebration_date',
+  ];
+  const missingMarriageKeys = requiredMarriageKeys.filter((key) => !(key in parsed));
+
+  if (missingMarriageKeys.length > 0) {
+    throw new StructuredRenderingRequiredError(
+      'marriage_certificate_brazil',
+      buildStructuredFailureMessage(
+        'marriage_certificate_brazil',
+        `Marriage-certificate compliance check failed: missing required marriage fields (${missingMarriageKeys.join(', ')}).`,
+      ),
+    );
+  }
+}
+
 export async function renderSupportedStructuredDocument(
   input: StructuredRenderInput,
 ): Promise<StructuredRenderOutput> {
@@ -621,6 +756,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      assertMarriagePayloadCompliance(parsed);
 
       const structuredHtml = renderMarriageCertificateHtml(parsed, {
         pageCount: input.sourcePageCount,
@@ -992,6 +1128,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         rawJson,
       );
+      assertBirthPayloadCompliance(parsed);
 
       parsed.orientation = input.detectedOrientation;
       parsed.page_count = input.sourcePageCount ?? null;

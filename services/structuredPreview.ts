@@ -22,6 +22,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createClient } from '@supabase/supabase-js';
+import {
+  buildTranslatedGotenbergSettings,
+  getTranslatedPageSafeArea,
+  injectTranslatedPageSafeArea,
+} from '@/lib/translatedPageSafeArea';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -31,38 +36,6 @@ const STORAGE_BUCKET = 'documents';
 // Allow override via env var for environments where the port differs.
 const GOTENBERG_URL =
   process.env.GOTENBERG_URL ?? 'http://127.0.0.1:3001/forms/chromium/convert/html';
-
-// Paper: US Letter portrait — mirrors the official PDF_ENGINE in generateDeliveryKit.ts
-// exactly. Keeping these in sync ensures the structured preview is visually comparable
-// to the official kit and any side-by-side comparison reflects real layout differences.
-const GOTENBERG_LETTER_SETTINGS: Record<string, string> = {
-  paperWidth: '8.5',
-  paperHeight: '11',
-  marginTop: '1.8',
-  marginBottom: '1.2',
-  marginLeft: '0.8',
-  marginRight: '0.8',
-  scale: '0.85',
-  printBackground: 'true',
-  preferCssPageSize: 'false',
-  skipNetworkIdleEvent: 'true',
-};
-
-// Paper: US Letter landscape — for landscape-oriented certificate previews.
-// Width and height are swapped from the portrait settings above.
-// All four margins are equal (0.8in) for balanced landscape certificate layout.
-const GOTENBERG_LANDSCAPE_SETTINGS: Record<string, string> = {
-  paperWidth: '11',
-  paperHeight: '8.5',
-  marginTop: '0.8',
-  marginBottom: '0.8',
-  marginLeft: '0.8',
-  marginRight: '0.8',
-  scale: '0.85',
-  printBackground: 'true',
-  preferCssPageSize: 'false',
-  skipNetworkIdleEvent: 'true',
-};
 
 // Letterhead: public/letterhead.png — confirmed present in the project root.
 // Loaded as a base64 data URI and injected into each .page block of the preview HTML.
@@ -162,8 +135,8 @@ export interface StructuredPreviewResult {
  * @param documentId            Document identifier for the filename.
  * @param orderId               Order identifier (log context only).
  * @param options.generatePdf   When true, renders HTML→PDF via Gotenberg.
- * @param options.orientation   'landscape' → use GOTENBERG_LANDSCAPE_SETTINGS;
- *                              otherwise use GOTENBERG_LETTER_SETTINGS (default).
+ * @param options.orientation   Orientation used by the global translated-page
+ *                              safe-area policy.
  */
 export async function saveStructuredPreview(
   html: string,
@@ -179,8 +152,12 @@ export async function saveStructuredPreview(
   };
 
   // ── Paper size alignment ──────────────────────────────────────────────────
-  const isLandscape = options.orientation === 'landscape';
-  const paperLabel = isLandscape ? 'US Letter landscape (11 × 8.5in)' : 'US Letter (8.5 × 11in)';
+  const translatedOrientation = options.orientation === 'landscape' ? 'landscape' : 'portrait';
+  const safeArea = getTranslatedPageSafeArea(translatedOrientation);
+  const paperLabel =
+    translatedOrientation === 'landscape'
+      ? 'US Letter landscape (11 x 8.5in)'
+      : 'US Letter (8.5 x 11in)';
   console.log(
     `[structuredPreview] Order #${orderId} Doc #${documentId} — ` +
     `official paper size detected: ${paperLabel}`,
@@ -188,6 +165,12 @@ export async function saveStructuredPreview(
   console.log(
     `[structuredPreview] Order #${orderId} Doc #${documentId} — ` +
     `structured preview paper size applied: ${paperLabel}`,
+  );
+  console.log(
+    `[structuredPreview] Order #${orderId} Doc #${documentId} — ` +
+    `translated safe area policy: orientation=${safeArea.orientation} ` +
+    `margins(top/right/bottom/left)=${safeArea.marginTopIn}/${safeArea.marginRightIn}/` +
+    `${safeArea.marginBottomIn}/${safeArea.marginLeftIn} in`,
   );
 
   // ── Letterhead detection + injection ─────────────────────────────────────
@@ -200,12 +183,12 @@ export async function saveStructuredPreview(
     // Non-critical — existsSync failure leaves letterheadDetected as false.
   }
 
-  let htmlForSaving = html;
+  let htmlForSaving = injectTranslatedPageSafeArea(html, translatedOrientation);
   if (result.letterheadDetected) {
     const dataUri = loadLetterheadDataUri();
     if (dataUri) {
       try {
-        htmlForSaving = injectLetterheadIntoHtml(html, dataUri);
+        htmlForSaving = injectLetterheadIntoHtml(htmlForSaving, dataUri);
         result.letterheadReused = true;
         console.log(
           `[structuredPreview] Order #${orderId} Doc #${documentId} — letterhead embedded in preview: yes`,
@@ -305,7 +288,11 @@ export async function saveStructuredPreview(
       const formData = new FormData();
       const htmlBlob = new Blob([htmlForSaving], { type: 'text/html' });
       formData.append('files', htmlBlob, 'index.html');
-      for (const [k, v] of Object.entries(isLandscape ? GOTENBERG_LANDSCAPE_SETTINGS : GOTENBERG_LETTER_SETTINGS)) {
+      const gotenbergSettings = buildTranslatedGotenbergSettings(
+        translatedOrientation,
+        { scale: '0.85' },
+      );
+      for (const [k, v] of Object.entries(gotenbergSettings)) {
         formData.append(k, v);
       }
 

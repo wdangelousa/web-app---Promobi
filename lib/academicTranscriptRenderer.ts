@@ -26,7 +26,7 @@
  *   prevents an ugly empty column when that data is not available.
  *
  * Orientation:
- *   'landscape' → CSS @page landscape + reduced margins for wider table
+ *   'landscape' → CSS @page landscape hint for wider table layout
  *   'portrait' | 'unknown' | undefined → portrait (standard for most transcripts)
  *
  * Design goals:

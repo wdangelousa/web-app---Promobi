@@ -15,8 +15,7 @@
  * Orientation (driven by orientation option):
  *   'landscape' → CSS @page landscape hint + data-orientation="landscape"
  *                 attribute, which triggers landscape CSS overrides.
- *                 Gotenberg must be called with landscape paper dimensions
- *                 (see GOTENBERG_LANDSCAPE_SETTINGS in structuredPreview.ts).
+ *                 The kit layer applies the global translated safe-area policy.
  *   'portrait' | 'unknown' | undefined → standard portrait layout (default).
  *
  * Letterhead injection:
@@ -306,13 +305,11 @@ body {
 
 /* ── Page containers ────────────────────────────────────────────────────────
    Portrait (default): US Letter portrait, 8.5 × 11in physical.
-   With Gotenberg GOTENBERG_LETTER_SETTINGS (marginTop=1.8, marginBottom=1.2,
-   marginLeft=0.8, marginRight=0.8, scale=0.85), padding is kept minimal to
-   avoid double-inset. The flex column enables margin-top: auto on signatories.
+   Outer margins come from the global translated safe-area policy in the kit
+   layer. This renderer only controls inner layout rhythm.
 
    Landscape: US Letter landscape, 11 × 8.5in physical.
-   With Gotenberg GOTENBERG_LANDSCAPE_SETTINGS (all margins=0.8, scale=0.85),
-   content area ≈ 9.4 × 6.9in. min-height matches to avoid blank expansion. */
+   The same policy applies; min-height remains tuned to avoid blank expansion. */
 
 .page {
   display: flex;

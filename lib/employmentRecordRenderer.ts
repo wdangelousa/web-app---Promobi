@@ -289,10 +289,11 @@ function buildCss(
   orientation: 'portrait' | 'landscape',
   certificateStyle: boolean,
 ): string {
+  // Margins are enforced globally by the translated-page safe-area policy.
   const pageRule =
     orientation === 'landscape'
-      ? '@page { size: letter landscape; margin: 0.42in; }'
-      : '@page { size: letter portrait; margin: 0.52in; }';
+      ? '@page { size: letter landscape; }'
+      : '@page { size: letter portrait; }';
 
   return `
 ${pageRule}
@@ -439,4 +440,3 @@ export function renderEmploymentRecordHtml(
 
   return html;
 }
-

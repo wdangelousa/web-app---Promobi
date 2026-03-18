@@ -275,10 +275,11 @@ function renderVisualElements(elements: VisualElement[] | undefined): string {
 }
 
 function buildCss(orientation: 'portrait' | 'landscape', denseTable: boolean): string {
+  // Margins are enforced globally by the translated-page safe-area policy.
   const pageRule =
     orientation === 'landscape'
-      ? '@page { size: letter landscape; margin: 0.44in; }'
-      : '@page { size: letter portrait; margin: 0.52in; }';
+      ? '@page { size: letter landscape; }'
+      : '@page { size: letter portrait; }';
 
   return `
 ${pageRule}

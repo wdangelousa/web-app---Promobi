@@ -18,13 +18,18 @@
  *   .footer-timbrado   position:fixed bottom zone (promobidocs.com | Certified Translation)
  *   .conteudo-principal scrolling content area (receives the translated HTML)
  *
- * @page A4, margins: 45mm top / 20mm right / 30mm bottom / 20mm left
+ * @page US Letter with global translated safe-area margins
  *
  * Usage:
  *   const html = buildTranslatedPageHtml(translatedHtml, { documentTitle: 'Marriage Certificate' });
  *   // Attach html as 'index.html' and logo as 'logo.png' in Gotenberg FormData.
  * ─────────────────────────────────────────────────────────────────────────────
  */
+
+import {
+  buildTranslatedSafeAreaPageCss,
+  getTranslatedPageSafeArea,
+} from '@/lib/translatedPageSafeArea';
 
 export interface TranslatedPageTemplateOptions {
   /**
@@ -42,6 +47,10 @@ export interface TranslatedPageTemplateOptions {
    * Optional document registration / reference number shown below the title.
    */
   registrationNumber?: string;
+  /**
+   * Optional page orientation for the global translated safe-area policy.
+   */
+  orientation?: 'portrait' | 'landscape';
 }
 
 /**
@@ -51,7 +60,15 @@ export interface TranslatedPageTemplateOptions {
  * Attach `logo.png` as a companion FormData file.
  */
 export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions): string {
-  const { translatedHtml, documentTitle, registrationNumber } = options;
+  const {
+    translatedHtml,
+    documentTitle,
+    registrationNumber,
+    orientation,
+  } = options;
+  const resolvedOrientation = orientation === 'landscape' ? 'landscape' : 'portrait';
+  const safeArea = getTranslatedPageSafeArea(resolvedOrientation);
+  const safeAreaPageCss = buildTranslatedSafeAreaPageCss(resolvedOrientation);
 
   const titleBlock = documentTitle
     ? `<div class="header-titulos">
@@ -66,32 +83,41 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
   <meta charset="UTF-8">
   <title>Certified Translation</title>
   <style>
-    @page {
-      size: A4;
-      margin: 45mm 20mm 30mm 20mm;
+    ${safeAreaPageCss}
+
+    :root {
+      --safe-top: ${safeArea.marginTopIn}in;
+      --safe-right: ${safeArea.marginRightIn}in;
+      --safe-bottom: ${safeArea.marginBottomIn}in;
+      --safe-left: ${safeArea.marginLeftIn}in;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
     }
 
     body {
       font-family: Arial, sans-serif;
       font-size: 10px;
       color: #000;
-      margin: 0;
-      padding: 0;
       -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
     .header-timbrado {
       position: fixed;
-      top: -45mm;
+      top: calc(-1 * var(--safe-top));
       left: 0;
       right: 0;
-      height: 45mm;
+      height: var(--safe-top);
       z-index: 1000;
     }
 
     .logo-borboleta {
       position: absolute;
-      top: 10mm;
+      top: 0.22in;
       left: 0;
       width: 100px;
     }
@@ -99,7 +125,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     .header-titulos {
       text-align: center;
       width: 100%;
-      padding-top: 15mm;
+      padding-top: 0.34in;
     }
 
     .header-titulos p {
@@ -116,9 +142,9 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     .moldura-dourada {
       position: fixed;
-      top: -30mm;
-      right: -10mm;
-      bottom: -20mm;
+      top: calc(-1 * var(--safe-top));
+      right: calc(-1 * var(--safe-right));
+      bottom: calc(-1 * var(--safe-bottom));
       width: 20px;
       border-right: 3px solid #C4A265;
       border-top: 3px solid #C4A265;
@@ -127,14 +153,14 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     .footer-timbrado {
       position: fixed;
-      bottom: -30mm;
+      bottom: calc(-1 * var(--safe-bottom));
       left: 0;
       right: 0;
-      height: 30mm;
+      height: var(--safe-bottom);
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      padding-bottom: 10mm;
+      padding-bottom: 0.16in;
       color: #C4A265;
       font-size: 11px;
       font-weight: bold;

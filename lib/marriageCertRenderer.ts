@@ -574,8 +574,8 @@ body {
 @page { size: letter; }
 
 /* Standard page layout.
-   padding matches the Gotenberg margin values (1.8/1.2/0.8/0.8) so the
-   structured preview and the official kit are visually comparable. */
+   Outer page margins are enforced by the global translated safe-area policy.
+   This renderer padding only controls internal spacing rhythm. */
 .page {
   width: 100%;
   padding: 0.15in 0.8in 1.2in 0.8in;

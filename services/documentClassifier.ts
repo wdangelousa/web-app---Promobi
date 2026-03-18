@@ -119,25 +119,31 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
 
   // ── Marriage Certificate (Brazil) ──
   // Canonical markers from the marriage certificate OUTPUT_RULES example.
-  // These labels are unique to this document type and won't appear in other certs.
-  const marriageSignals: RegExp[] = [
+  // Split into strict markers (marriage-specific) and contextual markers.
+  // Contextual markers can appear in birth records too, so they cannot classify
+  // a document as marriage on their own.
+  const marriageStrictSignals: RegExp[] = [
     /marriage certificate/i,
-    /civil registry of natural persons/i,
     /1st spouse/i,
     /2nd spouse/i,
     /property regime/i,
     /name at the time of marriage/i,
-    /annotations\/endorsements/i,
-    /voluntary registry annotations/i,
     /date of celebration of marriage/i,
   ];
+  const marriageContextSignals: RegExp[] = [
+    /civil registry of natural persons/i,
+    /annotations\/endorsements/i,
+    /voluntary registry annotations/i,
+  ];
 
-  const marriageHits = marriageSignals.filter(rx => rx.test(text)).length;
+  const marriageStrictHits = marriageStrictSignals.filter(rx => rx.test(text)).length;
+  const marriageContextHits = marriageContextSignals.filter(rx => rx.test(text)).length;
+  const marriageHits = marriageStrictHits + marriageContextHits;
 
-  if (marriageHits >= 3) {
+  if (marriageStrictHits >= 2 && marriageHits >= 3) {
     return { documentType: 'marriage_certificate_brazil', confidence: 'heuristic-high' };
   }
-  if (marriageHits >= 1) {
+  if (marriageStrictHits >= 1 && marriageHits >= 2) {
     return { documentType: 'marriage_certificate_brazil', confidence: 'heuristic-low' };
   }
 
@@ -148,7 +154,8 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     /1st spouse/i.test(text) ||
     /2nd spouse/i.test(text) ||
     /property regime/i.test(text) ||
-    /marriage celebration/i.test(text);
+    /marriage celebration/i.test(text) ||
+    /celebration of marriage/i.test(text);
 
   if (!hasMarriageMarker) {
     const birthSignals: RegExp[] = [
@@ -1364,10 +1371,10 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
 // ── Signal: filename / storage URL ───────────────────────────────────────────
 
 function classifyFromUrl(fileUrl: string): ClassificationResult {
-  if (/casamento|marriage[-_]cert/i.test(fileUrl)) {
+  if (/casamento|marriage(?:[-_\s]+cert(?:ificate)?)?/i.test(fileUrl)) {
     return { documentType: 'marriage_certificate_brazil', confidence: 'heuristic-low' };
   }
-  if (/nascimento|birth[-_]cert/i.test(fileUrl)) {
+  if (/nascimento|birth(?:[-_\s]+cert(?:ificate)?)?/i.test(fileUrl)) {
     return { documentType: 'birth_certificate_brazil', confidence: 'heuristic-low' };
   }
   if (/divorce|div[oó]rcio|death[-_ ]cert|certid[aã]o[-_ ]de[-_ ][oó]bito|obito|adoption|ado[cç][aã]o|name[-_ ]change|mudan[cç]a[-_ ]de[-_ ]nome|civil[-_ ]registry[-_ ]extract|registro[-_ ]civil|averba[cç][aã]o|marginal[-_ ]note|civil[-_ ]court[-_ ]order|judgment[-_ ]of[-_ ]divorce|decree[-_ ]of[-_ ]divorce/i.test(fileUrl)) {
