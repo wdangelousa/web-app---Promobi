@@ -340,6 +340,71 @@ body {
   padding: 0.15in 0.8in 1.2in 0.8in;
 }
 
+/* Compact one-page mode (pageCount === 1):
+   prioritize parity fit for dense narrative certificates. */
+.compact-page {
+  padding: 0.12in 0.08in 0.08in 0.08in;
+  font-size: 6.9pt;
+  line-height: 1.18;
+}
+.compact-page .doc-header {
+  margin-bottom: 4pt;
+  padding-bottom: 3pt;
+}
+.compact-page .doc-header .cert-title { font-size: 10pt; }
+.compact-page .doc-header .country,
+.compact-page .doc-header .registry,
+.compact-page .doc-header .reg-number { font-size: 6.2pt; }
+.compact-page .child-section {
+  margin-bottom: 4pt;
+  padding-bottom: 3pt;
+}
+.compact-page .child-name {
+  font-size: 10.5pt;
+  margin: 2pt 0;
+}
+.compact-page .section {
+  margin-bottom: 2.2pt;
+  page-break-inside: auto;
+  break-inside: auto;
+}
+.compact-page .section-title {
+  font-size: 5.6pt;
+  margin-bottom: 1.5pt;
+  padding-bottom: 1pt;
+}
+.compact-page .field {
+  margin-bottom: 0.8pt;
+  gap: 2.2pt;
+  font-size: 6.7pt;
+}
+.compact-page .label {
+  min-width: 74pt;
+  padding-right: 1pt;
+}
+.compact-page .parents-grid { column-gap: 4pt; }
+.compact-page .parent-col { padding: 2pt; }
+.compact-page .attestation {
+  font-size: 6pt;
+  line-height: 1.12;
+  margin-bottom: 1.5pt;
+  column-count: 2;
+  column-gap: 8pt;
+  text-align: left;
+  break-inside: auto;
+}
+.compact-page .signature-line {
+  font-size: 5.8pt;
+  margin-top: 1.5pt;
+  padding-top: 1pt;
+  line-height: 1.2;
+}
+.compact-page .vm-item {
+  font-size: 6.2pt;
+  line-height: 1.15;
+  margin-bottom: 0.8pt;
+}
+
 .page-break {
   break-after: page;
   page-break-after: always;
@@ -460,11 +525,25 @@ export function renderBirthCertificateHtml(
 ): string {
   try {
     const { pageCount } = options;
+    const isCompactOnePage = typeof pageCount === 'number' && pageCount === 1;
     const splitPages = typeof pageCount === 'number' && pageCount >= 2;
 
     let bodyContent: string;
 
-    if (splitPages) {
+    if (isCompactOnePage) {
+      const compactContent = [
+        renderDocumentHeader(data),
+        renderChildSection(data),
+        renderParentsSideBySide(data),
+        renderDeclarantSection(data),
+        renderAnnotationsSection(data),
+        renderCertificationSection(data.certification),
+        renderOfficerSection(data.officer_contact),
+        renderValidationSection(data.validation),
+        renderVisualElements(data.visual_elements),
+      ].join('');
+      bodyContent = `<div class="page compact-page">${compactContent}</div>`;
+    } else if (splitPages) {
       const page1 = [
         renderDocumentHeader(data),
         renderChildSection(data),

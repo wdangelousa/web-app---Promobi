@@ -58,6 +58,15 @@ test('birth renderer enforces semantic translated-zone binding diagnostics', () 
   assert.match(renderer, /issueType: languageIntegrity\.languageIssueType/)
 })
 
+test('birth HTML renderer applies compact one-page mode for parity-sensitive source page count 1', () => {
+  const birthRenderer = read('lib/birthCertificateRenderer.ts')
+
+  assert.match(birthRenderer, /const isCompactOnePage = typeof pageCount === 'number' && pageCount === 1;/)
+  assert.match(birthRenderer, /<div class="page compact-page">/)
+  assert.match(birthRenderer, /\.compact-page\s*\{/)
+  assert.match(birthRenderer, /\.compact-page \.attestation \{/)
+})
+
 test('birth structured prompt enforces English translated body text policy', () => {
   const prompt = read('lib/birthCertificatePrompt.ts')
 
