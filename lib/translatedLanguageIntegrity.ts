@@ -77,6 +77,14 @@ const ES_STRONG_PHRASES = [
   'certificado de nacimiento',
 ];
 
+/**
+ * Terms that can legitimately appear in English legal translations and should
+ * not trigger leakage on their own.
+ */
+const AMBIGUOUS_SOURCE_LANGUAGE_MARKERS = new Set<string>([
+  'folio',
+]);
+
 function normalizeAsciiLower(value: string): string {
   return value
     .normalize('NFD')
@@ -186,12 +194,17 @@ export function detectSourceLanguageLeakageFromSegments(
 
     const strongHits = strong.filter((phrase) => normalized.includes(phrase));
     const markerHits = markers.filter((marker) => normalized.includes(marker));
+    const decisiveMarkerHits = markerHits.filter(
+      (marker) => !AMBIGUOUS_SOURCE_LANGUAGE_MARKERS.has(marker),
+    );
     const diacriticHints = (segment.match(/[áàâãéêíóôõúçñ]/gi) ?? []).length;
 
     const suspiciousByStrongPhrase = strongHits.length > 0;
-    const suspiciousByMarkerDensity = markerHits.length >= 2;
+    const suspiciousByMarkerDensity =
+      decisiveMarkerHits.length >= 2 ||
+      (decisiveMarkerHits.length >= 1 && markerHits.length >= 2);
     const suspiciousByMarkerAndDiacritics =
-      markerHits.length >= 1 && diacriticHints >= 2;
+      decisiveMarkerHits.length >= 1 && diacriticHints >= 2;
 
     if (suspiciousByStrongPhrase || suspiciousByMarkerDensity || suspiciousByMarkerAndDiacritics) {
       markerHits.forEach((marker) => matchedMarkers.add(marker));

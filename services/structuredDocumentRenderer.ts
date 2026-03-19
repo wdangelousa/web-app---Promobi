@@ -71,6 +71,8 @@ import {
   detectSourceLanguageLeakageFromSegments,
   normalizeLanguageCode,
 } from '@/lib/translatedLanguageIntegrity';
+import type { SourceLanguageLeakageResult } from '@/lib/translatedLanguageIntegrity';
+import { resolveSourceLanguageForStructuredContext } from '@/lib/sourceLanguageResolver';
 import type { DocumentType } from '@/services/documentClassifier';
 import {
   detectDocumentFamily,
@@ -1041,6 +1043,55 @@ function resolveLanguageIssueType(
   return 'none';
 }
 
+const BIRTH_CERTIFICATION_WEAK_MARKERS = new Set<string>([
+  'folio',
+]);
+
+const BIRTH_CERTIFICATION_ENGLISH_TRANSLATION_CUES = [
+  'i certify',
+  'under number',
+  'book a',
+  'witnesses dispensed',
+  'live birth declaration',
+  'authorized clerk',
+  'this is what was',
+  'the declarant',
+  'ministry of health',
+];
+
+function shouldSuppressBirthCertificationLeakage(
+  leakage: SourceLanguageLeakageResult,
+  translatableSegments: string[],
+): boolean {
+  const normalizedMarkers = leakage.matchedMarkers.map((marker) =>
+    normalizeAsciiToken(marker),
+  );
+  if (normalizedMarkers.length === 0) return false;
+  if (
+    normalizedMarkers.some(
+      (marker) => !BIRTH_CERTIFICATION_WEAK_MARKERS.has(marker),
+    )
+  ) {
+    return false;
+  }
+
+  const normalizedContent = normalizeAsciiToken(translatableSegments.join(' '));
+  const englishCueHits = BIRTH_CERTIFICATION_ENGLISH_TRANSLATION_CUES.filter(
+    (cue) => normalizedContent.includes(cue),
+  ).length;
+
+  if (englishCueHits < 2) return false;
+  if (
+    /\b(certidao|nascimento|cartorio|registro civil|livro|folha|termo|averbacao|declarante|filiacao|naturalidade)\b/.test(
+      normalizedContent,
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildBirthLanguageIntegrity(
   input: StructuredRenderInput,
   payload: BirthCertificateBrazil,
@@ -1079,6 +1130,12 @@ function buildBirthLanguageIntegrity(
       },
     );
     if (!leakage.detected) continue;
+    if (
+      zone.zoneId === 'z_certification_block' &&
+      shouldSuppressBirthCertificationLeakage(leakage, translatableSegments)
+    ) {
+      continue;
+    }
 
     sourceLanguageContaminatedZones.push(zone.zoneId);
     for (const marker of leakage.matchedMarkers) {
@@ -1208,10 +1265,11 @@ function resolveTargetLanguage(input: StructuredRenderInput): string {
 }
 
 function resolveSourceLanguage(input: StructuredRenderInput): string {
-  const normalized = normalizeLanguageCode(input.sourceLanguage);
-  if (normalized === 'PT') return 'PT';
-  if (normalized === 'ES') return 'ES';
-  return (input.sourceLanguage ?? 'unknown').toUpperCase();
+  return resolveSourceLanguageForStructuredContext({
+    sourceLanguage: input.sourceLanguage,
+    documentType: input.documentType,
+    originalFileUrl: input.originalFileUrl,
+  });
 }
 
 function buildDefaultLanguageIntegrity(
