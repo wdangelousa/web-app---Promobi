@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getCurrentUser } from '@/app/actions/auth'
 import { Role } from '@prisma/client'
 import { normalizeOrder } from '@/lib/orderAdapter'
+import { getAdminOrderStatusVisual } from '@/lib/adminOrderStatus'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,7 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
         console.error(`[WorkbenchPage] Error loading order #${orderId}:`, err)
         throw err // Let nextjs error boundary handle it
     }
+    const statusVisual = getAdminOrderStatusVisual(sanitizedOrder.status)
 
     return (
         <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
@@ -89,14 +91,8 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                             🔥 {sanitizedOrder.urgency}
                         </span>
                     )}
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${sanitizedOrder.status === 'READY_FOR_REVIEW' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                            sanitizedOrder.status === 'TRANSLATING' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                sanitizedOrder.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
-                                    sanitizedOrder.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                        sanitizedOrder.status === 'MANUAL_TRANSLATION_NEEDED' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                                            'bg-gray-100 text-gray-600 border-gray-200'
-                        }`}>
-                        {sanitizedOrder.status?.replace(/_/g, ' ')}
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold border tracking-wide ${statusVisual.badgeClass}`}>
+                        {statusVisual.label}
                     </span>
                 </div>
             </div>

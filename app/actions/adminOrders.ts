@@ -2,6 +2,30 @@
 
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { getCurrentUser } from '@/app/actions/auth'
+import { parseOrderMetadata } from '@/lib/translationArtifactSource'
+
+const CANCELLATION_REASON_LABELS: Record<string, string> = {
+    CLIENT_DROPOUT: 'Desistência do cliente',
+    PAYMENT_NOT_CONFIRMED: 'Pagamento não confirmado',
+    DUPLICATE_ORDER: 'Pedido duplicado',
+    REGISTRATION_ERROR: 'Erro de cadastro',
+    UNFEASIBLE_DOCUMENTATION: 'Documentação inviável',
+    INTERNAL_REQUEST: 'Solicitação interna',
+    OTHER: 'Outro',
+}
+
+interface CancelOrderInput {
+    reasonCode: string
+    reasonDetail?: string | null
+}
+
+function buildCancellationReasonText(input: CancelOrderInput): { reasonText: string; reasonLabel: string } {
+    const reasonLabel = CANCELLATION_REASON_LABELS[input.reasonCode] ?? input.reasonCode
+    const detail = typeof input.reasonDetail === 'string' ? input.reasonDetail.trim() : ''
+    const reasonText = detail ? `${reasonLabel}: ${detail}` : reasonLabel
+    return { reasonText, reasonLabel }
+}
 
 export async function updateOrderStatus(orderId: number, status: string, deliveryUrl?: string) {
     try {
@@ -92,28 +116,76 @@ export async function deleteOrder(orderId: number) {
     }
 }
 
-export async function cancelOrder(orderId: number, reason: string) {
-    if (!reason?.trim()) {
-        return { success: false, error: 'Justificativa obrigatória.' }
-    }
-    try {
-        // Update status via Prisma (always works)
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'CANCELLED' as any },
-        })
+export async function cancelOrder(orderId: number, payload: CancelOrderInput) {
+    const reasonCode = payload?.reasonCode?.trim()
+    const reasonDetail = typeof payload?.reasonDetail === 'string' ? payload.reasonDetail.trim() : ''
 
-        // Save cancellation reason via raw SQL.
-        // This will succeed once you add the column in Supabase:
-        //   ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+    if (!reasonCode) {
+        return { success: false, error: 'Selecione um motivo para cancelar o pedido.' }
+    }
+    if (reasonCode === 'OTHER' && !reasonDetail) {
+        return { success: false, error: 'Descreva o motivo do cancelamento.' }
+    }
+
+    try {
+        const currentUser = await getCurrentUser()
+        const existingOrder = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { metadata: true },
+        })
+        const metadata = parseOrderMetadata(existingOrder?.metadata as string | null | undefined)
+        const cancelledAt = new Date().toISOString()
+        const cancelledBy =
+            currentUser?.email ??
+            (typeof currentUser?.id === 'number' ? String(currentUser.id) : null)
+        const cancelledByUserId =
+            typeof currentUser?.id === 'number' ? String(currentUser.id) : null
+        const { reasonText, reasonLabel } = buildCancellationReasonText({
+            reasonCode,
+            reasonDetail,
+        })
+        const nextMetadata = {
+            ...metadata,
+            cancellation: {
+                reasonCode,
+                reasonLabel,
+                reasonDetail: reasonDetail || null,
+                cancellation_details: reasonDetail || null,
+                reason: reasonText,
+                cancellation_reason: reasonLabel,
+                cancelledAt,
+                cancelledBy,
+                cancelledByUserId,
+            },
+        }
+
         try {
-            await prisma.$executeRaw`UPDATE "Order" SET cancellation_reason = ${reason.trim()} WHERE id = ${orderId}`
-        } catch {
-            // Column not yet added to DB — status is still saved correctly above
-            console.warn('[cancelOrder] cancellation_reason column not found — add it via Supabase SQL editor')
+            await prisma.order.update({
+                where: { id: orderId },
+                data: {
+                    status: 'CANCELLED' as any,
+                    cancellation_reason: reasonLabel,
+                    metadata: JSON.stringify(nextMetadata),
+                },
+            })
+        } catch (updateErr) {
+            console.warn('[cancelOrder] Prisma update with cancellation_reason failed; retrying with fallback.', updateErr)
+            await prisma.order.update({
+                where: { id: orderId },
+                data: {
+                    status: 'CANCELLED' as any,
+                    metadata: JSON.stringify(nextMetadata),
+                },
+            })
+            try {
+                await prisma.$executeRaw`UPDATE "Order" SET cancellation_reason = ${reasonLabel} WHERE id = ${orderId}`
+            } catch {
+                console.warn('[cancelOrder] cancellation_reason column not found — reason preserved in metadata')
+            }
         }
 
         revalidatePath('/admin/orders')
+        revalidatePath('/admin/orders/cancelados')
         revalidatePath(`/admin/orders/${orderId}`)
         return { success: true }
     } catch (error) {

@@ -46,7 +46,8 @@ test('structured kit builder diagnostics include source artifact type and strate
   assert.match(kit, /source_artifact_type:/)
   assert.match(kit, /source_page_count_strategy:/)
   assert.match(kit, /resolved_source_page_count:/)
-  assert.match(kit, /blocking_reason: 'page_parity_unverifiable_source_page_count'/)
+  assert.match(kit, /blocking_reason: 'page_parity_decision_required'/)
+  assert.match(kit, /blocking_reason: parityEvaluation\.blockingReason/)
 })
 
 test('release guard resolves source page count for non-PDFs and logs resolver strategy', () => {

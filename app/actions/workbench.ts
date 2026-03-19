@@ -21,6 +21,7 @@ import {
 } from '@/services/structuredDocumentRenderer'
 import {
   getDeliveryArtifactRegistryRecord,
+  getPageParityRegistryRecord,
   parseOrderMetadata,
   readDocumentDeliveryStatusRegistry,
   resolveTranslationArtifactSelection,
@@ -58,10 +59,12 @@ interface ReleasePageParityDiagnostics {
   orderId: number
   docId: number
   detected_family: string
+  page_parity_mode: string
   source_artifact_type: string
   source_page_count_strategy: string
   resolved_source_page_count: number | null
   source_page_count: number | null
+  source_relevant_page_count: number | null
   translated_page_count: number | null
   parity_status: 'pass' | 'fail'
   blocking_reason: string
@@ -470,6 +473,11 @@ export async function releaseToClient(
       const rendererUsed = isSupportedStructuredDocumentType(classification.documentType)
         ? getStructuredRendererName(classification.documentType)
         : 'unknown'
+      const pageParityRecord = getPageParityRegistryRecord(parsedOrderMetadata, d.id)
+      const pageParityMode =
+        pageParityRecord && pageParityRecord.status === 'approved_by_user'
+          ? pageParityRecord.mode
+          : 'strict_all_pages'
 
       const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
         orderMetadata: parsedOrderMetadata,
@@ -493,18 +501,74 @@ export async function releaseToClient(
         ? await getPdfPageCountFromUrl(d.delivery_pdf_url)
         : null
 
-      if (sourcePageCount === null || deliveryTotalPageCount === null) {
+      if (deliveryTotalPageCount === null) {
         const diagnostics: ReleasePageParityDiagnostics = {
           orderId,
           docId: d.id,
           detected_family: family,
+          page_parity_mode: pageParityMode,
           source_artifact_type: sourcePageResolution.sourceArtifactType,
           source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
           resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
           source_page_count: sourcePageCount,
+          source_relevant_page_count: pageParityRecord?.sourceRelevantPageCount ?? null,
           translated_page_count: null,
           parity_status: 'fail',
-          blocking_reason: 'page_parity_unverifiable_source_or_delivery_page_count',
+          blocking_reason: 'page_parity_unverifiable_delivery_page_count',
+          renderer_used: rendererUsed,
+          orientation_used: 'unknown-at-release-guard',
+          compaction_attempted: false,
+          certification_generation_blocked: false,
+          release_blocked: true,
+        }
+        logReleasePageParityDiagnostics(diagnostics)
+        parityFailures.push({
+          docId: d.id,
+          reason: diagnostics.blocking_reason,
+          sourcePageCount,
+          translatedPageCount: null,
+        })
+        continue
+      }
+
+      if (sourcePageCount === null) {
+        if (pageParityMode === 'manual_override') {
+          const diagnostics: ReleasePageParityDiagnostics = {
+            orderId,
+            docId: d.id,
+            detected_family: family,
+            page_parity_mode: pageParityMode,
+            source_artifact_type: sourcePageResolution.sourceArtifactType,
+            source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+            resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+            source_page_count: null,
+            source_relevant_page_count: pageParityRecord?.sourceRelevantPageCount ?? null,
+            translated_page_count: null,
+            parity_status: 'pass',
+            blocking_reason: 'manual_override_approved_unverifiable_source_page_count',
+            renderer_used: rendererUsed,
+            orientation_used: 'unknown-at-release-guard',
+            compaction_attempted: false,
+            certification_generation_blocked: false,
+            release_blocked: false,
+          }
+          logReleasePageParityDiagnostics(diagnostics)
+          continue
+        }
+
+        const diagnostics: ReleasePageParityDiagnostics = {
+          orderId,
+          docId: d.id,
+          detected_family: family,
+          page_parity_mode: pageParityMode,
+          source_artifact_type: sourcePageResolution.sourceArtifactType,
+          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+          source_page_count: null,
+          source_relevant_page_count: pageParityRecord?.sourceRelevantPageCount ?? null,
+          translated_page_count: null,
+          parity_status: 'fail',
+          blocking_reason: 'page_parity_unverifiable_source_page_count',
           renderer_used: rendererUsed,
           orientation_used: 'unknown-at-release-guard',
           compaction_attempted: false,
@@ -524,45 +588,110 @@ export async function releaseToClient(
       // Final kit shape: cover(1) + translated(T) + original(source_page_count)
       const translatedPageCount = deliveryTotalPageCount - 1 - sourcePageCount
 
-      if (translatedPageCount !== sourcePageCount) {
-        const diagnostics: ReleasePageParityDiagnostics = {
-          orderId,
-          docId: d.id,
-          detected_family: family,
-          source_artifact_type: sourcePageResolution.sourceArtifactType,
-          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
-          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
-          source_page_count: sourcePageCount,
-          translated_page_count: translatedPageCount,
-          parity_status: 'fail',
-          blocking_reason: 'page_parity_mismatch',
-          renderer_used: rendererUsed,
-          orientation_used: 'unknown-at-release-guard',
-          compaction_attempted: false,
-          certification_generation_blocked: false,
-          release_blocked: true,
+      const expectedTranslatedPageCount =
+        pageParityMode === 'strict_all_pages'
+          ? sourcePageCount
+          : pageParityMode === 'first_page_only'
+            ? 1
+            : pageParityMode === 'content_pages_only'
+              ? pageParityRecord?.sourceRelevantPageCount ??
+                pageParityRecord?.translatedPageCount ??
+                null
+              : null
+
+      if (pageParityMode !== 'manual_override') {
+        const hasExpectedCount =
+          typeof expectedTranslatedPageCount === 'number' &&
+          Number.isInteger(expectedTranslatedPageCount) &&
+          expectedTranslatedPageCount > 0
+        if (!hasExpectedCount) {
+          const diagnostics: ReleasePageParityDiagnostics = {
+            orderId,
+            docId: d.id,
+            detected_family: family,
+            page_parity_mode: pageParityMode,
+            source_artifact_type: sourcePageResolution.sourceArtifactType,
+            source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+            resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+            source_page_count: sourcePageCount,
+            source_relevant_page_count:
+              pageParityRecord?.sourceRelevantPageCount ?? null,
+            translated_page_count: translatedPageCount,
+            parity_status: 'fail',
+            blocking_reason: 'page_parity_missing_relevant_page_count',
+            renderer_used: rendererUsed,
+            orientation_used: 'unknown-at-release-guard',
+            compaction_attempted: false,
+            certification_generation_blocked: false,
+            release_blocked: true,
+          }
+          logReleasePageParityDiagnostics(diagnostics)
+          parityFailures.push({
+            docId: d.id,
+            reason: diagnostics.blocking_reason,
+            sourcePageCount,
+            translatedPageCount,
+          })
+          continue
         }
-        logReleasePageParityDiagnostics(diagnostics)
-        parityFailures.push({
-          docId: d.id,
-          reason: diagnostics.blocking_reason,
-          sourcePageCount,
-          translatedPageCount,
-        })
-        continue
+
+        if (translatedPageCount !== expectedTranslatedPageCount) {
+          const diagnostics: ReleasePageParityDiagnostics = {
+            orderId,
+            docId: d.id,
+            detected_family: family,
+            page_parity_mode: pageParityMode,
+            source_artifact_type: sourcePageResolution.sourceArtifactType,
+            source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+            resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+            source_page_count: sourcePageCount,
+            source_relevant_page_count:
+              pageParityMode === 'content_pages_only'
+                ? expectedTranslatedPageCount
+                : pageParityMode === 'first_page_only'
+                  ? 1
+                  : sourcePageCount,
+            translated_page_count: translatedPageCount,
+            parity_status: 'fail',
+            blocking_reason: 'page_parity_mismatch',
+            renderer_used: rendererUsed,
+            orientation_used: 'unknown-at-release-guard',
+            compaction_attempted: false,
+            certification_generation_blocked: false,
+            release_blocked: true,
+          }
+          logReleasePageParityDiagnostics(diagnostics)
+          parityFailures.push({
+            docId: d.id,
+            reason: diagnostics.blocking_reason,
+            sourcePageCount,
+            translatedPageCount,
+          })
+          continue
+        }
       }
 
       const diagnostics: ReleasePageParityDiagnostics = {
         orderId,
         docId: d.id,
         detected_family: family,
+        page_parity_mode: pageParityMode,
         source_artifact_type: sourcePageResolution.sourceArtifactType,
         source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
         resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
         source_page_count: sourcePageCount,
+        source_relevant_page_count:
+          pageParityMode === 'content_pages_only'
+            ? expectedTranslatedPageCount
+            : pageParityMode === 'first_page_only'
+              ? 1
+              : pageParityRecord?.sourceRelevantPageCount ?? sourcePageCount,
         translated_page_count: translatedPageCount,
         parity_status: 'pass',
-        blocking_reason: 'none',
+        blocking_reason:
+          pageParityMode === 'manual_override'
+            ? 'manual_override_approved'
+            : 'none',
         renderer_used: rendererUsed,
         orientation_used: 'unknown-at-release-guard',
         compaction_attempted: false,
@@ -598,7 +727,7 @@ export async function releaseToClient(
       return {
         success: false,
         error:
-          `Release blocked by absolute page-parity rule. ${parityFailures.length} document(s) failed parity validation. ` +
+          `Release blocked by absolute page-parity rule (strict default with controlled overrides). ${parityFailures.length} document(s) failed parity validation. ` +
           details,
       }
     }

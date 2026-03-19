@@ -46,6 +46,24 @@ type DocumentDeliveryStatusRecord = {
     deliveryPdfUrl: string | null
 }
 
+type PageParityMode =
+    | 'strict_all_pages'
+    | 'content_pages_only'
+    | 'first_page_only'
+    | 'manual_override'
+
+type PreviewParityDecisionPayload = {
+    parity_decision_required: true
+    defaultMode: 'strict_all_pages'
+    currentMode: PageParityMode
+    sourcePhysicalPageCount: number | null
+    sourceRelevantPageCount: number | null
+    translatedPageCount: number | null
+    suggestedModes: PageParityMode[]
+    blockingReason: 'page_parity_mismatch' | 'page_parity_unverifiable_source_page_count'
+    translationArtifactSource: 'external_pdf' | 'structured_internal' | 'legacy_internal' | 'unknown'
+}
+
 function getStatusInfo(doc: Document, deliveryStatusRecord: DocumentDeliveryStatusRecord | null): StatusInfo {
     if (deliveryStatusRecord?.deliveryStatus === 'sent') {
         return { label: 'Enviado', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
@@ -95,6 +113,12 @@ export default function Workbench({ order }: { order: Order }) {
     const [showPreviewModal, setShowPreviewModal] = useState(false)
     const [isPreviewingKit, setIsPreviewingKit] = useState(false)
     const [kitPreviewUrl, setKitPreviewUrl] = useState<string | null>(null)
+    const [showParityDecisionModal, setShowParityDecisionModal] = useState(false)
+    const [parityDecisionContext, setParityDecisionContext] = useState<PreviewParityDecisionPayload | null>(null)
+    const [parityDecisionCoverLang, setParityDecisionCoverLang] = useState('PT_BR')
+    const [selectedParityMode, setSelectedParityMode] = useState<PageParityMode>('strict_all_pages')
+    const [parityJustification, setParityJustification] = useState('')
+    const [parityRelevantPageCountInput, setParityRelevantPageCountInput] = useState('')
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
     const [showFinancialModal, setShowFinancialModal] = useState(false)
@@ -147,6 +171,14 @@ export default function Workbench({ order }: { order: Order }) {
         setOptimisticExternalUrl(selectedDoc?.externalTranslationUrl ?? null)
     }, [selectedDoc?.id, selectedDoc?.externalTranslationUrl])
 
+    useEffect(() => {
+        setShowParityDecisionModal(false)
+        setParityDecisionContext(null)
+        setParityJustification('')
+        setParityRelevantPageCountInput('')
+        setSelectedParityMode('strict_all_pages')
+    }, [selectedDoc?.id])
+
     const toggleDocForDelivery = (docId: number) => {
         setSelectedDocsForDelivery((prev) => prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId])
     }
@@ -157,6 +189,24 @@ export default function Workbench({ order }: { order: Order }) {
 
     const allSelected = selectedDocsForDelivery.length === order.documents.length
     const someSelected = selectedDocsForDelivery.length > 0
+    const parityModeLabel: Record<PageParityMode, string> = {
+        strict_all_pages: 'Paridade estrita (todas as páginas)',
+        content_pages_only: 'Somente páginas com conteúdo',
+        first_page_only: 'Somente primeira página',
+        manual_override: 'Override manual com justificativa',
+    }
+    const parityModeHint: Record<PageParityMode, string> = {
+        strict_all_pages: 'Mantém a regra padrão e bloqueia quando houver divergência.',
+        content_pages_only: 'Compara tradução com o total de páginas relevantes.',
+        first_page_only: 'Define escopo de paridade apenas para a primeira página.',
+        manual_override: 'Permite prosseguir manualmente mediante justificativa explícita.',
+    }
+    const artifactSourceLabel: Record<PreviewParityDecisionPayload['translationArtifactSource'], string> = {
+        external_pdf: 'PDF externo',
+        structured_internal: 'IA estruturada',
+        legacy_internal: 'Interno legado',
+        unknown: 'Desconhecido',
+    }
 
     const handleSave = async (translatedPageCount?: number) => {
         if (!selectedDoc) return
@@ -173,7 +223,14 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    const handlePreviewKit = async (translatedPageCount?: number, coverLang?: string) => {
+    const runPreviewKit = async (
+        coverLang: string,
+        parityDecision?: {
+            mode: PageParityMode
+            sourceRelevantPageCount?: number | null
+            justification?: string | null
+        } | null,
+    ) => {
         if (!selectedDoc) return
         setIsPreviewingKit(true)
         try {
@@ -183,19 +240,82 @@ export default function Workbench({ order }: { order: Order }) {
             }
 
             const { previewStructuredKit } = await import('../../../../actions/previewStructuredKit')
-            const result = await previewStructuredKit(order.id, selectedDoc.id, coverLang || 'PT_BR', editorContent || undefined)
+            const result = await previewStructuredKit(
+                order.id,
+                selectedDoc.id,
+                coverLang || 'PT_BR',
+                editorContent || undefined,
+                parityDecision ?? null,
+            ) as {
+                success: boolean
+                previewUrl?: string
+                error?: string
+                parityDecisionRequired?: boolean
+                parityDecision?: PreviewParityDecisionPayload
+            }
 
             if (result.success && result.previewUrl) {
+                setShowParityDecisionModal(false)
+                setParityDecisionContext(null)
                 setKitPreviewUrl(result.previewUrl)
                 setShowPreviewModal(true)
-            } else {
-                alert('Erro ao gerar preview: ' + result.error)
+                return
             }
+
+            if (result.parityDecisionRequired && result.parityDecision) {
+                const suggestedMode = result.parityDecision.suggestedModes[0] ?? 'strict_all_pages'
+                setParityDecisionContext(result.parityDecision)
+                setParityDecisionCoverLang(coverLang || 'PT_BR')
+                setSelectedParityMode(suggestedMode)
+                setParityRelevantPageCountInput(
+                    result.parityDecision.sourceRelevantPageCount
+                        ? String(result.parityDecision.sourceRelevantPageCount)
+                        : result.parityDecision.translatedPageCount
+                            ? String(result.parityDecision.translatedPageCount)
+                            : '',
+                )
+                setParityJustification('')
+                setShowParityDecisionModal(true)
+                return
+            }
+
+            alert('Erro ao gerar preview: ' + (result.error || 'Falha desconhecida'))
         } catch (err: any) {
             alert('Erro ao gerar Preview Kit: ' + (err.message || String(err)))
         } finally {
             setIsPreviewingKit(false)
         }
+    }
+
+    const handlePreviewKit = async (translatedPageCount?: number, coverLang?: string) => {
+        await runPreviewKit(coverLang || 'PT_BR', null)
+    }
+
+    const handleConfirmParityDecision = async () => {
+        if (!parityDecisionContext) return
+
+        const justification = parityJustification.trim()
+        const requiresJustification = selectedParityMode !== 'strict_all_pages'
+        if (requiresJustification && !justification) {
+            alert('Informe a justificativa para registrar a decisão de paridade.')
+            return
+        }
+
+        let sourceRelevantPageCount: number | null | undefined = undefined
+        if (selectedParityMode === 'content_pages_only') {
+            const parsed = Number(parityRelevantPageCountInput)
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                alert('Informe uma quantidade válida de páginas relevantes (inteiro positivo).')
+                return
+            }
+            sourceRelevantPageCount = parsed
+        }
+
+        await runPreviewKit(parityDecisionCoverLang || 'PT_BR', {
+            mode: selectedParityMode,
+            sourceRelevantPageCount,
+            justification: justification || null,
+        })
     }
 
     const handleTranslateAI = async () => {
@@ -601,6 +721,121 @@ export default function Workbench({ order }: { order: Order }) {
                         </div>
                         <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
                             {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showParityDecisionModal && parityDecisionContext && (
+                <div className="fixed inset-0 z-[65] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-amber-50">
+                            <h3 className="text-lg font-bold text-gray-900">Decisão de Paridade de Páginas</h3>
+                            <p className="text-sm text-gray-700 mt-1">
+                                Detectamos diferença entre páginas do original e da tradução. A regra padrão continua sendo paridade estrita, mas você pode escolher como tratar este caso.
+                            </p>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                    <div className="text-[11px] uppercase font-bold text-gray-500">Original (físicas)</div>
+                                    <div className="text-base font-semibold text-gray-900">
+                                        {parityDecisionContext.sourcePhysicalPageCount ?? 'n/d'}
+                                    </div>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                    <div className="text-[11px] uppercase font-bold text-gray-500">Original (relevantes)</div>
+                                    <div className="text-base font-semibold text-gray-900">
+                                        {parityDecisionContext.sourceRelevantPageCount ?? 'n/d'}
+                                    </div>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                    <div className="text-[11px] uppercase font-bold text-gray-500">Tradução</div>
+                                    <div className="text-base font-semibold text-gray-900">
+                                        {parityDecisionContext.translatedPageCount ?? 'n/d'}
+                                    </div>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                    <div className="text-[11px] uppercase font-bold text-gray-500">Origem do artefato</div>
+                                    <div className="text-base font-semibold text-gray-900">
+                                        {artifactSourceLabel[parityDecisionContext.translationArtifactSource]}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Modo de tratamento</label>
+                                <select
+                                    value={selectedParityMode}
+                                    onChange={(e) => setSelectedParityMode(e.target.value as PageParityMode)}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900"
+                                >
+                                    {parityDecisionContext.suggestedModes.map((mode) => (
+                                        <option key={mode} value={mode}>
+                                            {parityModeLabel[mode]}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-gray-600">{parityModeHint[selectedParityMode]}</p>
+                            </div>
+
+                            {selectedParityMode === 'content_pages_only' && (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                                        Quantidade de páginas relevantes
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        step={1}
+                                        value={parityRelevantPageCountInput}
+                                        onChange={(e) => setParityRelevantPageCountInput(e.target.value)}
+                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                                        placeholder="Ex.: 2"
+                                    />
+                                </div>
+                            )}
+
+                            {selectedParityMode !== 'strict_all_pages' && (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                                        Justificativa da decisão
+                                    </label>
+                                    <textarea
+                                        value={parityJustification}
+                                        onChange={(e) => setParityJustification(e.target.value)}
+                                        rows={3}
+                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 resize-y"
+                                        placeholder="Descreva por que esta exceção é válida para este documento."
+                                    />
+                                </div>
+                            )}
+
+                            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                Motivo técnico detectado: {parityDecisionContext.blockingReason === 'page_parity_mismatch'
+                                    ? 'contagem de páginas divergente'
+                                    : 'contagem de páginas de origem indisponível'}
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowParityDecisionModal(false)
+                                    setParityDecisionContext(null)
+                                }}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmParityDecision}
+                                disabled={isPreviewingKit}
+                                className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-[#f58220] hover:bg-orange-500 transition-colors disabled:opacity-60"
+                            >
+                                {isPreviewingKit ? 'Processando...' : 'Aplicar decisão e gerar preview'}
+                            </button>
                         </div>
                     </div>
                 </div>

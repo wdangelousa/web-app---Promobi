@@ -69,6 +69,7 @@ import {
   type SourceArtifactType,
   type SourcePageCountStrategy,
 } from '@/lib/sourcePageCountResolver';
+import type { PageParityMode } from '@/lib/translationArtifactSource';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -208,6 +209,28 @@ export interface StructuredPreviewKitInput {
   surface?: 'preview-kit' | 'delivery-kit' | 'unknown';
   compactionAttempted?: boolean;
   languageIntegrity?: StructuredLanguageIntegritySignal;
+  pageParityDecision?: StructuredPageParityDecision | null;
+}
+
+export interface StructuredPageParityDecision {
+  mode: PageParityMode;
+  sourceRelevantPageCount?: number | null;
+  justification?: string | null;
+  approvedByUserId?: string | null;
+  approvedAt?: string | null;
+}
+
+export interface PageParityDecisionContext {
+  parity_decision_required: true;
+  defaultMode: 'strict_all_pages';
+  currentMode: PageParityMode;
+  sourcePhysicalPageCount: number | null;
+  sourceRelevantPageCount: number | null;
+  translatedPageCount: number | null;
+  suggestedModes: PageParityMode[];
+  blockingReason:
+    | 'page_parity_mismatch'
+    | 'page_parity_unverifiable_source_page_count';
 }
 
 export interface StructuredLanguageIntegritySignal {
@@ -243,7 +266,12 @@ export interface StructuredPreviewKitResult {
   letterheadInjected: boolean;
   sourcePageCount?: number;
   translatedPageCount?: number;
+  sourcePhysicalPageCount?: number;
+  sourceRelevantPageCount?: number;
   pageParityStatus?: 'pass' | 'fail';
+  pageParityMode?: PageParityMode;
+  parityDecisionRequired?: boolean;
+  parityDecisionContext?: PageParityDecisionContext;
   blockingReason?: string;
   certificationGenerationBlocked?: boolean;
   releaseBlocked?: boolean;
@@ -274,6 +302,9 @@ export interface PageParityDiagnostic {
   source_artifact_type: string;
   source_page_count_strategy: string;
   resolved_source_page_count: number | null;
+  page_parity_mode: PageParityMode;
+  source_physical_page_count: number | null;
+  source_relevant_page_count: number | null;
   source_page_count: number | null;
   translated_page_count: number | null;
   gotenberg_endpoint_used: string | null;
@@ -294,8 +325,13 @@ export interface StructuredKitBuildResult {
   kitBuffer?: Buffer;
   blockingReason?: string;
   sourcePageCount?: number;
+  sourcePhysicalPageCount?: number;
+  sourceRelevantPageCount?: number;
   translatedPageCount?: number;
   parityStatus?: 'pass' | 'fail';
+  pageParityMode?: PageParityMode;
+  parityDecisionRequired?: boolean;
+  parityDecisionContext?: PageParityDecisionContext;
   diagnostics?: PageParityDiagnostic;
 }
 
@@ -454,6 +490,262 @@ function logLanguageIntegrityDiagnostics(
   console.log(
     `${logPrefix} — language integrity diagnostics: ${JSON.stringify(diagnostics)}`,
   );
+}
+
+const PAGE_PARITY_DEFAULT_MODE = 'strict_all_pages' as const;
+
+function normalizePositiveInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function normalizePageParityDecision(
+  decision: StructuredPageParityDecision | null | undefined,
+): StructuredPageParityDecision | null {
+  if (!decision) return null;
+  const mode = decision.mode;
+  if (
+    mode !== 'strict_all_pages' &&
+    mode !== 'content_pages_only' &&
+    mode !== 'first_page_only' &&
+    mode !== 'manual_override'
+  ) {
+    return null;
+  }
+
+  return {
+    mode,
+    sourceRelevantPageCount: normalizePositiveInteger(decision.sourceRelevantPageCount),
+    justification:
+      typeof decision.justification === 'string'
+        ? decision.justification.trim() || null
+        : null,
+    approvedByUserId:
+      typeof decision.approvedByUserId === 'string'
+        ? decision.approvedByUserId.trim() || null
+        : null,
+    approvedAt:
+      typeof decision.approvedAt === 'string'
+        ? decision.approvedAt.trim() || null
+        : null,
+  };
+}
+
+function buildSuggestedParityModes(
+  sourcePhysicalPageCount: number | null,
+  translatedPageCount: number | null,
+): PageParityMode[] {
+  if (!sourcePhysicalPageCount || sourcePhysicalPageCount <= 0) {
+    return ['strict_all_pages', 'manual_override'];
+  }
+
+  const suggested: PageParityMode[] = ['strict_all_pages'];
+  if (
+    translatedPageCount &&
+    translatedPageCount > 0 &&
+    translatedPageCount <= sourcePhysicalPageCount
+  ) {
+    suggested.push('content_pages_only');
+  }
+  if (sourcePhysicalPageCount > 1) {
+    suggested.push('first_page_only');
+  }
+  suggested.push('manual_override');
+  return Array.from(new Set(suggested));
+}
+
+interface PageParityEvaluationInput {
+  sourcePhysicalPageCount: number | null;
+  translatedPageCount: number;
+  decision: StructuredPageParityDecision | null;
+}
+
+interface PageParityEvaluationResult {
+  mode: PageParityMode;
+  sourceRelevantPageCount: number | null;
+  parityPass: boolean;
+  decisionRequired: boolean;
+  blockingReason:
+    | 'none'
+    | 'page_parity_mismatch'
+    | 'page_parity_unverifiable_source_page_count'
+    | 'page_parity_manual_override_requires_justification';
+  decisionContext?: PageParityDecisionContext;
+}
+
+function evaluatePageParity(
+  input: PageParityEvaluationInput,
+): PageParityEvaluationResult {
+  const mode = input.decision?.mode ?? PAGE_PARITY_DEFAULT_MODE;
+  const sourcePhysicalPageCount = input.sourcePhysicalPageCount;
+  const translatedPageCount = input.translatedPageCount;
+  const suggestedModes = buildSuggestedParityModes(
+    sourcePhysicalPageCount,
+    translatedPageCount,
+  );
+
+  if (sourcePhysicalPageCount === null) {
+    if (mode === 'manual_override') {
+      if (!input.decision?.justification) {
+        return {
+          mode,
+          sourceRelevantPageCount: null,
+          parityPass: false,
+          decisionRequired: false,
+          blockingReason: 'page_parity_manual_override_requires_justification',
+        };
+      }
+      return {
+        mode,
+        sourceRelevantPageCount: null,
+        parityPass: true,
+        decisionRequired: false,
+        blockingReason: 'none',
+      };
+    }
+
+    if (input.decision) {
+      return {
+        mode,
+        sourceRelevantPageCount: null,
+        parityPass: false,
+        decisionRequired: false,
+        blockingReason: 'page_parity_unverifiable_source_page_count',
+      };
+    }
+
+    return {
+      mode,
+      sourceRelevantPageCount: null,
+      parityPass: false,
+      decisionRequired: true,
+      blockingReason: 'page_parity_unverifiable_source_page_count',
+      decisionContext: {
+        parity_decision_required: true,
+        defaultMode: PAGE_PARITY_DEFAULT_MODE,
+        currentMode: mode,
+        sourcePhysicalPageCount: null,
+        sourceRelevantPageCount: null,
+        translatedPageCount,
+        suggestedModes,
+        blockingReason: 'page_parity_unverifiable_source_page_count',
+      },
+    };
+  }
+
+  if (mode === 'manual_override') {
+    if (!input.decision?.justification) {
+      return {
+        mode,
+        sourceRelevantPageCount: null,
+        parityPass: false,
+        decisionRequired: false,
+        blockingReason: 'page_parity_manual_override_requires_justification',
+      };
+    }
+    return {
+      mode,
+      sourceRelevantPageCount: input.decision.sourceRelevantPageCount ?? null,
+      parityPass: true,
+      decisionRequired: false,
+      blockingReason: 'none',
+    };
+  }
+
+  if (mode === 'first_page_only') {
+    const sourceRelevantPageCount = sourcePhysicalPageCount > 0 ? 1 : null;
+    const parityPass = translatedPageCount === 1;
+    if (!parityPass) {
+      return {
+        mode,
+        sourceRelevantPageCount,
+        parityPass: false,
+        decisionRequired: false,
+        blockingReason: 'page_parity_mismatch',
+      };
+    }
+    return {
+      mode,
+      sourceRelevantPageCount,
+      parityPass: true,
+      decisionRequired: false,
+      blockingReason: 'none',
+    };
+  }
+
+  if (mode === 'content_pages_only') {
+    const sourceRelevantPageCount =
+      input.decision?.sourceRelevantPageCount ??
+      (translatedPageCount > 0 && translatedPageCount <= sourcePhysicalPageCount
+        ? translatedPageCount
+        : null);
+    const parityPass =
+      sourceRelevantPageCount !== null &&
+      sourceRelevantPageCount > 0 &&
+      sourceRelevantPageCount <= sourcePhysicalPageCount &&
+      translatedPageCount === sourceRelevantPageCount;
+    if (!parityPass) {
+      return {
+        mode,
+        sourceRelevantPageCount,
+        parityPass: false,
+        decisionRequired: false,
+        blockingReason: 'page_parity_mismatch',
+      };
+    }
+    return {
+      mode,
+      sourceRelevantPageCount,
+      parityPass: true,
+      decisionRequired: false,
+      blockingReason: 'none',
+    };
+  }
+
+  const strictParityPass = translatedPageCount === sourcePhysicalPageCount;
+  if (strictParityPass) {
+    return {
+      mode,
+      sourceRelevantPageCount: sourcePhysicalPageCount,
+      parityPass: true,
+      decisionRequired: false,
+      blockingReason: 'none',
+    };
+  }
+
+  if (input.decision) {
+    return {
+      mode,
+      sourceRelevantPageCount: sourcePhysicalPageCount,
+      parityPass: false,
+      decisionRequired: false,
+      blockingReason: 'page_parity_mismatch',
+    };
+  }
+
+  return {
+    mode,
+    sourceRelevantPageCount: sourcePhysicalPageCount,
+    parityPass: false,
+    decisionRequired: true,
+    blockingReason: 'page_parity_mismatch',
+    decisionContext: {
+      parity_decision_required: true,
+      defaultMode: PAGE_PARITY_DEFAULT_MODE,
+      currentMode: mode,
+      sourcePhysicalPageCount,
+      sourceRelevantPageCount: sourcePhysicalPageCount,
+      translatedPageCount,
+      suggestedModes,
+      blockingReason: 'page_parity_mismatch',
+    },
+  };
 }
 
 // ── Cover variant derivation ──────────────────────────────────────────────────
@@ -1068,6 +1360,11 @@ export async function buildStructuredKitBuffer(
         languageIntegrity.sourceLanguageContaminatedZones,
     },
   );
+  const normalizedParityDecision = normalizePageParityDecision(
+    input.pageParityDecision,
+  );
+  const requestedParityMode =
+    normalizedParityDecision?.mode ?? PAGE_PARITY_DEFAULT_MODE;
   const baseDiagnostics = {
     orderId: input.orderId,
     docId: input.documentId,
@@ -1099,6 +1396,13 @@ export async function buildStructuredKitBuffer(
       typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
         ? input.sourcePageCount
         : null,
+    page_parity_mode: requestedParityMode,
+    source_physical_page_count:
+      typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
+        ? input.sourcePageCount
+        : null,
+    source_relevant_page_count:
+      normalizedParityDecision?.sourceRelevantPageCount ?? null,
     gotenberg_endpoint_used: null as string | null,
     gotenberg_failure_type: null as string | null,
     gotenberg_failure_detail: null as string | null,
@@ -1424,22 +1728,35 @@ export async function buildStructuredKitBuffer(
         `resolved=${sourcePageResolution.resolvedSourcePageCount ?? 'n/a'}`,
     );
 
-    const effectiveSourcePageCount =
-      sourcePageResolution.resolvedSourcePageCount ?? undefined;
+    const sourcePhysicalPageCount =
+      sourcePageResolution.resolvedSourcePageCount ?? null;
     const sourceResolutionDiagnostics = {
       source_artifact_type: sourcePageResolution.sourceArtifactType,
       source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
       resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
     } as const;
 
-    if (effectiveSourcePageCount === undefined) {
+    const parityEvaluation = evaluatePageParity({
+      sourcePhysicalPageCount,
+      translatedPageCount,
+      decision: normalizedParityDecision,
+    });
+    const sourceRelevantPageCount = parityEvaluation.sourceRelevantPageCount;
+    const parityDiagnosticsBase = {
+      ...baseDiagnostics,
+      ...sourceResolutionDiagnostics,
+      page_parity_mode: parityEvaluation.mode,
+      source_physical_page_count: sourcePhysicalPageCount,
+      source_relevant_page_count: sourceRelevantPageCount,
+      source_page_count: sourcePhysicalPageCount,
+      translated_page_count: translatedPageCount,
+    } as const;
+
+    if (parityEvaluation.decisionRequired) {
       const diagnostics: PageParityDiagnostic = {
-        ...baseDiagnostics,
-        ...sourceResolutionDiagnostics,
-        source_page_count: null,
-        translated_page_count: translatedPageCount,
+        ...parityDiagnosticsBase,
         parity_status: 'fail',
-        blocking_reason: 'page_parity_unverifiable_source_page_count',
+        blocking_reason: 'page_parity_decision_required',
         certification_generation_blocked: true,
         release_blocked: shouldMarkReleaseBlocked,
       };
@@ -1447,20 +1764,23 @@ export async function buildStructuredKitBuffer(
       return {
         success: false,
         blockingReason: diagnostics.blocking_reason,
+        sourcePageCount: sourcePhysicalPageCount ?? undefined,
+        sourcePhysicalPageCount: sourcePhysicalPageCount ?? undefined,
+        sourceRelevantPageCount: sourceRelevantPageCount ?? undefined,
         translatedPageCount,
         parityStatus: 'fail',
+        pageParityMode: parityEvaluation.mode,
+        parityDecisionRequired: true,
+        parityDecisionContext: parityEvaluation.decisionContext,
         diagnostics,
       };
     }
 
-    if (translatedPageCount !== effectiveSourcePageCount) {
+    if (!parityEvaluation.parityPass) {
       const diagnostics: PageParityDiagnostic = {
-        ...baseDiagnostics,
-        ...sourceResolutionDiagnostics,
-        source_page_count: effectiveSourcePageCount,
-        translated_page_count: translatedPageCount,
+        ...parityDiagnosticsBase,
         parity_status: 'fail',
-        blocking_reason: 'page_parity_mismatch',
+        blocking_reason: parityEvaluation.blockingReason,
         certification_generation_blocked: true,
         release_blocked: shouldMarkReleaseBlocked,
       };
@@ -1468,18 +1788,18 @@ export async function buildStructuredKitBuffer(
       return {
         success: false,
         blockingReason: diagnostics.blocking_reason,
-        sourcePageCount: effectiveSourcePageCount,
+        sourcePageCount: sourcePhysicalPageCount ?? undefined,
+        sourcePhysicalPageCount: sourcePhysicalPageCount ?? undefined,
+        sourceRelevantPageCount: sourceRelevantPageCount ?? undefined,
         translatedPageCount,
         parityStatus: 'fail',
+        pageParityMode: parityEvaluation.mode,
         diagnostics,
       };
     }
 
     const passDiagnostics: PageParityDiagnostic = {
-      ...baseDiagnostics,
-      ...sourceResolutionDiagnostics,
-      source_page_count: effectiveSourcePageCount,
-      translated_page_count: translatedPageCount,
+      ...parityDiagnosticsBase,
       parity_status: 'pass',
       blocking_reason: 'none',
       certification_generation_blocked: false,
@@ -1508,7 +1828,7 @@ export async function buildStructuredKitBuffer(
       {
         documentType: input.documentTypeLabel ?? 'Document',
         sourceLanguage: sourceLangLabel,
-        sourcePageCount: effectiveSourcePageCount,
+        sourcePageCount: sourcePhysicalPageCount ?? 'n/a',
         translatedPageCount,
         orderId: input.orderId,
         dated,
@@ -1530,13 +1850,11 @@ export async function buildStructuredKitBuffer(
     if (!coverPdf.buffer) {
       log(`cover page: Gotenberg failed`);
       const diagnostics: PageParityDiagnostic = {
-        ...baseDiagnostics,
+        ...parityDiagnosticsBase,
         gotenberg_endpoint_used: coverPdf.endpointUsed,
         gotenberg_failure_type: coverPdf.failure?.type ?? null,
         gotenberg_failure_detail: formatGotenbergFailureDetail(coverPdf.failure),
         gotenberg_status_code: coverPdf.failure?.statusCode ?? null,
-        source_page_count: effectiveSourcePageCount,
-        translated_page_count: translatedPageCount,
         parity_status: 'fail',
         blocking_reason: 'certification_cover_generation_failed',
         certification_generation_blocked: true,
@@ -1546,9 +1864,12 @@ export async function buildStructuredKitBuffer(
       return {
         success: false,
         blockingReason: diagnostics.blocking_reason,
-        sourcePageCount: effectiveSourcePageCount,
+        sourcePageCount: sourcePhysicalPageCount ?? undefined,
+        sourcePhysicalPageCount: sourcePhysicalPageCount ?? undefined,
+        sourceRelevantPageCount: sourceRelevantPageCount ?? undefined,
         translatedPageCount,
         parityStatus: 'fail',
+        pageParityMode: parityEvaluation.mode,
         diagnostics,
       };
     }
@@ -1603,9 +1924,12 @@ export async function buildStructuredKitBuffer(
     return {
       success: true,
       kitBuffer,
-      sourcePageCount: effectiveSourcePageCount,
+      sourcePageCount: sourcePhysicalPageCount ?? undefined,
+      sourcePhysicalPageCount: sourcePhysicalPageCount ?? undefined,
+      sourceRelevantPageCount: sourceRelevantPageCount ?? undefined,
       translatedPageCount,
       parityStatus: 'pass',
+      pageParityMode: parityEvaluation.mode,
       diagnostics: passDiagnostics,
     };
 
@@ -1662,8 +1986,13 @@ export async function assembleStructuredPreviewKit(
     const buildResult = await buildStructuredKitBuffer(input);
 
     result.sourcePageCount = buildResult.sourcePageCount;
+    result.sourcePhysicalPageCount = buildResult.sourcePhysicalPageCount;
+    result.sourceRelevantPageCount = buildResult.sourceRelevantPageCount;
     result.translatedPageCount = buildResult.translatedPageCount;
     result.pageParityStatus = buildResult.parityStatus;
+    result.pageParityMode = buildResult.pageParityMode;
+    result.parityDecisionRequired = buildResult.parityDecisionRequired ?? false;
+    result.parityDecisionContext = buildResult.parityDecisionContext;
     result.blockingReason = buildResult.blockingReason;
     result.certificationGenerationBlocked =
       buildResult.diagnostics?.certification_generation_blocked ?? false;

@@ -33,6 +33,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
 import {
   assembleStructuredPreviewKit,
+  type StructuredPageParityDecision,
+  type PageParityDecisionContext,
 } from '@/services/structuredPreviewKit';
 import { classifyDocument } from '@/services/documentClassifier';
 import {
@@ -46,14 +48,43 @@ import {
   renderStructuredFamilyDocument,
 } from '@/services/structuredDocumentRenderer';
 import {
+  getPageParityRegistryRecord,
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
+  upsertPageParityRegistryRecord,
+  type PageParityMode,
+  type TranslationArtifactSource,
 } from '@/lib/translationArtifactSource';
 import {
   isLikelyImageSource,
   resolveGroupedSourceImageCountHintFromOrderMetadata,
   resolveSourcePageCount,
 } from '@/lib/sourcePageCountResolver';
+import { getCurrentUser } from '@/app/actions/auth';
+
+interface PreviewPageParityDecisionInput {
+  mode: PageParityMode;
+  sourceRelevantPageCount?: number | null;
+  justification?: string | null;
+}
+
+interface PreviewPageParityDecisionRequiredPayload extends PageParityDecisionContext {
+  translationArtifactSource: TranslationArtifactSource | 'unknown';
+}
+
+interface PreviewStructuredKitActionResult {
+  success: boolean;
+  previewUrl?: string;
+  error?: string;
+  parityDecisionRequired?: boolean;
+  parityDecision?: PreviewPageParityDecisionRequiredPayload;
+  resolvedPageParity?: {
+    mode: PageParityMode;
+    sourcePhysicalPageCount: number | null;
+    sourceRelevantPageCount: number | null;
+    translatedPageCount: number | null;
+  };
+}
 
 function buildExternalOverrideLanguageIntegrity(
   sourceLanguage?: string | null,
@@ -75,6 +106,43 @@ function buildExternalOverrideLanguageIntegrity(
   };
 }
 
+function normalizePositiveInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function normalizePageParityDecisionInput(
+  input?: PreviewPageParityDecisionInput | null,
+): PreviewPageParityDecisionInput | null {
+  if (!input) return null;
+  const mode = input.mode;
+  if (
+    mode !== 'strict_all_pages' &&
+    mode !== 'content_pages_only' &&
+    mode !== 'first_page_only' &&
+    mode !== 'manual_override'
+  ) {
+    return null;
+  }
+
+  const justification =
+    typeof input.justification === 'string'
+      ? input.justification.trim() || null
+      : null;
+
+  return {
+    mode,
+    sourceRelevantPageCount: normalizePositiveInteger(input.sourceRelevantPageCount),
+    justification,
+  };
+}
+
 async function generatePreviewFromExternalPdf(params: {
   orderId: number;
   documentId: number;
@@ -92,7 +160,8 @@ async function generatePreviewFromExternalPdf(params: {
   originalFileUrl?: string | null;
   originalContentType?: string | null;
   orientation: DocumentOrientation;
-}): Promise<{ success: boolean; previewUrl?: string; error?: string }> {
+  pageParityDecision?: StructuredPageParityDecision | null;
+}): Promise<PreviewStructuredKitActionResult> {
   const res = await fetch(params.externalTranslationUrl);
   if (!res.ok) {
     return {
@@ -129,14 +198,30 @@ async function generatePreviewFromExternalPdf(params: {
     surface: 'preview-kit',
     compactionAttempted: false,
     languageIntegrity: buildExternalOverrideLanguageIntegrity(params.sourceLanguage),
+    pageParityDecision: params.pageParityDecision ?? null,
   });
 
   if (!kit.assembled) {
+    if (kit.parityDecisionRequired && kit.parityDecisionContext) {
+      return {
+        success: false,
+        parityDecisionRequired: true,
+        parityDecision: {
+          ...kit.parityDecisionContext,
+          translationArtifactSource: 'external_pdf',
+        },
+        error:
+          'Diferença de páginas detectada. Escolha um modo de paridade para continuar com segurança.',
+      };
+    }
+
     const detail =
       kit.blockingReason === 'page_parity_mismatch'
         ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
         : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
           ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
+          : kit.blockingReason === 'page_parity_manual_override_requires_justification'
+            ? ' Page parity failed: manual override requires a textual justification.'
           : '';
     return {
       success: false,
@@ -151,6 +236,12 @@ async function generatePreviewFromExternalPdf(params: {
   return {
     success: true,
     previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+    resolvedPageParity: {
+      mode: kit.pageParityMode ?? 'strict_all_pages',
+      sourcePhysicalPageCount: kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
+      sourceRelevantPageCount: kit.sourceRelevantPageCount ?? null,
+      translatedPageCount: kit.translatedPageCount ?? null,
+    },
   };
 }
 
@@ -172,7 +263,8 @@ export async function previewStructuredKit(
    * in-progress translations without requiring a save first.
    */
   editorHtml?: string,
-): Promise<{ success: boolean; previewUrl?: string; error?: string }> {
+  parityDecisionInput?: PreviewPageParityDecisionInput | null,
+): Promise<PreviewStructuredKitActionResult> {
   const coverVariant: 'pt-en' | 'es-en' =
     coverLang.toUpperCase() === 'ES' ? 'es-en' : 'pt-en';
 
@@ -224,6 +316,49 @@ export async function previewStructuredKit(
       })}`,
     );
 
+    const parsedOrderMetadata = parseOrderMetadata(
+      doc.order?.metadata as string | null | undefined,
+    );
+    const persistedPageParityRecord = getPageParityRegistryRecord(
+      parsedOrderMetadata,
+      doc.id,
+    );
+    const requestedParityDecision = normalizePageParityDecisionInput(
+      parityDecisionInput,
+    );
+    const currentUser = requestedParityDecision ? await getCurrentUser() : null;
+    const requestTimestamp = new Date().toISOString();
+
+    const explicitParityDecision: StructuredPageParityDecision | null =
+      requestedParityDecision
+        ? {
+            mode: requestedParityDecision.mode,
+            sourceRelevantPageCount:
+              requestedParityDecision.sourceRelevantPageCount ?? null,
+            justification: requestedParityDecision.justification ?? null,
+            approvedByUserId:
+              currentUser && typeof currentUser.id === 'number'
+                ? String(currentUser.id)
+                : currentUser?.email ?? null,
+            approvedAt: requestTimestamp,
+          }
+        : null;
+
+    const persistedApprovedParityDecision: StructuredPageParityDecision | null =
+      persistedPageParityRecord && persistedPageParityRecord.status === 'approved_by_user'
+        ? {
+            mode: persistedPageParityRecord.mode,
+            sourceRelevantPageCount:
+              persistedPageParityRecord.sourceRelevantPageCount,
+            justification: persistedPageParityRecord.justification,
+            approvedByUserId: persistedPageParityRecord.approvedByUserId,
+            approvedAt: persistedPageParityRecord.approvedAt,
+          }
+        : null;
+
+    const effectivePageParityDecision =
+      explicitParityDecision ?? persistedApprovedParityDecision;
+
     // Resolve translated content: editor (most current) › saved DB record › absent
     const effectiveTranslatedText: string | null =
       editorHtml && editorHtml.trim().length > 0
@@ -271,9 +406,6 @@ export async function previewStructuredKit(
     let sourceArtifactType: string | undefined;
     let sourcePageCountStrategy: string | undefined;
 
-    const parsedOrderMetadata = parseOrderMetadata(
-      doc.order?.metadata as string | null | undefined,
-    );
     const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
       orderMetadata: parsedOrderMetadata,
       documentId: doc.id,
@@ -334,7 +466,7 @@ export async function previewStructuredKit(
       artifactSelection.source === 'external_pdf' &&
       artifactSelection.selectedArtifactUrl
     ) {
-      return await generatePreviewFromExternalPdf({
+      const externalPreview = await generatePreviewFromExternalPdf({
         orderId,
         documentId,
         logPrefix,
@@ -351,7 +483,43 @@ export async function previewStructuredKit(
         originalFileUrl: doc.originalFileUrl,
         originalContentType: contentType,
         orientation: detectedOrientation,
+        pageParityDecision: effectivePageParityDecision,
       });
+
+      if (externalPreview.success && requestedParityDecision) {
+        const paritySnapshot = externalPreview.resolvedPageParity;
+        const nextMetadata = upsertPageParityRegistryRecord(
+          parsedOrderMetadata,
+          doc.id,
+          {
+            mode: requestedParityDecision.mode,
+            sourcePhysicalPageCount:
+              paritySnapshot?.sourcePhysicalPageCount ?? sourcePageCount ?? null,
+            sourceRelevantPageCount:
+              paritySnapshot?.sourceRelevantPageCount ??
+              requestedParityDecision.sourceRelevantPageCount ??
+              (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
+            translatedPageCount: paritySnapshot?.translatedPageCount ?? null,
+            status:
+              requestedParityDecision.mode === 'strict_all_pages'
+                ? 'strict_enforced'
+                : 'approved_by_user',
+            justification: requestedParityDecision.justification ?? null,
+            approvedByUserId:
+              explicitParityDecision?.approvedByUserId ?? currentUser?.email ?? null,
+            approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
+            sourceArtifactType: sourceArtifactType ?? null,
+            sourcePageCountStrategy: sourcePageCountStrategy ?? null,
+            translationArtifactSource: artifactSelection.source,
+          },
+        );
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { metadata: JSON.stringify(nextMetadata) },
+        });
+      }
+
+      return externalPreview;
     }
 
     // ── Step 3: Classify document type ──────────────────────────────────────
@@ -480,14 +648,30 @@ export async function previewStructuredKit(
       surface: 'preview-kit',
       compactionAttempted: false,
       languageIntegrity: resolvedLanguageIntegrityForKit,
+      pageParityDecision: effectivePageParityDecision,
     });
 
     if (!kit.assembled) {
+      if (kit.parityDecisionRequired && kit.parityDecisionContext) {
+        return {
+          success: false,
+          parityDecisionRequired: true,
+          parityDecision: {
+            ...kit.parityDecisionContext,
+            translationArtifactSource: artifactSelection.source,
+          },
+          error:
+            'Diferença de páginas detectada. Revise as contagens e escolha um modo de paridade para continuar.',
+        };
+      }
+
       const parityDetail =
         kit.blockingReason === 'page_parity_mismatch'
           ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
           : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
             ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
+            : kit.blockingReason === 'page_parity_manual_override_requires_justification'
+              ? ' Page parity failed: manual override requires a textual justification.'
             : kit.blockingReason === 'translated_zone_content_missing_or_source_language_detected'
               ? ' Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.'
             : '';
@@ -501,9 +685,48 @@ export async function previewStructuredKit(
       };
     }
 
+    if (requestedParityDecision) {
+      const nextMetadata = upsertPageParityRegistryRecord(
+        parsedOrderMetadata,
+        doc.id,
+        {
+          mode: requestedParityDecision.mode,
+          sourcePhysicalPageCount:
+            kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? sourcePageCount ?? null,
+          sourceRelevantPageCount:
+            kit.sourceRelevantPageCount ??
+            requestedParityDecision.sourceRelevantPageCount ??
+            (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
+          translatedPageCount: kit.translatedPageCount ?? null,
+          status:
+            requestedParityDecision.mode === 'strict_all_pages'
+              ? 'strict_enforced'
+              : 'approved_by_user',
+          justification: requestedParityDecision.justification ?? null,
+          approvedByUserId:
+            explicitParityDecision?.approvedByUserId ?? currentUser?.email ?? null,
+          approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
+          sourceArtifactType: sourceArtifactType ?? null,
+          sourcePageCountStrategy: sourcePageCountStrategy ?? null,
+          translationArtifactSource: artifactSelection.source,
+        },
+      );
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { metadata: JSON.stringify(nextMetadata) },
+      });
+    }
+
     return {
       success: true,
       previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+      resolvedPageParity: {
+        mode: kit.pageParityMode ?? 'strict_all_pages',
+        sourcePhysicalPageCount:
+          kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
+        sourceRelevantPageCount: kit.sourceRelevantPageCount ?? null,
+        translatedPageCount: kit.translatedPageCount ?? null,
+      },
     };
   } catch (err: any) {
     console.error(`${logPrefix} — unexpected error: ${err}`);

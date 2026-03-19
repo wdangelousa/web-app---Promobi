@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { classifyDocument } from "@/services/documentClassifier";
 import {
   buildStructuredKitBuffer,
+  type StructuredPageParityDecision,
 } from "@/services/structuredPreviewKit";
 import {
   detectOrientationFromPdfDoc,
@@ -19,6 +20,7 @@ import {
   renderStructuredFamilyDocument,
 } from "@/services/structuredDocumentRenderer";
 import {
+  getPageParityRegistryRecord,
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
   upsertDeliveryArtifactRegistryRecord,
@@ -61,6 +63,24 @@ function buildExternalOverrideLanguageIntegrity(
     sourceLanguageContaminatedZones: [],
     mappedGenericZones: [],
     languageIssueType: 'none',
+  };
+}
+
+function buildStoredPageParityDecision(
+  parsedOrderMetadata: Record<string, unknown>,
+  documentId: number,
+): StructuredPageParityDecision | null {
+  const record = getPageParityRegistryRecord(parsedOrderMetadata, documentId);
+  if (!record || record.status !== "approved_by_user") {
+    return null;
+  }
+
+  return {
+    mode: record.mode,
+    sourceRelevantPageCount: record.sourceRelevantPageCount,
+    justification: record.justification,
+    approvedByUserId: record.approvedByUserId,
+    approvedAt: record.approvedAt,
   };
 }
 
@@ -156,6 +176,10 @@ export async function generateDeliveryKit(
     let sourcePageCountStrategy: string | undefined;
     const parsedOrderMetadata = parseOrderMetadata(
       order.metadata as string | null | undefined,
+    );
+    const storedPageParityDecision = buildStoredPageParityDecision(
+      parsedOrderMetadata,
+      documentId,
     );
     const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
       orderMetadata: parsedOrderMetadata,
@@ -272,6 +296,7 @@ export async function generateDeliveryKit(
           languageIntegrity: buildExternalOverrideLanguageIntegrity(
             doc.sourceLanguage ?? null,
           ),
+          pageParityDecision: storedPageParityDecision,
         });
 
         if (!buildResult.success || !buildResult.kitBuffer) {
@@ -280,6 +305,10 @@ export async function generateDeliveryKit(
               ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
               : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
                 ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+                : buildResult.blockingReason === "page_parity_decision_required"
+                  ? " Page parity requires explicit decision. Open Preview Kit, choose the parity mode, and retry."
+                  : buildResult.blockingReason === "page_parity_manual_override_requires_justification"
+                    ? " Page parity failed: manual override requires a textual justification."
                 : "";
           return {
             success: false,
@@ -346,6 +375,7 @@ export async function generateDeliveryKit(
           surface: preview ? "preview-kit" : "delivery-kit",
           compactionAttempted: false,
           languageIntegrity: resolved.languageIntegrity,
+          pageParityDecision: storedPageParityDecision,
         });
 
         if (!buildResult.success || !buildResult.kitBuffer) {
@@ -354,6 +384,10 @@ export async function generateDeliveryKit(
               ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
               : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
                 ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+                : buildResult.blockingReason === "page_parity_decision_required"
+                  ? " Page parity requires explicit decision. Open Preview Kit, choose the parity mode, and retry."
+                  : buildResult.blockingReason === "page_parity_manual_override_requires_justification"
+                    ? " Page parity failed: manual override requires a textual justification."
                 : buildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
                   ? " Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface."
                 : "";

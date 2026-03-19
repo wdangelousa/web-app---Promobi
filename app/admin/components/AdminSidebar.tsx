@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
     LayoutDashboard,
     ListTodo,
+    Ban,
     Settings,
     LogOut,
     DollarSign,
@@ -26,6 +27,8 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
     const isActive = (path: string) => {
         return pathname === path || pathname.startsWith(path + '/')
     }
+    const isOrdersBoardActive = isActive('/admin/orders') && !isActive('/admin/orders/cancelados')
+    const isCancelledOrdersActive = isActive('/admin/orders/cancelados')
 
     return (
         <aside className="w-64 bg-gray-900 text-white flex flex-col fixed h-full shadow-xl z-20 overflow-y-auto">
@@ -60,13 +63,25 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
                     <span>Dashboard</span>
                 </Link>
 
-                <Link
-                    href="/admin/orders"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/orders') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                >
-                    <ListTodo className={`h-5 w-5 ${isActive('/admin/orders') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                    <span>Operações (Kanban)</span>
-                </Link>
+                <div className="pt-1">
+                    <p className="px-4 pb-1 text-[10px] uppercase tracking-[0.12em] text-gray-500 font-bold">Pedidos</p>
+                    <div className="space-y-1">
+                        <Link
+                            href="/admin/orders"
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isOrdersBoardActive ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                        >
+                            <ListTodo className={`h-5 w-5 ${isOrdersBoardActive ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                            <span>Bancada</span>
+                        </Link>
+                        <Link
+                            href="/admin/orders/cancelados"
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isCancelledOrdersActive ? 'bg-red-500/10 text-red-300 font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                        >
+                            <Ban className={`h-5 w-5 ${isCancelledOrdersActive ? 'text-red-300' : 'group-hover:text-red-300'} transition-colors`} />
+                            <span>Cancelados</span>
+                        </Link>
+                    </div>
+                </div>
 
                 {user.role !== 'TECHNICAL' && (
                     <Link

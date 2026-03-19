@@ -36,15 +36,77 @@ export interface DocumentDeliveryStatusRecord {
   deliveryPdfUrl: string | null;
 }
 
+export type PageParityMode =
+  | 'strict_all_pages'
+  | 'content_pages_only'
+  | 'first_page_only'
+  | 'manual_override';
+
+export type PageParityStatus =
+  | 'approved_by_user'
+  | 'strict_enforced';
+
+export interface PageParityRegistryRecord {
+  mode: PageParityMode;
+  sourcePhysicalPageCount: number | null;
+  sourceRelevantPageCount: number | null;
+  translatedPageCount: number | null;
+  status: PageParityStatus;
+  justification: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string;
+  sourceArtifactType: string | null;
+  sourcePageCountStrategy: string | null;
+  translationArtifactSource: TranslationArtifactSource | 'unknown';
+}
+
 type JsonObject = Record<string, unknown>;
 
 const REGISTRY_KEY = 'translationArtifactRegistryV1';
 const DELIVERY_STATUS_REGISTRY_KEY = 'deliveryDocumentStatusV1';
+const PAGE_PARITY_REGISTRY_KEY = 'pageParityRegistryV1';
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function isPageParityMode(value: string | null): value is PageParityMode {
+  return (
+    value === 'strict_all_pages' ||
+    value === 'content_pages_only' ||
+    value === 'first_page_only' ||
+    value === 'manual_override'
+  );
+}
+
+function isPageParityStatus(value: string | null): value is PageParityStatus {
+  return value === 'approved_by_user' || value === 'strict_enforced';
+}
+
+function normalizeTranslationArtifactSource(
+  value: string | null,
+): TranslationArtifactSource | 'unknown' {
+  if (
+    value === 'external_pdf' ||
+    value === 'structured_internal' ||
+    value === 'legacy_internal'
+  ) {
+    return value;
+  }
+  return 'unknown';
 }
 
 export function resolveTranslationArtifactSelection(
@@ -208,5 +270,78 @@ export function getDocumentDeliveryStatusRecord(
   docId: number,
 ): DocumentDeliveryStatusRecord | null {
   const registry = readDocumentDeliveryStatusRegistry(metadata);
+  return registry[String(docId)] ?? null;
+}
+
+export function readPageParityRegistry(
+  metadata: JsonObject,
+): Record<string, PageParityRegistryRecord> {
+  const container = metadata[PAGE_PARITY_REGISTRY_KEY];
+  if (!container || typeof container !== 'object') return {};
+
+  const out: Record<string, PageParityRegistryRecord> = {};
+  for (const [docKey, value] of Object.entries(container as JsonObject)) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonObject;
+
+    const modeRaw = normalizeOptionalString(record.mode as string | null | undefined);
+    const statusRaw = normalizeOptionalString(
+      record.status as string | null | undefined,
+    );
+    const approvedAt = normalizeOptionalString(
+      record.approvedAt as string | null | undefined,
+    );
+
+    if (!isPageParityMode(modeRaw) || !isPageParityStatus(statusRaw) || !approvedAt) {
+      continue;
+    }
+
+    out[docKey] = {
+      mode: modeRaw,
+      sourcePhysicalPageCount: normalizeOptionalNumber(record.sourcePhysicalPageCount),
+      sourceRelevantPageCount: normalizeOptionalNumber(record.sourceRelevantPageCount),
+      translatedPageCount: normalizeOptionalNumber(record.translatedPageCount),
+      status: statusRaw,
+      justification: normalizeOptionalString(
+        record.justification as string | null | undefined,
+      ),
+      approvedByUserId: normalizeOptionalString(
+        record.approvedByUserId as string | null | undefined,
+      ),
+      approvedAt,
+      sourceArtifactType: normalizeOptionalString(
+        record.sourceArtifactType as string | null | undefined,
+      ),
+      sourcePageCountStrategy: normalizeOptionalString(
+        record.sourcePageCountStrategy as string | null | undefined,
+      ),
+      translationArtifactSource: normalizeTranslationArtifactSource(
+        normalizeOptionalString(
+          record.translationArtifactSource as string | null | undefined,
+        ),
+      ),
+    };
+  }
+
+  return out;
+}
+
+export function upsertPageParityRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+  record: PageParityRegistryRecord,
+): JsonObject {
+  const nextMetadata: JsonObject = { ...metadata };
+  const registry = readPageParityRegistry(nextMetadata);
+  registry[String(docId)] = record;
+  nextMetadata[PAGE_PARITY_REGISTRY_KEY] = registry;
+  return nextMetadata;
+}
+
+export function getPageParityRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+): PageParityRegistryRecord | null {
+  const registry = readPageParityRegistry(metadata);
   return registry[String(docId)] ?? null;
 }

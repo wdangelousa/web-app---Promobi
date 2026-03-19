@@ -6,12 +6,15 @@ import path from 'node:path'
 const read = (filePath) =>
   fs.readFileSync(path.join(process.cwd(), filePath), 'utf8')
 
-test('structured kit builder enforces absolute source/translated page parity', () => {
+test('structured kit builder keeps strict parity as default and supports explicit decision modes', () => {
   const kit = read('services/structuredPreviewKit.ts')
 
-  assert.match(kit, /translatedPageCount !== effectiveSourcePageCount/)
-  assert.match(kit, /blocking_reason: 'page_parity_mismatch'/)
-  assert.match(kit, /blocking_reason: 'page_parity_unverifiable_source_page_count'/)
+  assert.match(kit, /const PAGE_PARITY_DEFAULT_MODE = 'strict_all_pages' as const/)
+  assert.match(kit, /function evaluatePageParity\(/)
+  assert.match(kit, /page_parity_decision_required/)
+  assert.match(kit, /manual_override/)
+  assert.match(kit, /blockingReason: 'page_parity_mismatch'/)
+  assert.match(kit, /blockingReason: 'page_parity_unverifiable_source_page_count'/)
   assert.match(kit, /translated_zone_content_missing_or_source_language_detected/)
   assert.match(kit, /parity_status: 'pass'/)
   assert.match(kit, /parity_status: 'fail'/)
@@ -19,26 +22,32 @@ test('structured kit builder enforces absolute source/translated page parity', (
   assert.match(kit, /function logPageParityDiagnostics\(/)
 })
 
-test('preview and delivery kit actions propagate parity hard-failure to callers', () => {
+test('preview and delivery kit actions propagate parity decision-required and hard failures', () => {
   const previewAction = read('app/actions/previewStructuredKit.ts')
   const deliveryAction = read('app/actions/generateDeliveryKit.ts')
 
+  assert.match(previewAction, /parityDecisionRequired/)
+  assert.match(previewAction, /kit\.parityDecisionRequired && kit\.parityDecisionContext/)
   assert.match(previewAction, /kit\.blockingReason === 'page_parity_mismatch'/)
   assert.match(previewAction, /kit\.blockingReason === 'page_parity_unverifiable_source_page_count'/)
   assert.match(previewAction, /kit\.blockingReason === 'translated_zone_content_missing_or_source_language_detected'/)
 
+  assert.match(deliveryAction, /buildResult\.blockingReason === "page_parity_decision_required"/)
   assert.match(deliveryAction, /buildResult\.blockingReason === "page_parity_mismatch"/)
   assert.match(deliveryAction, /buildResult\.blockingReason === "page_parity_unverifiable_source_page_count"/)
   assert.match(deliveryAction, /buildResult\.blockingReason === "translated_zone_content_missing_or_source_language_detected"/)
 })
 
-test('release guard blocks client release on parity mismatch or unverifiable counts', () => {
+test('release guard stays strict by default but honors approved parity overrides', () => {
   const workbench = read('app/actions/workbench.ts')
 
+  assert.match(workbench, /getPageParityRegistryRecord/)
+  assert.match(workbench, /const pageParityMode/)
   assert.match(workbench, /const translatedPageCount = deliveryTotalPageCount - 1 - sourcePageCount/)
-  assert.match(workbench, /if \(translatedPageCount !== sourcePageCount\)/)
+  assert.match(workbench, /manual_override_approved/)
+  assert.match(workbench, /page_parity_mode:/)
   assert.match(workbench, /blocking_reason: 'page_parity_mismatch'/)
-  assert.match(workbench, /blocking_reason: 'page_parity_unverifiable_source_or_delivery_page_count'/)
+  assert.match(workbench, /blocking_reason: 'page_parity_unverifiable_source_page_count'/)
   assert.match(workbench, /Release blocked by absolute page-parity rule/)
   assert.match(workbench, /function logReleasePageParityDiagnostics\(/)
 })

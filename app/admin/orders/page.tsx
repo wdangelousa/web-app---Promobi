@@ -1,238 +1,281 @@
 import prisma from '@/lib/prisma';
-import { Eye, FileText, Calendar, User, Plus } from 'lucide-react';
+import { Eye, FileText, Calendar, User, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
 import { Role, OrderStatus } from '@prisma/client';
 import { normalizeOrder } from '@/lib/orderAdapter';
+import {
+  getAdminOrderStatusVisual,
+  OPERATIONAL_STATUS_FILTERS,
+} from '@/lib/adminOrderStatus';
 
 export const dynamic = 'force-dynamic';
 
-// Status chips with labels, colors and priority order for Isabele's workflow
-const STATUS_CHIPS = [
-    { value: 'ALL', label: 'Todos', color: 'bg-gray-100 text-gray-700 border-gray-200' },
-    { value: 'MANUAL_TRANSLATION_NEEDED', label: '⚠️ Tradução Manual', color: 'bg-orange-100 text-orange-800 border-orange-300' },
-    { value: 'READY_FOR_REVIEW', label: '✅ Pronto p/ Revisão', color: 'bg-teal-100 text-teal-800 border-teal-300' },
-    { value: 'TRANSLATING', label: 'Em Tradução (IA)', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
-    { value: 'PAID', label: 'Pago', color: 'bg-green-100 text-green-800 border-green-200' },
-    { value: 'PENDING', label: 'Pendente', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    { value: 'NOTARIZING', label: 'Notarizando', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    { value: 'COMPLETED', label: 'Concluído', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-];
+const OPERATIONAL_STATUS_SET = new Set(OPERATIONAL_STATUS_FILTERS.map((s) => s.value));
 
-const getStatusColor = (status: string) => {
-    const chip = STATUS_CHIPS.find(c => c.value === status);
-    return chip?.color ?? 'bg-gray-100 text-gray-800 border-gray-200';
-};
+function normalizeStatusFilter(rawStatus?: string): 'ALL' | OrderStatus {
+  if (!rawStatus || rawStatus === 'ALL') return 'ALL';
+  if (rawStatus === 'CANCELLED') return 'CANCELLED';
+  return OPERATIONAL_STATUS_SET.has(rawStatus as OrderStatus)
+    ? (rawStatus as OrderStatus)
+    : 'ALL';
+}
 
 const formatCurrency = (amount: number) => {
-    try {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-            typeof amount === 'number' ? amount : 0
-        );
-    } catch {
-        return '$0.00';
-    }
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+      typeof amount === 'number' ? amount : 0,
+    );
+  } catch {
+    return '$0.00';
+  }
 };
 
-const formatDate = (date: any) => {
-    if (!date) return 'N/A';
-    try {
-        return new Intl.DateTimeFormat('en-US', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-        }).format(new Date(date));
-    } catch {
-        return 'Invalid Date';
-    }
+const formatDate = (date: unknown) => {
+  if (!date) return 'N/A';
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(date as string | number | Date));
+  } catch {
+    return 'Data inválida';
+  }
 };
 
 export default async function AdminOrdersPage({
-    searchParams,
+  searchParams,
 }: {
-    searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-    const currentUser = await getCurrentUser();
+  const currentUser = await getCurrentUser();
 
-    // Safety check for user role
-    if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
-    if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
+  if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
+  if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
 
-    const { status: activeFilter = 'ALL' } = await searchParams;
+  const { status: statusRaw, q: queryRaw } = await searchParams;
+  const activeStatus = normalizeStatusFilter(statusRaw);
+  const searchQuery = typeof queryRaw === 'string' ? queryRaw.trim() : '';
 
-    let rawOrders: any[] = [];
-    try {
-        rawOrders = await prisma.order.findMany({
-            where: activeFilter !== 'ALL' ? { status: activeFilter as OrderStatus } : undefined,
-            select: {
-                id: true,
-                status: true,
-                totalAmount: true,
-                createdAt: true,
-                urgency: true,
-                metadata: true,
-                user: { select: { fullName: true, email: true } },
-                documents: { select: { id: true } },
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 200,
+  if (activeStatus === 'CANCELLED') {
+    const next = searchQuery
+      ? `/admin/orders/cancelados?q=${encodeURIComponent(searchQuery)}`
+      : '/admin/orders/cancelados';
+    redirect(next);
+  }
+
+  let rawOrders: any[] = [];
+  try {
+    rawOrders = await prisma.order.findMany({
+      where:
+        activeStatus === 'ALL'
+          ? { status: { not: 'CANCELLED' } }
+          : { status: activeStatus as OrderStatus },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        createdAt: true,
+        urgency: true,
+        metadata: true,
+        user: { select: { fullName: true, email: true } },
+        documents: { select: { id: true, docType: true, exactNameOnDoc: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 350,
+    });
+  } catch (err) {
+    console.error('[AdminOrdersPage] Database error fetching orders:', err);
+    rawOrders = [];
+  }
+
+  const normalizedOrders = (rawOrders || [])
+    .map((order) => {
+      try {
+        return normalizeOrder(order);
+      } catch (error) {
+        console.error(`Failed to normalize order #${order?.id}:`, error);
+        return null;
+      }
+    })
+    .filter(Boolean) as Array<{
+      id: number;
+      status: string;
+      totalAmount: number;
+      createdAt: string;
+      user: { fullName?: string; email?: string };
+      documents: Array<{ id: number; docType?: string; exactNameOnDoc?: string | null }>;
+    }>;
+
+  const normalizedSearch = searchQuery.toLowerCase();
+  const orders =
+    normalizedSearch.length === 0
+      ? normalizedOrders
+      : normalizedOrders.filter((order) => {
+          const docText = (order.documents ?? [])
+            .map((doc) => `${doc.exactNameOnDoc ?? ''} ${doc.docType ?? ''}`)
+            .join(' ')
+            .toLowerCase();
+          return (
+            String(order.id).includes(normalizedSearch) ||
+            (order.user?.fullName ?? '').toLowerCase().includes(normalizedSearch) ||
+            (order.user?.email ?? '').toLowerCase().includes(normalizedSearch) ||
+            docText.includes(normalizedSearch)
+          );
         });
-    } catch (err) {
-        console.error('[AdminOrdersPage] Database error fetching orders:', err);
-        // Do not throw, return empty list
-        rawOrders = [];
-    }
 
-    // Count per status for chip badges
-    let countsByStatus: Record<string, number> = {};
-    try {
-        if (activeFilter === 'ALL') {
-            const grouped = await prisma.order.groupBy({ by: ['status'], _count: { id: true } });
-            for (const g of grouped) countsByStatus[g.status] = g._count.id;
-        }
-    } catch (err) {
-        console.error('[AdminOrdersPage] Error fetching status counts:', err);
-    }
+  const toolbarStatusValue = activeStatus === 'ALL' ? 'ALL' : activeStatus;
 
-    const orders = (rawOrders || [])
-        .map(o => {
-            try {
-                return normalizeOrder(o);
-            } catch (e) {
-                console.error(`Failed to normalize order #${o?.id}:`, e);
-                return null;
-            }
-        })
-        .filter(Boolean);
-
-    return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
-
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Gerenciamento de Pedidos</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        {activeFilter === 'ALL'
-                            ? `${orders.length} pedidos no total`
-                            : `${orders.length} pedidos com status "${activeFilter.replace(/_/g, ' ')}"`}
-                    </p>
-                </div>
-                <Link
-                    href="/admin/orcamento-manual"
-                    className="inline-flex items-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
-                >
-                    <Plus className="w-5 h-5" />
-                    Gerar Proposta Comercial
-                </Link>
-            </div>
-
-            {/* Quick-filter chips — Server-side navigation */}
-            <div className="flex flex-wrap gap-2">
-                {STATUS_CHIPS.map(chip => {
-                    const isActive = activeFilter === chip.value;
-                    const count = chip.value === 'ALL'
-                        ? Object.values(countsByStatus).reduce((a, b) => a + b, 0)
-                        : countsByStatus[chip.value];
-
-                    return (
-                        <Link
-                            key={chip.value}
-                            href={chip.value === 'ALL' ? '/admin/orders' : `/admin/orders?status=${chip.value}`}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
-                                ? `${chip.color} ring-2 ring-offset-1 ring-current shadow-sm`
-                                : `${chip.color} opacity-60 hover:opacity-100`
-                                }`}
-                        >
-                            {chip.label}
-                            {count !== undefined && (
-                                <span className="bg-white/60 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                                    {count}
-                                </span>
-                            )}
-                        </Link>
-                    );
-                })}
-            </div>
-
-            {/* Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
-                            <tr>
-                                <th className="px-6 py-4 font-medium">ID</th>
-                                <th className="px-6 py-4 font-medium">Cliente</th>
-                                <th className="px-6 py-4 font-medium">Status</th>
-                                <th className="px-6 py-4 font-medium">Data</th>
-                                <th className="px-6 py-4 font-medium">Total</th>
-                                <th className="px-6 py-4 font-medium">Docs</th>
-                                <th className="px-6 py-4 font-medium text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {(orders || []).length === 0 && (
-                                <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400 text-sm">
-                                        Nenhum pedido encontrado para este filtro.
-                                    </td>
-                                </tr>
-                            )}
-                            {(orders || []).map((order: any) => (
-                                <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-900">#{order.id}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                                                <User className="w-4 h-4" />
-                                            </div>
-                                            <div>
-                                                <div className="font-medium text-gray-900 truncate max-w-[150px]" title={order.user?.fullName}>
-                                                    {order.user?.fullName || 'N/A'}
-                                                </div>
-                                                <div className="text-xs text-gray-500 truncate max-w-[150px]" title={order.user?.email}>
-                                                    {order.user?.email || 'N/A'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusColor(order.status)}`}>
-                                            {order.status?.replace(/_/g, ' ') || 'STATUS'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-gray-500">
-                                        <div className="flex items-center gap-2">
-                                            <Calendar className="w-4 h-4 text-gray-400" />
-                                            {formatDate(order.createdAt)}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-gray-900">
-                                        {formatCurrency(order.totalAmount)}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-1 text-gray-500">
-                                            <FileText className="w-4 h-4" />
-                                            <span>{(order.documents || []).length}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <Link
-                                                href={`/admin/orders/${order.id}`}
-                                                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                                            >
-                                                <Eye className="w-3.5 h-3.5" />
-                                                Workbench
-                                            </Link>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Bancada de Pedidos</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {orders.length} pedido(s) operacional(is) encontrado(s)
+          </p>
         </div>
-    );
+        <Link
+          href="/admin/orcamento-manual"
+          className="inline-flex items-center gap-2 bg-[#f58220] hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm w-fit"
+        >
+          <Plus className="w-5 h-5" />
+          Gerar Proposta Comercial
+        </Link>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <form action="/admin/orders" method="get" className="grid gap-3 md:grid-cols-[1fr_260px_auto_auto]">
+          <label className="relative">
+            <span className="sr-only">Buscar pedidos</span>
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Buscar por cliente, pedido ou e-mail"
+              className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f58220]/25 focus:border-[#f58220]"
+            />
+          </label>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-700" htmlFor="status-filter">
+              Status
+            </label>
+            <select
+              id="status-filter"
+              name="status"
+              defaultValue={toolbarStatusValue}
+              className="h-10 rounded-lg border border-gray-300 text-sm text-gray-900 px-3 focus:outline-none focus:ring-2 focus:ring-[#f58220]/25 focus:border-[#f58220]"
+            >
+              <option value="ALL">Todos os status</option>
+              {OPERATIONAL_STATUS_FILTERS.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            className="h-10 px-4 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
+          >
+            Aplicar filtros
+          </button>
+
+          <Link
+            href="/admin/orders"
+            className="h-10 px-4 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors inline-flex items-center justify-center"
+          >
+            Limpar
+          </Link>
+        </form>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-medium">Pedido</th>
+                <th className="px-6 py-4 font-medium">Cliente</th>
+                <th className="px-6 py-4 font-medium">Status</th>
+                <th className="px-6 py-4 font-medium">Criado em</th>
+                <th className="px-6 py-4 font-medium">Total</th>
+                <th className="px-6 py-4 font-medium">Docs</th>
+                <th className="px-6 py-4 font-medium text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {orders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400 text-sm">
+                    Nenhum pedido encontrado para os filtros aplicados.
+                  </td>
+                </tr>
+              )}
+              {orders.map((order) => {
+                const statusVisual = getAdminOrderStatusVisual(order.status);
+                return (
+                  <tr key={order.id} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="px-6 py-4 font-semibold text-gray-900">#{order.id}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 shrink-0">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 truncate max-w-[220px]" title={order.user?.fullName}>
+                            {order.user?.fullName || 'N/A'}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate max-w-[220px]" title={order.user?.email}>
+                            {order.user?.email || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}`}
+                        title={statusVisual.description}
+                      >
+                        {statusVisual.label}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        {formatDate(order.createdAt)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-gray-900">{formatCurrency(order.totalAmount)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1 text-gray-500">
+                        <FileText className="w-4 h-4" />
+                        <span>{(order.documents || []).length}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link
+                        href={`/admin/orders/${order.id}`}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Workbench
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
