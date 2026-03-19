@@ -1612,6 +1612,10 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
   // Typical extraction signatures:
   // PAGE_METADATA / LAYOUT_ZONES / TRANSLATED_CONTENT_BY_ZONE /
   // NON_TEXTUAL_ELEMENTS / RENDERING_HINTS.
+  //
+  // Important anti-overlap rule:
+  // low-confidence EB1 classification must not steal academic/declaration/
+  // certificate-like documents when evidence-photo-specific cues are weak.
   const eb1EvidenceSignals: RegExp[] = [
     /\bevidence\s*\d{1,3}\b/i,
     /\bpage_metadata\b/i,
@@ -1646,20 +1650,93 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     /\bz_photo_gallery\b/i.test(text) ||
     /\bz_top_photo_gallery\b/i.test(text) ||
     /\bphoto (?:gallery|block|arrangement)\b/i.test(text);
+  const hasHighlightSignals =
+    /\bhighlight marker\b/i.test(text) ||
+    /\byellow arrow\b/i.test(text);
+  const hasEb1ContextMarker = /\beb-?1\b/i.test(text);
 
   const eb1EvidenceCombo = hasEvidenceTitle && hasZoneBlueprintCore && hasPhotoZoneSignals;
+  const eb1SpecificHits = [
+    hasEvidenceTitle,
+    hasPhotoZoneSignals,
+    hasHighlightSignals,
+    hasEb1ContextMarker,
+  ].filter(Boolean).length;
+
+  // Strong negatives for low-confidence EB1 routing.
+  const hasAcademicOrDocumentaryNegative =
+    /\bdiploma\b/i.test(text) ||
+    /\bdegree certificate\b/i.test(text) ||
+    /\bacademic transcript\b/i.test(text) ||
+    /\bschool record\b/i.test(text) ||
+    /\bacademic record\b/i.test(text) ||
+    /\bcertificate of enrollment\b/i.test(text) ||
+    /\benrollment certificate\b/i.test(text) ||
+    /\bproof of enrollment\b/i.test(text) ||
+    /\bdeclaration of enrollment\b/i.test(text) ||
+    /\benrollment declaration\b/i.test(text) ||
+    /\bacademic declaration\b/i.test(text) ||
+    /\bacademic (?:office|affairs|year|secretary)\b/i.test(text) ||
+    /\bregistrar(?:'s)? office\b/i.test(text);
+
+  const hasDeclarationOrLetterNegative =
+    /\bdeclaration\b/i.test(text) ||
+    /\bstatement\b/i.test(text) ||
+    /\brecommendation letter\b/i.test(text) ||
+    /\breference letter\b/i.test(text) ||
+    /\bsupport letter\b/i.test(text) ||
+    /\barticle acceptance\b/i.test(text) ||
+    /\baccepted for publication\b/i.test(text) ||
+    /\bto whom it may concern\b/i.test(text);
+
+  const hasCertificateNegative =
+    /\bcertificate\b/i.test(text) ||
+    /\bcertification\b/i.test(text) ||
+    /\bcourse completion statement\b/i.test(text) ||
+    /\bcompletion declaration\b/i.test(text) ||
+    /\bcertificate of (?:completion|participation|training|attendance|achievement)\b/i.test(text);
+
+  const hasEb1NegativeContext =
+    hasAcademicOrDocumentaryNegative ||
+    hasDeclarationOrLetterNegative ||
+    hasCertificateNegative;
+
+  const eb1LowConfidenceCandidate = eb1EvidenceHits >= 2 && !eb1EvidenceCombo;
+  const eb1SpecificSignalsWeak = eb1SpecificHits < 2;
+  const shouldBlockEb1LowConfidence =
+    eb1LowConfidenceCandidate &&
+    hasEb1NegativeContext &&
+    eb1SpecificSignalsWeak;
 
   if (eb1EvidenceHits > 0 || eb1EvidenceCombo) {
     console.log(
       `[documentClassifier] eb1 evidence-photo signals matched: ${eb1EvidenceHits}` +
-      (eb1EvidenceCombo ? ' | combination rule: title+zone-blueprint+photo-zones' : ''),
+      (eb1EvidenceCombo ? ' | combination rule: title+zone-blueprint+photo-zones' : '') +
+      (eb1SpecificHits > 0 ? ` | specific-signals: ${eb1SpecificHits}` : ''),
     );
   }
 
-  if (eb1EvidenceHits >= 4 || eb1EvidenceCombo) {
+  if (eb1EvidenceCombo || (eb1EvidenceHits >= 4 && eb1SpecificHits >= 2)) {
     return { documentType: 'eb1_evidence_photo_sheet', confidence: 'heuristic-high' };
   }
-  if (eb1EvidenceHits >= 2) {
+
+  if (shouldBlockEb1LowConfidence) {
+    console.log(
+      '[documentClassifier] eb1 evidence-photo low-confidence candidate blocked by academic/declaration/certificate negatives',
+    );
+
+    if (hasAcademicOrDocumentaryNegative) {
+      return { documentType: 'academic_record_general', confidence: 'heuristic-low' };
+    }
+    if (hasDeclarationOrLetterNegative) {
+      return { documentType: 'letters_and_statements', confidence: 'heuristic-low' };
+    }
+    if (hasCertificateNegative) {
+      return { documentType: 'course_certificate_landscape', confidence: 'heuristic-low' };
+    }
+  }
+
+  if (eb1EvidenceHits >= 2 && eb1SpecificHits >= 2) {
     return { documentType: 'eb1_evidence_photo_sheet', confidence: 'heuristic-low' };
   }
 
