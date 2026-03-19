@@ -285,7 +285,12 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                     <ConfirmPaymentButton
                                         order={order as any}
                                         confirmedByName={currentUser?.fullName || 'Analista'}
-                                        onConfirmed={() => onUpdate({ ...order, status: 'TRANSLATING' })}
+                                        onConfirmed={(result) =>
+                                            onUpdate({
+                                                ...order,
+                                                status: (result?.operationalStatus as any) || order.status,
+                                            })
+                                        }
                                     />
                                 </div>
                             </div>

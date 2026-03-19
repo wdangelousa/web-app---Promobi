@@ -1,53 +1,29 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
-import { CheckCircle } from 'lucide-react'
-import { approvePaymentManually } from '../../../../actions/manualPaymentBypass'
+import RegisterManualPaymentButton from '@/components/admin/RegisterManualPaymentButton'
+import { type FinancialStatus } from '@/lib/manualPayment'
 
 interface ManualApprovalButtonProps {
     orderId: number
+    orderTotal: number
+    amountAlreadyReceived: number
+    currentFinancialStatus: FinancialStatus
 }
 
-export default function ManualApprovalButton({ orderId }: ManualApprovalButtonProps) {
-    const router = useRouter()
-    const [isPending, startTransition] = useTransition()
-    const [isBypassing, setIsBypassing] = useState(false)
-
-    const handleBypass = () => {
-        if (!confirm("Aprovar transação MANUALMENTE e acionar a Inteligência Artificial (DeepL)?")) return;
-
-        setIsBypassing(true)
-
-        startTransition(async () => {
-            try {
-                const result = await approvePaymentManually(orderId);
-
-                if (result.success) {
-                    // Feedback: Exiba um Toast de sucesso e em seguida propague o refresh
-                    alert(result.message);
-                    router.refresh();
-                } else {
-                    alert("Erro da API: " + result.message);
-                }
-            } catch (err: any) {
-                console.error("Erro no Bypass Manual:", err);
-                alert("Erro de execução: " + (err.message || "Falha na conexão com servidor."));
-            } finally {
-                setIsBypassing(false)
-            }
-        })
-    }
-
-    const isLoading = isPending || isBypassing
-
+export default function ManualApprovalButton({
+    orderId,
+    orderTotal,
+    amountAlreadyReceived,
+    currentFinancialStatus,
+}: ManualApprovalButtonProps) {
     return (
-        <button
-            onClick={handleBypass}
-            disabled={isLoading}
-            className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-            <CheckCircle className="h-3 w-3" /> {isLoading ? 'Aprovando e Traduzindo...' : 'Aprovar Pagamento (Manual)'}
-        </button>
+        <RegisterManualPaymentButton
+            orderId={orderId}
+            orderTotal={orderTotal}
+            amountAlreadyReceived={amountAlreadyReceived}
+            currentFinancialStatus={currentFinancialStatus}
+            triggerLabel="Register manual payment"
+            triggerClassName="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+        />
     )
 }

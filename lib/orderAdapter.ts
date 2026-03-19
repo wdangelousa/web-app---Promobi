@@ -21,6 +21,8 @@ export interface NormalizedOrder {
     deliveryUrl?: string | null;
     hasTranslation: boolean;
     hasNotary: boolean;
+    finalPaidAmount?: number | null;
+    paymentMethod?: string | null;
 }
 
 /**
@@ -96,5 +98,7 @@ export function normalizeOrder(order: any): NormalizedOrder {
         deliveryUrl: order.deliveryUrl ? String(order.deliveryUrl) : null,
         hasTranslation: order.hasTranslation !== undefined ? !!order.hasTranslation : true,
         hasNotary: order.hasNotary !== undefined ? !!order.hasNotary : false,
+        finalPaidAmount: typeof order.finalPaidAmount === 'number' ? order.finalPaidAmount : null,
+        paymentMethod: order.paymentMethod ? String(order.paymentMethod) : null,
     };
 }

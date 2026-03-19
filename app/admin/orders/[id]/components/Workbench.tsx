@@ -8,6 +8,7 @@ import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
 import { readDocumentDeliveryStatusRegistry } from '@/lib/translationArtifactSource'
+import { readFinancialLedger } from '@/lib/manualPayment'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -145,6 +146,15 @@ export default function Workbench({ order }: { order: Order }) {
     const hasAnySentDocs = sentDocumentCount > 0
     const hasPartialDelivery = hasAnySentDocs && sentDocumentCount < totalDocumentCount
     const isPaid = !['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status)
+    const financialSnapshot = useMemo(
+        () =>
+            readFinancialLedger(
+                (order.metadata ?? {}) as Record<string, unknown>,
+                order.totalAmount ?? 0,
+                typeof order.finalPaidAmount === 'number' ? order.finalPaidAmount : null,
+            ),
+        [order.metadata, order.totalAmount, order.finalPaidAmount],
+    )
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
     const justTranslatedRef = useRef<string | null>(null)
@@ -688,7 +698,14 @@ export default function Workbench({ order }: { order: Order }) {
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
                         <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><UploadCloud className="h-3.5 w-3.5" /> PDF Externo</button>
 
-                        {(order.status === 'PENDING' || order.status === 'PENDING_PAYMENT') && <ManualApprovalButton orderId={order.id} />}
+                        {order.status !== 'CANCELLED' && (
+                            <ManualApprovalButton
+                                orderId={order.id}
+                                orderTotal={order.totalAmount}
+                                amountAlreadyReceived={financialSnapshot.amountReceived}
+                                currentFinancialStatus={financialSnapshot.status}
+                            />
+                        )}
                         <button onClick={() => setShowFinancialModal(true)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors border border-emerald-200"><DollarSign className="h-3.5 w-3.5" /> Ajuste Financeiro</button>
                     </div>
                 </div>
