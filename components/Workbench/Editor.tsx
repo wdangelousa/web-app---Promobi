@@ -11,11 +11,11 @@ interface EditorProps {
     content: string
     setContent: (content: string) => void
     pdfUrl?: string
-    translatedPdfUrl?: string | null
+    externalTranslationUrl?: string | null
     onSave?: (translatedPageCount?: number) => void
     onPreviewKit?: (translatedPageCount?: number, lang?: string) => void
     onApprove?: () => void
-    onUploadExternalPdf?: (file: File) => Promise<void>
+    onAttachPlanBPdf?: (file: File) => Promise<void>
     onRemoveExternalPdf?: () => Promise<void>
     isPreviewingKit?: boolean
     orderId?: number
@@ -27,11 +27,11 @@ export default function Editor({
     content,
     setContent,
     pdfUrl,
-    translatedPdfUrl,
+    externalTranslationUrl,
     onSave,
     onPreviewKit,
     onApprove,
-    onUploadExternalPdf,
+    onAttachPlanBPdf,
     onRemoveExternalPdf,
     isPreviewingKit,
     orderId,
@@ -74,10 +74,10 @@ export default function Editor({
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
-        if (file && onUploadExternalPdf) {
+        if (file && onAttachPlanBPdf) {
             setIsUploading(true)
             try {
-                await onUploadExternalPdf(file)
+                await onAttachPlanBPdf(file)
             } finally {
                 setIsUploading(false)
             }
@@ -106,7 +106,7 @@ export default function Editor({
                         {showReference ? '⬅ Ocultar Documento Original' : '📄 Ver Documento Original'}
                     </button>
 
-                    {!translatedPdfUrl && onUploadExternalPdf && (
+                    {!externalTranslationUrl && onAttachPlanBPdf && (
                         <>
                             <input type="file" accept="application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
                             <button
@@ -179,17 +179,17 @@ export default function Editor({
 
                 {/* Right panel: editor or external PDF */}
                 <div className={`h-full relative overflow-auto bg-gray-100 flex flex-col ${showReference ? 'w-1/2' : 'w-full'}`}>
-                    {translatedPdfUrl ? (
+                    {externalTranslationUrl ? (
                         <div className="flex flex-col h-full w-full">
                             <div className="bg-amber-100 text-amber-900 px-6 py-2 text-sm flex justify-between items-center border-b border-amber-300 shrink-0">
-                                <span className="font-medium">⚠️ PDF externo ativo — editor de texto desabilitado.</span>
+                                <span className="font-medium">External PDF active — structured translation is bypassed</span>
                                 {onRemoveExternalPdf && (
                                     <button onClick={handleRemoveFile} disabled={isUploading} className="underline font-bold hover:text-amber-950 disabled:opacity-50">
                                         {isUploading ? 'Removendo...' : '🗑️ Remover e voltar ao editor'}
                                     </button>
                                 )}
                             </div>
-                            <iframe src={translatedPdfUrl} className="w-full flex-1 border-none" title="Tradução Externa" />
+                            <iframe src={externalTranslationUrl} className="w-full flex-1 border-none" title="Tradução Externa" />
                         </div>
                     ) : (
                         <div className="flex justify-center py-8 px-4 min-h-full">

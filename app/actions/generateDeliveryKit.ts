@@ -15,8 +15,14 @@ import {
 import {
   assertStructuredClientFacingRender,
   formatStructuredRenderingFailureMessage,
+  type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
 } from "@/services/structuredDocumentRenderer";
+import {
+  parseOrderMetadata,
+  resolveTranslationArtifactSelection,
+  upsertDeliveryArtifactRegistryRecord,
+} from "@/lib/translationArtifactSource";
 
 interface DeliveryKitResult {
   success: boolean;
@@ -31,6 +37,26 @@ interface DeliveryKitResult {
 interface GenerateOptions {
   preview?: boolean;
   coverLanguage?: string;
+}
+
+function buildExternalOverrideLanguageIntegrity(
+  sourceLanguage?: string | null,
+): StructuredRenderLanguageIntegrity {
+  return {
+    targetLanguage: 'EN',
+    sourceLanguage: (sourceLanguage ?? 'unknown').toUpperCase(),
+    translatedPayloadFound: true,
+    translatedZonesCount: null,
+    sourceZonesCount: null,
+    missingTranslatedZones: [],
+    sourceContentAttempted: false,
+    sourceLanguageMarkers: [],
+    requiredZones: [],
+    translatedZonesFound: [],
+    sourceLanguageContaminatedZones: [],
+    mappedGenericZones: [],
+    languageIssueType: 'none',
+  };
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -63,12 +89,40 @@ export async function generateDeliveryKit(
     }
 
     const doc = order.documents[0];
-
-    if (!doc.translatedText) {
-      return { success: false, error: `Document ${documentId} has no translatedText.` };
-    }
-
     const logPrefix = `[generateDeliveryKit] Order #${orderId} Doc #${documentId}`;
+
+    const artifactSelection = resolveTranslationArtifactSelection({
+      externalTranslationUrl: doc.externalTranslationUrl,
+      translatedText: doc.translatedText,
+      translatedFileUrl: doc.translatedFileUrl,
+    });
+
+    console.log(
+      `${logPrefix} — translation artifact selection: ${JSON.stringify({
+        orderId,
+        docId: documentId,
+        surface: preview ? "preview-kit" : "delivery-kit",
+        externalTranslationUrlPresent: artifactSelection.externalTranslationUrlPresent
+          ? "yes"
+          : "no",
+        selectedTranslationArtifactSource: artifactSelection.source,
+        selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+        deliveryUsedExternalPdf:
+          artifactSelection.source === "external_pdf" ? "yes" : "no",
+      })}`,
+    );
+
+    if (
+      artifactSelection.source !== "external_pdf" &&
+      !doc.translatedText
+    ) {
+      return {
+        success: false,
+        error:
+          `Document ${documentId} has no translatedText for internal structured rendering ` +
+          `and no active external translation override.`,
+      };
+    }
 
     // ── Step 1: Fetch original file ───────────────────────────────────────────
     let originalFileBuffer: ArrayBuffer = new ArrayBuffer(0);
@@ -125,91 +179,152 @@ export async function generateDeliveryKit(
 
     // ── Step 4: Resolve delivery PDF under strict structured invariant ───────
     let finalPdfBuffer: Buffer;
+    const coverVariant: "pt-en" | "es-en" =
+      (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
     try {
-      const renderAssertion = assertStructuredClientFacingRender({
-        documentType: classification.documentType,
-        documentLabel: documentLabelHint,
-        fileUrl: doc.originalFileUrl,
-        translatedText: doc.translatedText,
-        detectedOrientation,
-        surface: "delivery-kit",
-        logPrefix,
-      });
+      if (
+        artifactSelection.source === "external_pdf" &&
+        artifactSelection.selectedArtifactUrl
+      ) {
+        const externalRes = await fetch(artifactSelection.selectedArtifactUrl);
+        if (!externalRes.ok) {
+          return {
+            success: false,
+            error: `External translated PDF fetch failed (${externalRes.status}).`,
+          };
+        }
 
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const resolved = await renderStructuredFamilyDocument({
-        client,
-        family: renderAssertion.family,
-        documentType: renderAssertion.documentType,
-        originalFileBuffer,
-        originalFileUrl: doc.originalFileUrl,
-        contentType,
-        sourcePageCount,
-        detectedOrientation,
-        orderId,
-        documentId,
-        sourceLanguage: doc.sourceLanguage ?? null,
-        targetLanguage: 'EN',
-        logPrefix,
-      });
+        const externalTranslatedPdfBuffer = await externalRes.arrayBuffer();
+        if (externalTranslatedPdfBuffer.byteLength === 0) {
+          return { success: false, error: "External translated PDF is empty." };
+        }
 
-      const orientationForKit = resolved.orientationForKit;
-      const coverVariant: "pt-en" | "es-en" =
-        (doc.sourceLanguage ?? "").toUpperCase() === "ES" ? "es-en" : "pt-en";
+        const buildResult = await buildStructuredKitBuffer({
+          structuredHtml: "",
+          externalTranslatedPdfBuffer,
+          originalFileBuffer,
+          isOriginalPdf,
+          orderId,
+          documentId,
+          sourceLanguage: doc.sourceLanguage ?? undefined,
+          targetLanguage: "EN",
+          coverVariant,
+          orientation: detectedOrientation === "landscape" ? "landscape" : undefined,
+          documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
+          sourcePageCount,
+          documentFamily: "external_translation",
+          rendererName: "externalPdfOverride",
+          surface: preview ? "preview-kit" : "delivery-kit",
+          compactionAttempted: false,
+          languageIntegrity: buildExternalOverrideLanguageIntegrity(
+            doc.sourceLanguage ?? null,
+          ),
+        });
 
-      const buildResult = await buildStructuredKitBuffer({
-        structuredHtml: resolved.structuredHtml,
-        originalFileBuffer,
-        isOriginalPdf,
-        orderId,
-        documentId,
-        sourceLanguage: doc.sourceLanguage ?? undefined,
-        targetLanguage: resolved.languageIntegrity.targetLanguage,
-        coverVariant,
-        orientation: orientationForKit === "landscape" ? "landscape" : undefined,
-        documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
-        sourcePageCount,
-        documentFamily: renderAssertion.family,
-        rendererName: resolved.rendererName,
-        surface: preview ? "preview-kit" : "delivery-kit",
-        compactionAttempted: false,
-        languageIntegrity: resolved.languageIntegrity,
-      });
+        if (!buildResult.success || !buildResult.kitBuffer) {
+          const parityDetail =
+            buildResult.blockingReason === "page_parity_mismatch"
+              ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
+              : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
+                ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+                : "";
+          return {
+            success: false,
+            error:
+              `Structured delivery kit assembly failed for external translated PDF.` +
+              parityDetail +
+              ` Check server logs for parity diagnostics and kit assembly details.`,
+          };
+        }
 
-      if (!buildResult.success || !buildResult.kitBuffer) {
-        const parityDetail =
-          buildResult.blockingReason === "page_parity_mismatch"
-            ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
-            : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
-              ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
-              : buildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
-                ? " Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface."
-              : "";
-        return {
-          success: false,
-          error:
-            `Structured delivery kit assembly failed for "${classification.documentType}". ` +
-            `Client-facing translated output is blocked by invariant.` +
-            parityDetail +
-            ` Check server logs for parity diagnostics and kit assembly details.`,
-        };
+        finalPdfBuffer = buildResult.kitBuffer;
+        console.log(
+          `${logPrefix} — external translation override applied for ${preview ? "preview kit" : "delivery kit"}`,
+        );
+      } else {
+        const renderAssertion = assertStructuredClientFacingRender({
+          documentType: classification.documentType,
+          documentLabel: documentLabelHint,
+          fileUrl: doc.originalFileUrl,
+          translatedText: doc.translatedText,
+          detectedOrientation,
+          surface: "delivery-kit",
+          logPrefix,
+        });
+
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const resolved = await renderStructuredFamilyDocument({
+          client,
+          family: renderAssertion.family,
+          documentType: renderAssertion.documentType,
+          originalFileBuffer,
+          originalFileUrl: doc.originalFileUrl,
+          contentType,
+          sourcePageCount,
+          detectedOrientation,
+          orderId,
+          documentId,
+          sourceLanguage: doc.sourceLanguage ?? null,
+          targetLanguage: 'EN',
+          logPrefix,
+        });
+
+        const orientationForKit = resolved.orientationForKit;
+
+        const buildResult = await buildStructuredKitBuffer({
+          structuredHtml: resolved.structuredHtml,
+          originalFileBuffer,
+          isOriginalPdf,
+          orderId,
+          documentId,
+          sourceLanguage: doc.sourceLanguage ?? undefined,
+          targetLanguage: resolved.languageIntegrity.targetLanguage,
+          coverVariant,
+          orientation: orientationForKit === "landscape" ? "landscape" : undefined,
+          documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
+          sourcePageCount,
+          documentFamily: renderAssertion.family,
+          rendererName: resolved.rendererName,
+          surface: preview ? "preview-kit" : "delivery-kit",
+          compactionAttempted: false,
+          languageIntegrity: resolved.languageIntegrity,
+        });
+
+        if (!buildResult.success || !buildResult.kitBuffer) {
+          const parityDetail =
+            buildResult.blockingReason === "page_parity_mismatch"
+              ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
+              : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
+                ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
+                : buildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
+                  ? " Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface."
+                : "";
+          return {
+            success: false,
+            error:
+              `Structured delivery kit assembly failed for "${classification.documentType}". ` +
+              `Client-facing translated output is blocked by invariant.` +
+              parityDetail +
+              ` Check server logs for parity diagnostics and kit assembly details.`,
+          };
+        }
+
+        finalPdfBuffer = buildResult.kitBuffer;
+        console.log(
+          `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
+            `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
+            `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
+            `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
+            `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
+            `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
+            `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
+            `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
+            `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
+            `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
+            `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
+            `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
+        );
       }
-
-      finalPdfBuffer = buildResult.kitBuffer;
-      console.log(
-        `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
-          `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
-          `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
-          `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
-          `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
-          `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
-          `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
-          `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
-          `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
-          `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
-          `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
-          `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
-      );
     } catch (err) {
       return {
         success: false,
@@ -247,13 +362,48 @@ export async function generateDeliveryKit(
 
     // ── Step 7: DB update (official delivery only) ────────────────────────────
     if (!preview) {
-      await prisma.document.update({
-        where: { id: documentId },
-        data: {
-          delivery_pdf_url: urlData.publicUrl,
-          translation_status: "approved",
+      const metadata = parseOrderMetadata(order.metadata as string | null | undefined);
+      const nextMetadata = upsertDeliveryArtifactRegistryRecord(
+        metadata,
+        documentId,
+        {
+          source: artifactSelection.source,
+          selectedArtifactUrl: artifactSelection.selectedArtifactUrl,
+          deliveryPdfUrl: urlData.publicUrl,
+          generatedAt: new Date().toISOString(),
         },
-      });
+      );
+
+      await prisma.$transaction([
+        prisma.document.update({
+          where: { id: documentId },
+          data: {
+            delivery_pdf_url: urlData.publicUrl,
+            translation_status: "approved",
+          },
+        }),
+        prisma.order.update({
+          where: { id: orderId },
+          data: {
+            metadata: JSON.stringify(nextMetadata),
+          },
+        }),
+      ]);
+
+      console.log(
+        `${logPrefix} — delivery artifact persisted: ${JSON.stringify({
+          orderId,
+          docId: documentId,
+          externalTranslationUrlPresent: artifactSelection.externalTranslationUrlPresent
+            ? "yes"
+            : "no",
+          selectedTranslationArtifactSource: artifactSelection.source,
+          selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+          selectedDeliveryArtifactUrl: urlData.publicUrl,
+          deliveryUsedExternalPdf:
+            artifactSelection.source === "external_pdf" ? "yes" : "no",
+        })}`,
+      );
       revalidatePath(`/admin/orders/${orderId}`);
       revalidatePath("/admin/orders");
     }

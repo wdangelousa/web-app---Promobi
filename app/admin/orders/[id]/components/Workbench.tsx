@@ -250,17 +250,18 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
-    const handleUploadExternalFile = async (file: File) => {
+    const handleAttachPlanBFile = async (file: File) => {
         if (!selectedDoc) return
-        setIsUploadingExternal(true)
+        if (!confirm('Tem certeza? Isso substituirá o arquivo original do documento por esta versão (Plano B).')) return
+        setIsReplacing(true)
         try {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
-            const { uploadExternalTranslation } = await import('../../../../actions/uploadExternal')
-            const res = await uploadExternalTranslation(formData)
+            const { replaceOriginalDocument } = await import('../../../../actions/replaceOriginalDocument')
+            const res = await replaceOriginalDocument(formData)
             if (res.success) {
-                setOptimisticExternalUrl(res.url ?? null)
+                alert('Documento original substituído (Plano B) com sucesso!')
                 router.refresh()
             } else {
                 alert('Erro no upload: ' + res.error)
@@ -268,7 +269,7 @@ export default function Workbench({ order }: { order: Order }) {
         } catch (err: any) {
             alert('Erro inesperado: ' + err.message)
         } finally {
-            setIsUploadingExternal(false)
+            setIsReplacing(false)
         }
     }
 
@@ -320,7 +321,7 @@ export default function Workbench({ order }: { order: Order }) {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
-            const { replaceOriginalDocument } = await import('../../../../actions/documents')
+            const { replaceOriginalDocument } = await import('../../../../actions/replaceOriginalDocument')
             const res = await replaceOriginalDocument(formData)
             if (res.success) router.refresh()
             else alert('Erro ao substituir original: ' + res.error)
@@ -522,8 +523,8 @@ export default function Workbench({ order }: { order: Order }) {
                         onPreviewKit={handlePreviewKit}
                         isPreviewingKit={isPreviewingKit}
                         onApprove={handleApproveDoc}
-                        translatedPdfUrl={optimisticExternalUrl}
-                        onUploadExternalPdf={handleUploadExternalFile}
+                        externalTranslationUrl={optimisticExternalUrl}
+                        onAttachPlanBPdf={handleAttachPlanBFile}
                         onRemoveExternalPdf={handleRemoveExternal}
                         orderId={order.id}
                         documentType={selectedDoc.docType ?? undefined}

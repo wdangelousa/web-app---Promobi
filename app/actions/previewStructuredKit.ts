@@ -45,6 +45,96 @@ import {
   type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
 } from '@/services/structuredDocumentRenderer';
+import { resolveTranslationArtifactSelection } from '@/lib/translationArtifactSource';
+
+function buildExternalOverrideLanguageIntegrity(
+  sourceLanguage?: string | null,
+): StructuredRenderLanguageIntegrity {
+  return {
+    targetLanguage: 'EN',
+    sourceLanguage: (sourceLanguage ?? 'unknown').toUpperCase(),
+    translatedPayloadFound: true,
+    translatedZonesCount: null,
+    sourceZonesCount: null,
+    missingTranslatedZones: [],
+    sourceContentAttempted: false,
+    sourceLanguageMarkers: [],
+    requiredZones: [],
+    translatedZonesFound: [],
+    sourceLanguageContaminatedZones: [],
+    mappedGenericZones: [],
+    languageIssueType: 'none',
+  };
+}
+
+async function generatePreviewFromExternalPdf(params: {
+  orderId: number;
+  documentId: number;
+  logPrefix: string;
+  externalTranslationUrl: string;
+  sourceLanguage?: string | null;
+  docTypeLabel: string;
+  coverVariant: 'pt-en' | 'es-en';
+  originalFileBuffer: ArrayBuffer;
+  isOriginalPdf: boolean;
+  sourcePageCount?: number;
+  orientation: DocumentOrientation;
+}): Promise<{ success: boolean; previewUrl?: string; error?: string }> {
+  const res = await fetch(params.externalTranslationUrl);
+  if (!res.ok) {
+    return {
+      success: false,
+      error: `External translated PDF fetch failed (${res.status}).`,
+    };
+  }
+
+  const externalPdfBuffer = await res.arrayBuffer();
+  if (externalPdfBuffer.byteLength === 0) {
+    return { success: false, error: 'External translated PDF is empty.' };
+  }
+
+  const kit = await assembleStructuredPreviewKit({
+    structuredHtml: '',
+    externalTranslatedPdfBuffer: externalPdfBuffer,
+    originalFileBuffer: params.originalFileBuffer,
+    isOriginalPdf: params.isOriginalPdf,
+    orderId: params.orderId,
+    documentId: params.documentId,
+    sourceLanguage: params.sourceLanguage ?? 'pt',
+    targetLanguage: 'EN',
+    coverVariant: params.coverVariant,
+    documentTypeLabel: params.docTypeLabel,
+    sourcePageCount: params.sourcePageCount,
+    orientation: params.orientation === 'landscape' ? 'landscape' : undefined,
+    documentFamily: 'external_translation',
+    rendererName: 'externalPdfOverride',
+    surface: 'preview-kit',
+    compactionAttempted: false,
+    languageIntegrity: buildExternalOverrideLanguageIntegrity(params.sourceLanguage),
+  });
+
+  if (!kit.assembled) {
+    const detail =
+      kit.blockingReason === 'page_parity_mismatch'
+        ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
+        : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
+          ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
+          : '';
+    return {
+      success: false,
+      error:
+        `Structured preview kit assembly failed for external translated PDF.` +
+        detail +
+        ` Check server logs for parity diagnostics and kit assembly details.`,
+    };
+  }
+
+  console.log(`${params.logPrefix} — external translation override applied for preview kit`);
+  return {
+    success: true,
+    previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+  };
+}
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -76,6 +166,8 @@ export async function previewStructuredKit(
       select: {
         id: true,
         translatedText: true,
+        translatedFileUrl: true,
+        externalTranslationUrl: true,
         originalFileUrl: true,
         sourceLanguage: true,
         docType: true,
@@ -86,6 +178,27 @@ export async function previewStructuredKit(
     if (!doc) {
       return { success: false, error: `Document #${documentId} not found` };
     }
+
+    const artifactSelection = resolveTranslationArtifactSelection({
+      externalTranslationUrl: doc.externalTranslationUrl,
+      translatedText: doc.translatedText,
+      translatedFileUrl: doc.translatedFileUrl,
+    });
+
+    console.log(
+      `${logPrefix} — translation artifact selection: ${JSON.stringify({
+        orderId,
+        docId: documentId,
+        surface: 'preview-kit',
+        externalTranslationUrlPresent: artifactSelection.externalTranslationUrlPresent
+          ? 'yes'
+          : 'no',
+        selectedTranslationArtifactSource: artifactSelection.source,
+        selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+        previewUsedExternalPdf:
+          artifactSelection.source === 'external_pdf' ? 'yes' : 'no',
+      })}`,
+    );
 
     // Resolve translated content: editor (most current) › saved DB record › absent
     const effectiveTranslatedText: string | null =
@@ -146,6 +259,26 @@ export async function previewStructuredKit(
       } catch {
         console.warn(`${logPrefix} — PDF metadata extraction failed`);
       }
+    }
+
+    // ── External translated PDF override ─────────────────────────────────────
+    if (
+      artifactSelection.source === 'external_pdf' &&
+      artifactSelection.selectedArtifactUrl
+    ) {
+      return await generatePreviewFromExternalPdf({
+        orderId,
+        documentId,
+        logPrefix,
+        externalTranslationUrl: artifactSelection.selectedArtifactUrl,
+        sourceLanguage: doc.sourceLanguage,
+        docTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
+        coverVariant,
+        originalFileBuffer,
+        isOriginalPdf,
+        sourcePageCount,
+        orientation: detectedOrientation,
+      });
     }
 
     // ── Step 3: Classify document type ──────────────────────────────────────

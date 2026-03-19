@@ -19,6 +19,11 @@ import {
   getStructuredRendererName,
   isSupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer'
+import {
+  getDeliveryArtifactRegistryRecord,
+  parseOrderMetadata,
+  resolveTranslationArtifactSelection,
+} from '@/lib/translationArtifactSource'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -33,6 +38,12 @@ function isStructuredDeliveryArtifactUrl(url: string | null | undefined, orderId
   const hasExpectedFilename = normalized.includes(expectedFilename)
 
   return hasCompletedPath && hasTranslationsBucket && hasExpectedFilename
+}
+
+function normalizeNullableUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : null
 }
 
 interface ReleasePageParityDiagnostics {
@@ -182,6 +193,8 @@ export async function releaseToClient(
             docType: true,
             originalFileUrl: true,
             translatedText: true,
+            translatedFileUrl: true,
+            externalTranslationUrl: true,
             sourceLanguage: true,
             delivery_pdf_url: true,
             translation_status: true,
@@ -191,6 +204,8 @@ export async function releaseToClient(
     })
 
     if (!order) return { success: false, error: `Pedido #${orderId} não encontrado.` }
+
+    const parsedOrderMetadata = parseOrderMetadata(order.metadata as string | null | undefined)
 
     // Safety check: all docs must be approved AND have structured-generated delivery artifacts.
     const notReady = order.documents.filter((d) => {
@@ -222,7 +237,86 @@ export async function releaseToClient(
       translatedPageCount: number | null
     }> = []
 
+    const artifactSourceFailures: Array<{
+      docId: number
+      reason: string
+      expectedSource: string
+      recordedSource: string | null
+    }> = []
+
     for (const d of order.documents) {
+      const artifactSelection = resolveTranslationArtifactSelection({
+        externalTranslationUrl: d.externalTranslationUrl,
+        translatedText: d.translatedText,
+        translatedFileUrl: d.translatedFileUrl,
+      })
+      const artifactRecord = getDeliveryArtifactRegistryRecord(parsedOrderMetadata, d.id)
+      const normalizedDeliveryUrl = normalizeNullableUrl(d.delivery_pdf_url)
+      const normalizedRecordedDeliveryUrl = normalizeNullableUrl(artifactRecord?.deliveryPdfUrl ?? null)
+      const normalizedRecordedSelectedArtifactUrl = normalizeNullableUrl(
+        artifactRecord?.selectedArtifactUrl ?? null,
+      )
+      const normalizedCurrentSelectedArtifactUrl = normalizeNullableUrl(
+        artifactSelection.selectedArtifactUrl,
+      )
+
+      const sourceMismatch =
+        artifactRecord !== null && artifactRecord.source !== artifactSelection.source
+      const deliveryUrlMismatch =
+        artifactRecord !== null && normalizedRecordedDeliveryUrl !== normalizedDeliveryUrl
+      const externalSelectionMismatch =
+        artifactSelection.source === 'external_pdf' &&
+        normalizedRecordedSelectedArtifactUrl !== normalizedCurrentSelectedArtifactUrl
+
+      const sourceConsistencyPass =
+        artifactRecord !== null &&
+        !sourceMismatch &&
+        !deliveryUrlMismatch &&
+        !externalSelectionMismatch
+
+      const sendToClientUsesExternalPdf =
+        artifactSelection.source === 'external_pdf' && sourceConsistencyPass
+
+      console.log(
+        `[releaseToClient] translation artifact selection: ${JSON.stringify({
+          orderId,
+          docId: d.id,
+          externalTranslationUrlPresent: artifactSelection.externalTranslationUrlPresent
+            ? 'yes'
+            : 'no',
+          selectedTranslationArtifactSource: artifactSelection.source,
+          selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+          selectedDeliveryArtifactUrl: d.delivery_pdf_url,
+          sendToClientUsedExternalPdf: sendToClientUsesExternalPdf ? 'yes' : 'no',
+          artifactRecordFound: artifactRecord ? 'yes' : 'no',
+        })}`,
+      )
+
+      if (
+        sourceMismatch ||
+        deliveryUrlMismatch ||
+        externalSelectionMismatch ||
+        (artifactSelection.source === 'external_pdf' && artifactRecord === null)
+      ) {
+        let reason = 'translation_artifact_source_mismatch'
+        if (artifactSelection.source === 'external_pdf' && artifactRecord === null) {
+          reason = 'external_pdf_selected_but_delivery_artifact_not_regenerated'
+        } else if (sourceMismatch) {
+          reason = 'delivery_artifact_recorded_source_differs_from_selected_source'
+        } else if (deliveryUrlMismatch) {
+          reason = 'delivery_artifact_url_mismatch'
+        } else if (externalSelectionMismatch) {
+          reason = 'external_translation_url_changed_since_delivery_generation'
+        }
+        artifactSourceFailures.push({
+          docId: d.id,
+          reason,
+          expectedSource: artifactSelection.source,
+          recordedSource: artifactRecord?.source ?? null,
+        })
+        continue
+      }
+
       const documentLabelHint =
         [d.exactNameOnDoc, d.docType].filter(Boolean).join(' ').trim() || undefined
       const classification = classifyDocument({
@@ -316,6 +410,22 @@ export async function releaseToClient(
         release_blocked: false,
       }
       logReleasePageParityDiagnostics(diagnostics)
+    }
+
+    if (artifactSourceFailures.length > 0) {
+      const details = artifactSourceFailures
+        .map(
+          f =>
+            `doc#${f.docId} reason=${f.reason} expected=${f.expectedSource} recorded=${f.recordedSource ?? 'none'}`,
+        )
+        .join('; ')
+      return {
+        success: false,
+        error:
+          `Release blocked by translation artifact source-of-truth rule. ` +
+          `${artifactSourceFailures.length} document(s) have stale or mismatched delivery artifact source. ` +
+          details,
+      }
     }
 
     if (parityFailures.length > 0) {
