@@ -665,7 +665,9 @@ const STRUCTURED_DOCUMENT_LABELS: Record<SupportedStructuredDocumentType, string
   academic_transcript: 'Academic Transcript',
   academic_record_general: 'Academic Record',
   corporate_business_record: 'Corporate / Business Record',
+  editorial_news_pages: 'Editorial / News Pages',
   publication_media_record: 'Publication / Media Evidence',
+  letters_and_statements: 'Letters / Statements',
   recommendation_letter: 'Recommendation / Expert Letter',
   employment_record: 'Employment Record',
   course_certificate_landscape: 'Training Certificate',
@@ -681,6 +683,8 @@ async function runSharedStructuredPipeline(
     | 'academic_records'
     | 'employment_records'
     | 'corporate_business_records'
+    | 'editorial_news_pages'
+    | 'letters_and_statements'
     | 'publications_media'
     | 'recommendation_letters'
     | 'relationship_evidence',
@@ -842,6 +846,8 @@ export async function dispatchStructuredPipeline(
     familyDetection.family !== 'academic_records' &&
     familyDetection.family !== 'employment_records' &&
     familyDetection.family !== 'corporate_business_records' &&
+    familyDetection.family !== 'editorial_news_pages' &&
+    familyDetection.family !== 'letters_and_statements' &&
     familyDetection.family !== 'publications_media' &&
     familyDetection.family !== 'recommendation_letters' &&
     familyDetection.family !== 'relationship_evidence'

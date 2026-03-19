@@ -10,7 +10,9 @@ export type DocumentFamily =
   | 'corporate_business_records'
   | 'investment_source_of_funds'
   | 'recommendation_letters'
+  | 'letters_and_statements'
   | 'publications_media'
+  | 'editorial_news_pages'
   | 'licenses_regulatory'
   | 'uscis_dos_forms_notices'
   | 'unknown';
@@ -125,7 +127,9 @@ export const REGISTERED_DOCUMENT_FAMILIES: readonly RegisteredDocumentFamily[] =
   'corporate_business_records',
   'investment_source_of_funds',
   'recommendation_letters',
+  'letters_and_statements',
   'publications_media',
+  'editorial_news_pages',
   'licenses_regulatory',
   'uscis_dos_forms_notices',
 ] as const;
@@ -139,7 +143,9 @@ export const DOCUMENT_TYPE_TO_FAMILY: Record<KnownDocumentType, RegisteredDocume
   academic_transcript: 'academic_records',
   academic_record_general: 'academic_records',
   corporate_business_record: 'corporate_business_records',
+  editorial_news_pages: 'editorial_news_pages',
   publication_media_record: 'publications_media',
+  letters_and_statements: 'letters_and_statements',
   recommendation_letter: 'recommendation_letters',
   employment_record: 'employment_records',
   course_certificate_landscape: 'academic_records',
@@ -248,10 +254,30 @@ const FAMILY_LAYOUT_PROFILES: Record<DocumentFamily, FamilyLayoutProfile> = {
     safeMarginExpansionLikely: false,
     translationEnvelope: 'narrative-evidence',
   },
+  letters_and_statements: {
+    family: 'letters_and_statements',
+    defaultOrientation: 'mixed',
+    commonBlockTypes: ['header', 'metadata', 'signature', 'stamp', 'note', 'attachment'],
+    likelyTableDensity: 'low',
+    signatureStampPresence: 'common',
+    multilingualHeaderSensitivity: 'high',
+    safeMarginExpansionLikely: true,
+    translationEnvelope: 'narrative-evidence',
+  },
   publications_media: {
     family: 'publications_media',
     defaultOrientation: 'mixed',
     commonBlockTypes: ['header', 'metadata', 'table', 'signature', 'note', 'attachment'],
+    likelyTableDensity: 'medium',
+    signatureStampPresence: 'possible',
+    multilingualHeaderSensitivity: 'high',
+    safeMarginExpansionLikely: true,
+    translationEnvelope: 'narrative-evidence',
+  },
+  editorial_news_pages: {
+    family: 'editorial_news_pages',
+    defaultOrientation: 'mixed',
+    commonBlockTypes: ['header', 'metadata', 'table', 'note', 'attachment'],
     likelyTableDensity: 'medium',
     signatureStampPresence: 'possible',
     multilingualHeaderSensitivity: 'high',
@@ -429,6 +455,21 @@ export const DOCUMENT_FAMILY_IMPLEMENTATION_MATRIX: Record<
     tableCapability: 'basic',
     signatureCapability: 'advanced',
   },
+  letters_and_statements: {
+    family: 'letters_and_statements',
+    detectionImplemented: true,
+    previewRendererImplemented: true,
+    finalDeliveryRendererImplemented: true,
+    portraitSupported: true,
+    landscapeSupported: true,
+    denseTableHandling: false,
+    signatureSealHandling: true,
+    notes: 'Production-ready generic structured renderer for recommendation letters and declarations, including bundled resume sections via flexible zone model.',
+    priorityLevel: 2,
+    orientationCapability: 'advanced',
+    tableCapability: 'basic',
+    signatureCapability: 'advanced',
+  },
   publications_media: {
     family: 'publications_media',
     detectionImplemented: true,
@@ -439,6 +480,21 @@ export const DOCUMENT_FAMILY_IMPLEMENTATION_MATRIX: Record<
     denseTableHandling: false,
     signatureSealHandling: true,
     notes: 'Production-ready for publications/media evidence pages and citation-style layouts.',
+    priorityLevel: 2,
+    orientationCapability: 'advanced',
+    tableCapability: 'basic',
+    signatureCapability: 'basic',
+  },
+  editorial_news_pages: {
+    family: 'editorial_news_pages',
+    detectionImplemented: true,
+    previewRendererImplemented: true,
+    finalDeliveryRendererImplemented: true,
+    portraitSupported: true,
+    landscapeSupported: true,
+    denseTableHandling: false,
+    signatureSealHandling: false,
+    notes: 'Production-ready generic structured editorial/news renderer. Flexible subtype inference with in-family fallback to editorial_news_generic_structured.',
     priorityLevel: 2,
     orientationCapability: 'advanced',
     tableCapability: 'basic',
@@ -510,7 +566,9 @@ const SUPPORTED_DOCUMENT_TYPES_BY_FAMILY: Record<DocumentFamily, readonly KnownD
   corporate_business_records: ['corporate_business_record'],
   investment_source_of_funds: [],
   recommendation_letters: ['recommendation_letter'],
+  letters_and_statements: ['letters_and_statements'],
   publications_media: ['publication_media_record'],
+  editorial_news_pages: ['editorial_news_pages'],
   licenses_regulatory: [],
   uscis_dos_forms_notices: [],
   unknown: [],
@@ -671,6 +729,23 @@ const FAMILY_HEURISTIC_RULES: Record<
     },
     { pattern: /\b(?:curriculum vitae|cv attached|resume attached|recommender|endorse)\b/i, weight: 1 },
   ],
+  letters_and_statements: [
+    {
+      pattern:
+        /\b(?:declaration|statement|declara[cç][aã]o|recommendation letter|reference letter|support letter|carta de refer[eê]ncia|carta de recomenda[cç][aã]o|to whom it may concern)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:sincerely|regards|signature block|signer identity|footer contact|letterhead|human resources|accountant|contador|enrollment declaration|article acceptance)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:z_document_title|z_body_text|z_date_location|z_closing|z_signature_block|z_signer_identity|z_footer_contact|z_attached_resume_section)\b/i,
+      weight: 2,
+    },
+  ],
   publications_media: [
     {
       pattern:
@@ -683,6 +758,23 @@ const FAMILY_HEURISTIC_RULES: Record<
       weight: 2,
     },
     { pattern: /\b(?:abstract|keywords|citations?|references|footnotes|caption)\b/i, weight: 1 },
+  ],
+  editorial_news_pages: [
+    {
+      pattern:
+        /\b(?:editorial news|news article|web news|print view|newspaper clipping|press clipping|media clipping|headline|subheadline|byline|location date|article body)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:cookie notice|site navigation|related content|footer links|url timestamp|metadata block|doi block|abstract block)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:z_headline|z_subheadline|z_byline|z_location_date|z_article_body|z_metadata_block|z_doi_block|z_abstract_block|z_cookie_notice|z_site_navigation|z_footer_links|z_url_timestamp)\b/i,
+      weight: 2,
+    },
   ],
   licenses_regulatory: [
     { pattern: /\b(?:license|permit|registration certificate|board certification)\b/i, weight: 2 },

@@ -52,6 +52,14 @@ import {
   buildPublicationMediaRecordUserMessage,
 } from '@/lib/publicationMediaRecordPrompt';
 import {
+  buildLettersAndStatementsSystemPrompt,
+  buildLettersAndStatementsUserMessage,
+} from '@/lib/lettersAndStatementsPrompt';
+import {
+  buildEditorialNewsPagesSystemPrompt,
+  buildEditorialNewsPagesUserMessage,
+} from '@/lib/editorialNewsPagesPrompt';
+import {
   buildEb1EvidencePhotoSheetSystemPrompt,
   buildEb1EvidencePhotoSheetUserMessage,
 } from '@/lib/eb1EvidencePhotoSheetPrompt';
@@ -71,6 +79,8 @@ import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
 import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
 import { renderRecommendationLetterHtml } from '@/lib/recommendationLetterRenderer';
 import { renderPublicationMediaRecordHtml } from '@/lib/publicationMediaRecordRenderer';
+import { renderLettersAndStatementsHtml } from '@/lib/lettersAndStatementsRenderer';
+import { renderEditorialNewsPagesHtml } from '@/lib/editorialNewsPagesRenderer';
 import { renderEb1EvidencePhotoSheetHtml } from '@/lib/eb1EvidencePhotoSheetRenderer';
 import {
   detectSourceLanguageLeakageFromSegments,
@@ -110,6 +120,18 @@ import type { CorporateBusinessRecord } from '@/types/corporateBusinessRecord';
 import type { RecommendationLetter } from '@/types/recommendationLetter';
 import type { PublicationMediaRecord } from '@/types/publicationMediaRecord';
 import type {
+  LettersAndStatements,
+  LettersStatementsLayoutZone,
+  LettersStatementsStructuredPage,
+  LettersStatementsTranslatedZoneContent,
+} from '@/types/lettersAndStatements';
+import type {
+  EditorialNewsLayoutZone,
+  EditorialNewsPages,
+  EditorialNewsStructuredPage,
+  EditorialNewsTranslatedZoneContent,
+} from '@/types/editorialNewsPages';
+import type {
   Eb1EvidenceLayoutZone,
   Eb1EvidencePhotoSheet,
   Eb1EvidenceStructuredPage,
@@ -127,7 +149,9 @@ export const STRUCTURED_RENDERER_BY_DOCUMENT_TYPE: Record<SupportedStructuredDoc
   academic_transcript: 'academicTranscriptRenderer',
   academic_record_general: 'academicRecordGeneralRenderer',
   corporate_business_record: 'corporateBusinessRecordRenderer',
+  editorial_news_pages: 'editorialNewsPagesRenderer',
   publication_media_record: 'publicationMediaRecordRenderer',
+  letters_and_statements: 'lettersAndStatementsRenderer',
   recommendation_letter: 'recommendationLetterRenderer',
   employment_record: 'employmentRecordRenderer',
   course_certificate_landscape: 'certificateLandscapeRenderer',
@@ -146,7 +170,9 @@ export const SUPPORTED_STRUCTURED_DOCUMENT_TYPES: readonly SupportedStructuredDo
   'academic_transcript',
   'academic_record_general',
   'corporate_business_record',
+  'editorial_news_pages',
   'publication_media_record',
+  'letters_and_statements',
   'recommendation_letter',
   'employment_record',
   'course_certificate_landscape',
@@ -1594,6 +1620,1245 @@ function buildCompactCivilLanguageIntegrity(
   return diagnostics;
 }
 
+function isEditorialNewsStructuredPage(
+  value: unknown,
+): value is EditorialNewsStructuredPage {
+  if (!isPlainObject(value)) return false;
+  const hasLayoutZones =
+    Array.isArray(value.LAYOUT_ZONES) || isPlainObject(value.LAYOUT_ZONES);
+  const hasTranslatedZones =
+    Array.isArray(value.TRANSLATED_CONTENT_BY_ZONE) ||
+    isPlainObject(value.TRANSLATED_CONTENT_BY_ZONE);
+  return isPlainObject(value.PAGE_METADATA) && hasLayoutZones && hasTranslatedZones;
+}
+
+function normalizeEditorialNewsLayoutZones(
+  raw: unknown,
+): EditorialNewsLayoutZone[] {
+  const normalized: EditorialNewsLayoutZone[] = [];
+
+  const pushZone = (
+    zoneIdRaw: unknown,
+    zoneTypeRaw: unknown,
+    relativePositionRaw: unknown,
+    visualStyleRaw: unknown,
+    compactionPriorityRaw: unknown,
+  ): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+
+    normalized.push({
+      zone_id: zoneId,
+      zone_type:
+        normalizeWhitespace(
+          typeof zoneTypeRaw === 'string' ? zoneTypeRaw : '',
+        ) || 'other',
+      relative_position:
+        normalizeWhitespace(
+          typeof relativePositionRaw === 'string' ? relativePositionRaw : '',
+        ) || 'center',
+      visual_style:
+        normalizeWhitespace(
+          typeof visualStyleRaw === 'string' ? visualStyleRaw : '',
+        ) || 'other',
+      compaction_priority:
+        normalizeWhitespace(
+          typeof compactionPriorityRaw === 'string' ? compactionPriorityRaw : '',
+        ) || 'medium',
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      pushZone(
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : '',
+        entry.zone_type,
+        entry.relative_position,
+        entry.visual_style,
+        entry.compaction_priority,
+      );
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (isPlainObject(value)) {
+      pushZone(
+        typeof value.zone_id === 'string'
+          ? value.zone_id
+          : typeof value.zoneId === 'string'
+            ? value.zoneId
+            : key,
+        value.zone_type,
+        value.relative_position,
+        value.visual_style,
+        value.compaction_priority,
+      );
+      continue;
+    }
+
+    pushZone(key, 'other', 'center', 'other', 'medium');
+  }
+
+  return normalized;
+}
+
+function normalizeEditorialNewsTranslatedZones(
+  raw: unknown,
+): EditorialNewsTranslatedZoneContent[] {
+  const normalized: EditorialNewsTranslatedZoneContent[] = [];
+
+  const pushContent = (zoneIdRaw: unknown, contentRaw: unknown): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+    const content = normalizeWhitespace(
+      typeof contentRaw === 'string'
+        ? contentRaw
+        : collectStringSegments(contentRaw).join('\n'),
+    );
+    if (!content) return;
+    normalized.push({ zone_id: zoneId, content });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      const zoneId =
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : typeof entry.id === 'string'
+              ? entry.id
+              : '';
+      const contentCandidate =
+        typeof entry.content === 'string'
+          ? entry.content
+          : typeof entry.text === 'string'
+            ? entry.text
+            : typeof entry.translated_content === 'string'
+              ? entry.translated_content
+              : typeof entry.translatedText === 'string'
+                ? entry.translatedText
+                : typeof entry.value === 'string'
+                  ? entry.value
+                  : collectStringSegments(entry.content ?? entry.text ?? entry).join('\n');
+      pushContent(zoneId, contentCandidate);
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [zoneId, value] of Object.entries(raw)) {
+    pushContent(zoneId, value);
+  }
+
+  return normalized;
+}
+
+function normalizeEditorialNewsStructuredPage(
+  raw: unknown,
+  fallbackPageNumber: number,
+): EditorialNewsStructuredPage | null {
+  if (!isPlainObject(raw) || !isPlainObject(raw.PAGE_METADATA)) return null;
+
+  const metadata = raw.PAGE_METADATA;
+  const pageNumber =
+    typeof metadata.page_number === 'number' && Number.isFinite(metadata.page_number)
+      ? metadata.page_number
+      : fallbackPageNumber;
+  const detectedDocumentType =
+    typeof metadata.detected_document_type === 'string'
+      ? metadata.detected_document_type
+      : 'editorial/news page';
+  const suggestedOrientation =
+    metadata.suggested_orientation === 'portrait' ||
+    metadata.suggested_orientation === 'landscape' ||
+    metadata.suggested_orientation === 'unknown'
+      ? metadata.suggested_orientation
+      : 'unknown';
+  const estimatedDensity =
+    metadata.estimated_density === 'low' ||
+    metadata.estimated_density === 'medium' ||
+    metadata.estimated_density === 'high'
+      ? metadata.estimated_density
+      : 'medium';
+  const suggestedFontStyle =
+    typeof metadata.suggested_font_style === 'string'
+      ? metadata.suggested_font_style
+      : 'unknown';
+  const suggestedModelKey =
+    metadata.suggested_model_key === 'print_news_clipping' ||
+    metadata.suggested_model_key === 'web_news_article' ||
+    metadata.suggested_model_key === 'web_news_printview' ||
+    metadata.suggested_model_key === 'editorial_article_cover_or_metadata' ||
+    metadata.suggested_model_key === 'editorial_news_generic_structured'
+      ? metadata.suggested_model_key
+      : 'editorial_news_generic_structured';
+  const suggestedFontSizes = isPlainObject(metadata.suggested_font_size_by_section)
+    ? Object.fromEntries(
+        Object.entries(metadata.suggested_font_size_by_section).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : {};
+
+  const normalizedLayoutZones = normalizeEditorialNewsLayoutZones(raw.LAYOUT_ZONES);
+  const normalizedTranslatedZones = normalizeEditorialNewsTranslatedZones(
+    raw.TRANSLATED_CONTENT_BY_ZONE,
+  );
+  const normalizedNonTextualElements = Array.isArray(raw.NON_TEXTUAL_ELEMENTS)
+    ? raw.NON_TEXTUAL_ELEMENTS
+        .map((entry) => normalizeWhitespace(typeof entry === 'string' ? entry : ''))
+        .filter((entry): entry is string => entry.length > 0)
+    : [];
+  const renderingHints = isPlainObject(raw.RENDERING_HINTS)
+    ? raw.RENDERING_HINTS
+    : {};
+
+  return {
+    PAGE_METADATA: {
+      page_number: pageNumber,
+      detected_document_type: detectedDocumentType,
+      suggested_family:
+        typeof metadata.suggested_family === 'string'
+          ? metadata.suggested_family
+          : 'editorial_news_pages',
+      suggested_model_key: suggestedModelKey,
+      suggested_orientation: suggestedOrientation,
+      estimated_density: estimatedDensity,
+      suggested_font_style: suggestedFontStyle,
+      suggested_font_size_by_section: suggestedFontSizes,
+    },
+    LAYOUT_ZONES: normalizedLayoutZones,
+    TRANSLATED_CONTENT_BY_ZONE: normalizedTranslatedZones,
+    NON_TEXTUAL_ELEMENTS: normalizedNonTextualElements,
+    RENDERING_HINTS: {
+      recommended_spacing_profile:
+        typeof renderingHints.recommended_spacing_profile === 'string'
+          ? renderingHints.recommended_spacing_profile
+          : 'normal',
+      recommended_line_height:
+        typeof renderingHints.recommended_line_height === 'string'
+          ? renderingHints.recommended_line_height
+          : '1.25',
+      recommended_layout_mode:
+        typeof renderingHints.recommended_layout_mode === 'string'
+          ? renderingHints.recommended_layout_mode
+          : 'single-column editorial',
+      page_parity_risk_notes:
+        typeof renderingHints.page_parity_risk_notes === 'string'
+          ? renderingHints.page_parity_risk_notes
+          : '',
+    },
+  };
+}
+
+function normalizeEditorialNewsPagesPayload(
+  parsed: unknown,
+): EditorialNewsPages {
+  if (!isPlainObject(parsed)) {
+    throw new StructuredRenderingRequiredError(
+      'editorial_news_pages',
+      buildStructuredFailureMessage(
+        'editorial_news_pages',
+        'Editorial/news payload is not a valid JSON object.',
+      ),
+    );
+  }
+
+  const rootDocumentType = typeof parsed.document_type === 'string'
+    ? parsed.document_type
+    : '';
+  if (rootDocumentType !== 'editorial_news_pages') {
+    throw new StructuredRenderingRequiredError(
+      'editorial_news_pages',
+      buildStructuredFailureMessage(
+        'editorial_news_pages',
+        `Structured payload discriminator mismatch: expected "editorial_news_pages" but got "${rootDocumentType || 'missing'}".`,
+      ),
+    );
+  }
+
+  const rootTranslatedZones = normalizeEditorialNewsTranslatedZones(
+    parsed.TRANSLATED_CONTENT_BY_ZONE,
+  );
+  const pages = Array.isArray(parsed.PAGES)
+    ? parsed.PAGES
+        .map((page, index) =>
+          isEditorialNewsStructuredPage(page)
+            ? normalizeEditorialNewsStructuredPage(page, index + 1)
+            : null,
+        )
+        .filter((page): page is EditorialNewsStructuredPage => page !== null)
+    : [];
+
+  if (
+    pages.length === 1 &&
+    pages[0].TRANSLATED_CONTENT_BY_ZONE.length === 0 &&
+    rootTranslatedZones.length > 0
+  ) {
+    pages[0] = {
+      ...pages[0],
+      TRANSLATED_CONTENT_BY_ZONE: rootTranslatedZones,
+    };
+  }
+
+  if (pages.length > 0) {
+    return {
+      document_type: 'editorial_news_pages',
+      family:
+        parsed.family === 'editorial_news_pages' ||
+        parsed.family === 'publications_media'
+          ? parsed.family
+          : 'editorial_news_pages',
+      model_key:
+        parsed.model_key === 'print_news_clipping' ||
+        parsed.model_key === 'web_news_article' ||
+        parsed.model_key === 'web_news_printview' ||
+        parsed.model_key === 'editorial_article_cover_or_metadata' ||
+        parsed.model_key === 'editorial_news_generic_structured'
+          ? parsed.model_key
+          : 'editorial_news_generic_structured',
+      PAGES: pages,
+      QUALITY_FLAGS: Array.isArray(parsed.QUALITY_FLAGS)
+        ? parsed.QUALITY_FLAGS.filter((item): item is string => typeof item === 'string')
+        : [],
+      orientation:
+        parsed.orientation === 'landscape' || parsed.orientation === 'portrait'
+          ? parsed.orientation
+          : 'unknown',
+      page_count:
+        typeof parsed.page_count === 'number' ? parsed.page_count : null,
+    };
+  }
+
+  if (isEditorialNewsStructuredPage(parsed) && !Array.isArray(parsed.PAGES)) {
+    const normalizedSinglePage = normalizeEditorialNewsStructuredPage(parsed, 1);
+    if (!normalizedSinglePage) {
+      throw new StructuredRenderingRequiredError(
+        'editorial_news_pages',
+        buildStructuredFailureMessage(
+          'editorial_news_pages',
+          'Editorial/news extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+        ),
+      );
+    }
+    return {
+      document_type: 'editorial_news_pages',
+      family: 'editorial_news_pages',
+      model_key: 'editorial_news_generic_structured',
+      PAGES: [normalizedSinglePage],
+      QUALITY_FLAGS: [],
+      orientation: 'unknown',
+      page_count: null,
+    };
+  }
+
+  throw new StructuredRenderingRequiredError(
+    'editorial_news_pages',
+    buildStructuredFailureMessage(
+      'editorial_news_pages',
+      'Editorial/news extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+    ),
+  );
+}
+
+function isEditorialNewsTextBearingZone(zone: EditorialNewsLayoutZone): boolean {
+  const signal = normalizeZoneBindingId(
+    `${zone.zone_type} ${zone.zone_id} ${zone.visual_style}`,
+  );
+  if (!signal) return true;
+
+  const nonTextKeywords = [
+    'photo',
+    'image',
+    'hero_image',
+    'gallery',
+    'figure',
+    'illustration',
+    'logo',
+    'seal',
+    'watermark',
+    'icon',
+    'ornament',
+    'decorative',
+    'border',
+    'frame',
+  ];
+  if (nonTextKeywords.some((keyword) => signal.includes(keyword))) {
+    return false;
+  }
+
+  return true;
+}
+
+interface EditorialNewsZoneBindingResolution {
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  missingTranslatedZones: string[];
+  mappedGenericZones: string[];
+  resolvedZoneContents: Array<{ zoneLabel: string; content: string }>;
+  allTranslatedSegments: string[];
+}
+
+function resolveEditorialNewsZoneBindings(
+  payload: EditorialNewsPages,
+): EditorialNewsZoneBindingResolution {
+  const requiredZones: string[] = [];
+  const translatedZonesFound: string[] = [];
+  const missingTranslatedZones: string[] = [];
+  const mappedGenericZones: string[] = [];
+  const resolvedZoneContents = new Map<string, string>();
+  const allTranslatedSegments: string[] = [];
+
+  for (const page of payload.PAGES ?? []) {
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    const layoutZones = (page.LAYOUT_ZONES ?? [])
+      .map((zone, index) => {
+        const originalId = normalizeWhitespace(zone.zone_id);
+        const normalizedId = normalizeZoneBindingId(zone.zone_id);
+        if (!originalId || !normalizedId) return null;
+        return {
+          index,
+          originalId,
+          normalizedId,
+          label: `page_${pageNumber}:${originalId}`,
+          textBearing: isEditorialNewsTextBearingZone(zone),
+        };
+      })
+      .filter((zone): zone is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        label: string;
+        textBearing: boolean;
+      } => zone !== null);
+
+    const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .map((entry, index) => {
+        const originalId = normalizeWhitespace(entry.zone_id);
+        const normalizedId = normalizeZoneBindingId(entry.zone_id);
+        const content = normalizeWhitespace(entry.content);
+        if (!originalId || !normalizedId || !content) return null;
+        return { index, originalId, normalizedId, content };
+      })
+      .filter((entry): entry is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        content: string;
+      } => entry !== null);
+
+    for (const entry of translatedEntries) {
+      allTranslatedSegments.push(entry.content);
+    }
+
+    requiredZones.push(
+      ...layoutZones
+        .filter((zone) => zone.textBearing)
+        .map((zone) => zone.label),
+    );
+
+    const layoutByNormalizedId = new Map<string, number[]>();
+    for (const zone of layoutZones) {
+      const existing = layoutByNormalizedId.get(zone.normalizedId) ?? [];
+      existing.push(zone.index);
+      layoutByNormalizedId.set(zone.normalizedId, existing);
+    }
+
+    const consumedTranslatedIndexes = new Set<number>();
+    const consumedLayoutIndexes = new Set<number>();
+
+    const assign = (
+      layoutIndex: number,
+      translatedIndex: number,
+      mappedGenericSource?: string,
+    ): void => {
+      const layoutZone = layoutZones.find((zone) => zone.index === layoutIndex);
+      const translatedEntry = translatedEntries.find(
+        (entry) => entry.index === translatedIndex,
+      );
+      if (!layoutZone || !translatedEntry) return;
+
+      consumedLayoutIndexes.add(layoutZone.index);
+      consumedTranslatedIndexes.add(translatedEntry.index);
+      if (layoutZone.textBearing) {
+        translatedZonesFound.push(layoutZone.label);
+      }
+      const existing = resolvedZoneContents.get(layoutZone.label) ?? '';
+      resolvedZoneContents.set(
+        layoutZone.label,
+        existing ? `${existing}\n${translatedEntry.content}` : translatedEntry.content,
+      );
+
+      if (mappedGenericSource) {
+        mappedGenericZones.push(
+          `page_${pageNumber}:${mappedGenericSource}->${layoutZone.originalId}`,
+        );
+      }
+    };
+
+    for (const entry of translatedEntries) {
+      const candidates = layoutByNormalizedId.get(entry.normalizedId) ?? [];
+      const availableLayout = candidates.find(
+        (candidateIndex) => !consumedLayoutIndexes.has(candidateIndex),
+      );
+      if (availableLayout === undefined) continue;
+      assign(availableLayout, entry.index);
+    }
+
+    const unmatchedLayout = layoutZones.filter(
+      (zone) => !consumedLayoutIndexes.has(zone.index),
+    );
+    const unmatchedGenericTranslated = translatedEntries.filter(
+      (entry) =>
+        !consumedTranslatedIndexes.has(entry.index) &&
+        isGenericCivilZoneId(entry.normalizedId),
+    );
+
+    const fallbackMappings = Math.min(
+      unmatchedLayout.length,
+      unmatchedGenericTranslated.length,
+    );
+    for (let i = 0; i < fallbackMappings; i += 1) {
+      const zone = unmatchedLayout[i];
+      const entry = unmatchedGenericTranslated[i];
+      assign(zone.index, entry.index, entry.originalId);
+    }
+
+    for (const zone of layoutZones) {
+      if (!zone.textBearing) continue;
+      if (!consumedLayoutIndexes.has(zone.index)) {
+        missingTranslatedZones.push(zone.label);
+      }
+    }
+  }
+
+  return {
+    requiredZones,
+    translatedZonesFound: Array.from(new Set(translatedZonesFound)),
+    missingTranslatedZones,
+    mappedGenericZones,
+    resolvedZoneContents: Array.from(resolvedZoneContents.entries()).map(
+      ([zoneLabel, content]) => ({ zoneLabel, content }),
+    ),
+    allTranslatedSegments,
+  };
+}
+
+function inferEditorialNewsOrientation(
+  payload: EditorialNewsPages,
+): DocumentOrientation {
+  if (payload.orientation === 'portrait' || payload.orientation === 'landscape') {
+    return payload.orientation;
+  }
+
+  const pageHint = payload.PAGES?.[0]?.PAGE_METADATA?.suggested_orientation;
+  if (pageHint === 'portrait' || pageHint === 'landscape') {
+    return pageHint;
+  }
+
+  return 'portrait';
+}
+
+function buildEditorialNewsLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: EditorialNewsPages,
+): StructuredRenderLanguageIntegrity {
+  const diagnostics = buildDefaultLanguageIntegrity(input);
+  const resolvedBindings = resolveEditorialNewsZoneBindings(payload);
+
+  diagnostics.translatedPayloadFound = true;
+  diagnostics.requiredZones = resolvedBindings.requiredZones;
+  diagnostics.sourceZonesCount = resolvedBindings.requiredZones.length;
+  diagnostics.translatedZonesFound = resolvedBindings.translatedZonesFound;
+  diagnostics.translatedZonesCount = resolvedBindings.translatedZonesFound.length;
+  diagnostics.missingTranslatedZones = resolvedBindings.missingTranslatedZones;
+  diagnostics.mappedGenericZones = resolvedBindings.mappedGenericZones;
+  diagnostics.sourceContentAttempted = diagnostics.missingTranslatedZones.length > 0;
+
+  const sourceLanguageContaminatedZones: string[] = [];
+  const sourceLanguageMarkers = new Set<string>();
+
+  for (const resolvedZone of resolvedBindings.resolvedZoneContents) {
+    const zoneLeakage = detectSourceLanguageLeakageFromSegments(
+      [resolvedZone.content],
+      {
+        sourceLanguage: diagnostics.sourceLanguage,
+        targetLanguage: diagnostics.targetLanguage,
+      },
+    );
+    if (!zoneLeakage.detected) continue;
+    sourceLanguageContaminatedZones.push(resolvedZone.zoneLabel);
+    for (const marker of zoneLeakage.matchedMarkers) {
+      sourceLanguageMarkers.add(`${resolvedZone.zoneLabel}:${marker}`);
+    }
+  }
+
+  const globalLeakage = detectSourceLanguageLeakageFromSegments(
+    resolvedBindings.allTranslatedSegments,
+    {
+      sourceLanguage: diagnostics.sourceLanguage,
+      targetLanguage: diagnostics.targetLanguage,
+    },
+  );
+  for (const marker of globalLeakage.matchedMarkers) {
+    sourceLanguageMarkers.add(marker);
+  }
+  if (
+    globalLeakage.detected &&
+    sourceLanguageContaminatedZones.length === 0
+  ) {
+    sourceLanguageContaminatedZones.push('payload');
+  }
+
+  diagnostics.sourceLanguageMarkers = Array.from(sourceLanguageMarkers);
+  diagnostics.sourceLanguageContaminatedZones = sourceLanguageContaminatedZones;
+  diagnostics.sourceContentAttempted =
+    diagnostics.sourceContentAttempted ||
+    sourceLanguageContaminatedZones.length > 0;
+  diagnostics.languageIssueType = resolveLanguageIssueType(
+    diagnostics.missingTranslatedZones.length > 0,
+    sourceLanguageContaminatedZones.length > 0,
+  );
+
+  return diagnostics;
+}
+
+function isLettersStatementsStructuredPage(
+  value: unknown,
+): value is LettersStatementsStructuredPage {
+  if (!isPlainObject(value)) return false;
+  const hasLayoutZones =
+    Array.isArray(value.LAYOUT_ZONES) || isPlainObject(value.LAYOUT_ZONES);
+  const hasTranslatedZones =
+    Array.isArray(value.TRANSLATED_CONTENT_BY_ZONE) ||
+    isPlainObject(value.TRANSLATED_CONTENT_BY_ZONE);
+  return isPlainObject(value.PAGE_METADATA) && hasLayoutZones && hasTranslatedZones;
+}
+
+function normalizeLettersStatementsLayoutZones(
+  raw: unknown,
+): LettersStatementsLayoutZone[] {
+  const normalized: LettersStatementsLayoutZone[] = [];
+
+  const pushZone = (
+    zoneIdRaw: unknown,
+    zoneTypeRaw: unknown,
+    relativePositionRaw: unknown,
+    visualStyleRaw: unknown,
+    compactionPriorityRaw: unknown,
+  ): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+    normalized.push({
+      zone_id: zoneId,
+      zone_type:
+        normalizeWhitespace(
+          typeof zoneTypeRaw === 'string' ? zoneTypeRaw : '',
+        ) || 'other',
+      relative_position:
+        normalizeWhitespace(
+          typeof relativePositionRaw === 'string' ? relativePositionRaw : '',
+        ) || 'center',
+      visual_style:
+        normalizeWhitespace(
+          typeof visualStyleRaw === 'string' ? visualStyleRaw : '',
+        ) || 'other',
+      compaction_priority:
+        normalizeWhitespace(
+          typeof compactionPriorityRaw === 'string' ? compactionPriorityRaw : '',
+        ) || 'medium',
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      pushZone(
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : '',
+        entry.zone_type,
+        entry.relative_position,
+        entry.visual_style,
+        entry.compaction_priority,
+      );
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (isPlainObject(value)) {
+      pushZone(
+        typeof value.zone_id === 'string'
+          ? value.zone_id
+          : typeof value.zoneId === 'string'
+            ? value.zoneId
+            : key,
+        value.zone_type,
+        value.relative_position,
+        value.visual_style,
+        value.compaction_priority,
+      );
+      continue;
+    }
+
+    pushZone(key, 'other', 'center', 'other', 'medium');
+  }
+
+  return normalized;
+}
+
+function normalizeLettersStatementsTranslatedZones(
+  raw: unknown,
+): LettersStatementsTranslatedZoneContent[] {
+  const normalized: LettersStatementsTranslatedZoneContent[] = [];
+
+  const pushContent = (zoneIdRaw: unknown, contentRaw: unknown): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+    const content = normalizeWhitespace(
+      typeof contentRaw === 'string'
+        ? contentRaw
+        : collectStringSegments(contentRaw).join('\n'),
+    );
+    if (!content) return;
+    normalized.push({ zone_id: zoneId, content });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      const zoneId =
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : typeof entry.id === 'string'
+              ? entry.id
+              : '';
+      const contentCandidate =
+        typeof entry.content === 'string'
+          ? entry.content
+          : typeof entry.text === 'string'
+            ? entry.text
+            : typeof entry.translated_content === 'string'
+              ? entry.translated_content
+              : typeof entry.translatedText === 'string'
+                ? entry.translatedText
+                : typeof entry.value === 'string'
+                  ? entry.value
+                  : collectStringSegments(entry.content ?? entry.text ?? entry).join('\n');
+      pushContent(zoneId, contentCandidate);
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [zoneId, value] of Object.entries(raw)) {
+    pushContent(zoneId, value);
+  }
+
+  return normalized;
+}
+
+function normalizeLettersStatementsStructuredPage(
+  raw: unknown,
+  fallbackPageNumber: number,
+): LettersStatementsStructuredPage | null {
+  if (!isPlainObject(raw) || !isPlainObject(raw.PAGE_METADATA)) return null;
+
+  const metadata = raw.PAGE_METADATA;
+  const pageNumber =
+    typeof metadata.page_number === 'number' && Number.isFinite(metadata.page_number)
+      ? metadata.page_number
+      : fallbackPageNumber;
+  const detectedDocumentType =
+    typeof metadata.detected_document_type === 'string'
+      ? metadata.detected_document_type
+      : 'letter/declaration';
+  const suggestedOrientation =
+    metadata.suggested_orientation === 'portrait' ||
+    metadata.suggested_orientation === 'landscape' ||
+    metadata.suggested_orientation === 'unknown'
+      ? metadata.suggested_orientation
+      : 'unknown';
+  const estimatedDensity =
+    metadata.estimated_density === 'low' ||
+    metadata.estimated_density === 'medium' ||
+    metadata.estimated_density === 'high'
+      ? metadata.estimated_density
+      : 'medium';
+  const suggestedFontStyle =
+    typeof metadata.suggested_font_style === 'string'
+      ? metadata.suggested_font_style
+      : 'unknown';
+  const suggestedModelKey =
+    metadata.suggested_model_key === 'institutional_declaration_single_page' ||
+    metadata.suggested_model_key === 'recommendation_letter_single_page' ||
+    metadata.suggested_model_key === 'recommendation_letter_multi_page' ||
+    metadata.suggested_model_key === 'declaration_with_letterhead_footer' ||
+    metadata.suggested_model_key === 'reference_letter_with_attached_resume' ||
+    metadata.suggested_model_key === 'letters_and_statements_generic_structured'
+      ? metadata.suggested_model_key
+      : 'letters_and_statements_generic_structured';
+  const suggestedFontSizes = isPlainObject(metadata.suggested_font_size_by_section)
+    ? Object.fromEntries(
+        Object.entries(metadata.suggested_font_size_by_section).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : {};
+
+  const normalizedLayoutZones = normalizeLettersStatementsLayoutZones(raw.LAYOUT_ZONES);
+  const normalizedTranslatedZones = normalizeLettersStatementsTranslatedZones(
+    raw.TRANSLATED_CONTENT_BY_ZONE,
+  );
+  const normalizedNonTextualElements = Array.isArray(raw.NON_TEXTUAL_ELEMENTS)
+    ? raw.NON_TEXTUAL_ELEMENTS
+        .map((entry) => normalizeWhitespace(typeof entry === 'string' ? entry : ''))
+        .filter((entry): entry is string => entry.length > 0)
+    : [];
+  const renderingHints = isPlainObject(raw.RENDERING_HINTS)
+    ? raw.RENDERING_HINTS
+    : {};
+
+  return {
+    PAGE_METADATA: {
+      page_number: pageNumber,
+      detected_document_type: detectedDocumentType,
+      suggested_family:
+        typeof metadata.suggested_family === 'string'
+          ? metadata.suggested_family
+          : 'letters_and_statements',
+      suggested_model_key: suggestedModelKey,
+      suggested_orientation: suggestedOrientation,
+      estimated_density: estimatedDensity,
+      suggested_font_style: suggestedFontStyle,
+      suggested_font_size_by_section: suggestedFontSizes,
+    },
+    LAYOUT_ZONES: normalizedLayoutZones,
+    TRANSLATED_CONTENT_BY_ZONE: normalizedTranslatedZones,
+    NON_TEXTUAL_ELEMENTS: normalizedNonTextualElements,
+    RENDERING_HINTS: {
+      recommended_spacing_profile:
+        typeof renderingHints.recommended_spacing_profile === 'string'
+          ? renderingHints.recommended_spacing_profile
+          : 'normal',
+      recommended_line_height:
+        typeof renderingHints.recommended_line_height === 'string'
+          ? renderingHints.recommended_line_height
+          : '1.3',
+      recommended_layout_mode:
+        typeof renderingHints.recommended_layout_mode === 'string'
+          ? renderingHints.recommended_layout_mode
+          : 'formal letter single-column',
+      page_parity_risk_notes:
+        typeof renderingHints.page_parity_risk_notes === 'string'
+          ? renderingHints.page_parity_risk_notes
+          : '',
+    },
+  };
+}
+
+function normalizeLettersAndStatementsPayload(
+  parsed: unknown,
+): LettersAndStatements {
+  if (!isPlainObject(parsed)) {
+    throw new StructuredRenderingRequiredError(
+      'letters_and_statements',
+      buildStructuredFailureMessage(
+        'letters_and_statements',
+        'Letters/statements payload is not a valid JSON object.',
+      ),
+    );
+  }
+
+  const rootDocumentType = typeof parsed.document_type === 'string'
+    ? parsed.document_type
+    : '';
+  if (rootDocumentType !== 'letters_and_statements') {
+    throw new StructuredRenderingRequiredError(
+      'letters_and_statements',
+      buildStructuredFailureMessage(
+        'letters_and_statements',
+        `Structured payload discriminator mismatch: expected "letters_and_statements" but got "${rootDocumentType || 'missing'}".`,
+      ),
+    );
+  }
+
+  const rootTranslatedZones = normalizeLettersStatementsTranslatedZones(
+    parsed.TRANSLATED_CONTENT_BY_ZONE,
+  );
+  const pages = Array.isArray(parsed.PAGES)
+    ? parsed.PAGES
+        .map((page, index) =>
+          isLettersStatementsStructuredPage(page)
+            ? normalizeLettersStatementsStructuredPage(page, index + 1)
+            : null,
+        )
+        .filter((page): page is LettersStatementsStructuredPage => page !== null)
+    : [];
+
+  if (
+    pages.length === 1 &&
+    pages[0].TRANSLATED_CONTENT_BY_ZONE.length === 0 &&
+    rootTranslatedZones.length > 0
+  ) {
+    pages[0] = {
+      ...pages[0],
+      TRANSLATED_CONTENT_BY_ZONE: rootTranslatedZones,
+    };
+  }
+
+  if (pages.length > 0) {
+    return {
+      document_type: 'letters_and_statements',
+      family:
+        parsed.family === 'letters_and_statements' ||
+        parsed.family === 'recommendation_letters' ||
+        parsed.family === 'employment_records' ||
+        parsed.family === 'academic_records'
+          ? parsed.family
+          : 'letters_and_statements',
+      model_key:
+        parsed.model_key === 'institutional_declaration_single_page' ||
+        parsed.model_key === 'recommendation_letter_single_page' ||
+        parsed.model_key === 'recommendation_letter_multi_page' ||
+        parsed.model_key === 'declaration_with_letterhead_footer' ||
+        parsed.model_key === 'reference_letter_with_attached_resume' ||
+        parsed.model_key === 'letters_and_statements_generic_structured'
+          ? parsed.model_key
+          : 'letters_and_statements_generic_structured',
+      PAGES: pages,
+      QUALITY_FLAGS: Array.isArray(parsed.QUALITY_FLAGS)
+        ? parsed.QUALITY_FLAGS.filter((item): item is string => typeof item === 'string')
+        : [],
+      orientation:
+        parsed.orientation === 'landscape' || parsed.orientation === 'portrait'
+          ? parsed.orientation
+          : 'unknown',
+      page_count:
+        typeof parsed.page_count === 'number' ? parsed.page_count : null,
+    };
+  }
+
+  if (isLettersStatementsStructuredPage(parsed) && !Array.isArray(parsed.PAGES)) {
+    const normalizedSinglePage = normalizeLettersStatementsStructuredPage(parsed, 1);
+    if (!normalizedSinglePage) {
+      throw new StructuredRenderingRequiredError(
+        'letters_and_statements',
+        buildStructuredFailureMessage(
+          'letters_and_statements',
+          'Letters/statements extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+        ),
+      );
+    }
+    return {
+      document_type: 'letters_and_statements',
+      family: 'letters_and_statements',
+      model_key: 'letters_and_statements_generic_structured',
+      PAGES: [normalizedSinglePage],
+      QUALITY_FLAGS: [],
+      orientation: 'unknown',
+      page_count: null,
+    };
+  }
+
+  throw new StructuredRenderingRequiredError(
+    'letters_and_statements',
+    buildStructuredFailureMessage(
+      'letters_and_statements',
+      'Letters/statements extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+    ),
+  );
+}
+
+function isLettersStatementsTextBearingZone(zone: LettersStatementsLayoutZone): boolean {
+  const signal = normalizeZoneBindingId(
+    `${zone.zone_type} ${zone.zone_id} ${zone.visual_style}`,
+  );
+  if (!signal) return true;
+
+  const nonTextKeywords = [
+    'logo',
+    'seal',
+    'stamp',
+    'watermark',
+    'barcode',
+    'qr',
+    'photo',
+    'image',
+    'illustration',
+    'icon',
+    'decorative',
+    'ornament',
+    'border',
+    'frame',
+  ];
+  if (nonTextKeywords.some((keyword) => signal.includes(keyword))) {
+    return false;
+  }
+
+  return true;
+}
+
+interface LettersStatementsZoneBindingResolution {
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  missingTranslatedZones: string[];
+  mappedGenericZones: string[];
+  resolvedZoneContents: Array<{ zoneLabel: string; content: string }>;
+  allTranslatedSegments: string[];
+}
+
+function resolveLettersStatementsZoneBindings(
+  payload: LettersAndStatements,
+): LettersStatementsZoneBindingResolution {
+  const requiredZones: string[] = [];
+  const translatedZonesFound: string[] = [];
+  const missingTranslatedZones: string[] = [];
+  const mappedGenericZones: string[] = [];
+  const resolvedZoneContents = new Map<string, string>();
+  const allTranslatedSegments: string[] = [];
+
+  for (const page of payload.PAGES ?? []) {
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    const layoutZones = (page.LAYOUT_ZONES ?? [])
+      .map((zone, index) => {
+        const originalId = normalizeWhitespace(zone.zone_id);
+        const normalizedId = normalizeZoneBindingId(zone.zone_id);
+        if (!originalId || !normalizedId) return null;
+        return {
+          index,
+          originalId,
+          normalizedId,
+          label: `page_${pageNumber}:${originalId}`,
+          textBearing: isLettersStatementsTextBearingZone(zone),
+        };
+      })
+      .filter((zone): zone is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        label: string;
+        textBearing: boolean;
+      } => zone !== null);
+
+    const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .map((entry, index) => {
+        const originalId = normalizeWhitespace(entry.zone_id);
+        const normalizedId = normalizeZoneBindingId(entry.zone_id);
+        const content = normalizeWhitespace(entry.content);
+        if (!originalId || !normalizedId || !content) return null;
+        return { index, originalId, normalizedId, content };
+      })
+      .filter((entry): entry is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        content: string;
+      } => entry !== null);
+
+    for (const entry of translatedEntries) {
+      allTranslatedSegments.push(entry.content);
+    }
+
+    requiredZones.push(
+      ...layoutZones
+        .filter((zone) => zone.textBearing)
+        .map((zone) => zone.label),
+    );
+
+    const layoutByNormalizedId = new Map<string, number[]>();
+    for (const zone of layoutZones) {
+      const existing = layoutByNormalizedId.get(zone.normalizedId) ?? [];
+      existing.push(zone.index);
+      layoutByNormalizedId.set(zone.normalizedId, existing);
+    }
+
+    const consumedTranslatedIndexes = new Set<number>();
+    const consumedLayoutIndexes = new Set<number>();
+
+    const assign = (
+      layoutIndex: number,
+      translatedIndex: number,
+      mappedGenericSource?: string,
+    ): void => {
+      const layoutZone = layoutZones.find((zone) => zone.index === layoutIndex);
+      const translatedEntry = translatedEntries.find(
+        (entry) => entry.index === translatedIndex,
+      );
+      if (!layoutZone || !translatedEntry) return;
+
+      consumedLayoutIndexes.add(layoutZone.index);
+      consumedTranslatedIndexes.add(translatedEntry.index);
+      if (layoutZone.textBearing) {
+        translatedZonesFound.push(layoutZone.label);
+      }
+      const existing = resolvedZoneContents.get(layoutZone.label) ?? '';
+      resolvedZoneContents.set(
+        layoutZone.label,
+        existing ? `${existing}\n${translatedEntry.content}` : translatedEntry.content,
+      );
+
+      if (mappedGenericSource) {
+        mappedGenericZones.push(
+          `page_${pageNumber}:${mappedGenericSource}->${layoutZone.originalId}`,
+        );
+      }
+    };
+
+    for (const entry of translatedEntries) {
+      const candidates = layoutByNormalizedId.get(entry.normalizedId) ?? [];
+      const availableLayout = candidates.find(
+        (candidateIndex) => !consumedLayoutIndexes.has(candidateIndex),
+      );
+      if (availableLayout === undefined) continue;
+      assign(availableLayout, entry.index);
+    }
+
+    const unmatchedLayout = layoutZones.filter(
+      (zone) => !consumedLayoutIndexes.has(zone.index),
+    );
+    const unmatchedGenericTranslated = translatedEntries.filter(
+      (entry) =>
+        !consumedTranslatedIndexes.has(entry.index) &&
+        isGenericCivilZoneId(entry.normalizedId),
+    );
+
+    const fallbackMappings = Math.min(
+      unmatchedLayout.length,
+      unmatchedGenericTranslated.length,
+    );
+    for (let i = 0; i < fallbackMappings; i += 1) {
+      const zone = unmatchedLayout[i];
+      const entry = unmatchedGenericTranslated[i];
+      assign(zone.index, entry.index, entry.originalId);
+    }
+
+    for (const zone of layoutZones) {
+      if (!zone.textBearing) continue;
+      if (!consumedLayoutIndexes.has(zone.index)) {
+        missingTranslatedZones.push(zone.label);
+      }
+    }
+  }
+
+  return {
+    requiredZones,
+    translatedZonesFound: Array.from(new Set(translatedZonesFound)),
+    missingTranslatedZones,
+    mappedGenericZones,
+    resolvedZoneContents: Array.from(resolvedZoneContents.entries()).map(
+      ([zoneLabel, content]) => ({ zoneLabel, content }),
+    ),
+    allTranslatedSegments,
+  };
+}
+
+function inferLettersStatementsOrientation(
+  payload: LettersAndStatements,
+): DocumentOrientation {
+  if (payload.orientation === 'portrait' || payload.orientation === 'landscape') {
+    return payload.orientation;
+  }
+
+  const pageHint = payload.PAGES?.[0]?.PAGE_METADATA?.suggested_orientation;
+  if (pageHint === 'portrait' || pageHint === 'landscape') {
+    return pageHint;
+  }
+
+  return 'portrait';
+}
+
+function buildLettersStatementsLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: LettersAndStatements,
+): StructuredRenderLanguageIntegrity {
+  const diagnostics = buildDefaultLanguageIntegrity(input);
+  const resolvedBindings = resolveLettersStatementsZoneBindings(payload);
+
+  diagnostics.translatedPayloadFound = true;
+  diagnostics.requiredZones = resolvedBindings.requiredZones;
+  diagnostics.sourceZonesCount = resolvedBindings.requiredZones.length;
+  diagnostics.translatedZonesFound = resolvedBindings.translatedZonesFound;
+  diagnostics.translatedZonesCount = resolvedBindings.translatedZonesFound.length;
+  diagnostics.missingTranslatedZones = resolvedBindings.missingTranslatedZones;
+  diagnostics.mappedGenericZones = resolvedBindings.mappedGenericZones;
+  diagnostics.sourceContentAttempted = diagnostics.missingTranslatedZones.length > 0;
+
+  const sourceLanguageContaminatedZones: string[] = [];
+  const sourceLanguageMarkers = new Set<string>();
+
+  for (const resolvedZone of resolvedBindings.resolvedZoneContents) {
+    const zoneLeakage = detectSourceLanguageLeakageFromSegments(
+      [resolvedZone.content],
+      {
+        sourceLanguage: diagnostics.sourceLanguage,
+        targetLanguage: diagnostics.targetLanguage,
+      },
+    );
+    if (!zoneLeakage.detected) continue;
+    sourceLanguageContaminatedZones.push(resolvedZone.zoneLabel);
+    for (const marker of zoneLeakage.matchedMarkers) {
+      sourceLanguageMarkers.add(`${resolvedZone.zoneLabel}:${marker}`);
+    }
+  }
+
+  const globalLeakage = detectSourceLanguageLeakageFromSegments(
+    resolvedBindings.allTranslatedSegments,
+    {
+      sourceLanguage: diagnostics.sourceLanguage,
+      targetLanguage: diagnostics.targetLanguage,
+    },
+  );
+  for (const marker of globalLeakage.matchedMarkers) {
+    sourceLanguageMarkers.add(marker);
+  }
+  if (
+    globalLeakage.detected &&
+    sourceLanguageContaminatedZones.length === 0
+  ) {
+    sourceLanguageContaminatedZones.push('payload');
+  }
+
+  diagnostics.sourceLanguageMarkers = Array.from(sourceLanguageMarkers);
+  diagnostics.sourceLanguageContaminatedZones = sourceLanguageContaminatedZones;
+  diagnostics.sourceContentAttempted =
+    diagnostics.sourceContentAttempted ||
+    sourceLanguageContaminatedZones.length > 0;
+  diagnostics.languageIssueType = resolveLanguageIssueType(
+    diagnostics.missingTranslatedZones.length > 0,
+    sourceLanguageContaminatedZones.length > 0,
+  );
+
+  return diagnostics;
+}
+
 function isEb1EvidenceStructuredPage(
   value: unknown,
 ): value is Eb1EvidenceStructuredPage {
@@ -2731,6 +3996,106 @@ export async function renderSupportedStructuredDocument(
       };
     }
 
+    case 'editorial_news_pages': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildEditorialNewsPagesSystemPrompt(),
+          messageContentFor(
+            buildEditorialNewsPagesUserMessage({
+              sourcePageCount: input.sourcePageCount ?? null,
+            }),
+          ),
+          16384,
+          `${input.logPrefix} [editorial-news-pages]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<unknown>(
+        input.documentType,
+        rawJson,
+      );
+      const normalizedPayload = normalizeEditorialNewsPagesPayload(parsed);
+      const languageIntegrity = buildEditorialNewsLanguageIntegrity(
+        input,
+        normalizedPayload,
+      );
+
+      console.log(
+        `${input.logPrefix} [editorial-news-pages] language integrity diagnostics: ` +
+          JSON.stringify({
+            orderId: input.orderId ?? null,
+            docId: input.documentId ?? null,
+            family: 'editorial_news_pages',
+            subtype: normalizedPayload.model_key,
+            targetLanguage: languageIntegrity.targetLanguage,
+            sourceLanguage: languageIntegrity.sourceLanguage,
+            translatedPayloadFound: languageIntegrity.translatedPayloadFound ? 'yes' : 'no',
+            requiredZones: languageIntegrity.requiredZones,
+            translatedZonesFound: languageIntegrity.translatedZonesFound,
+            translatedZonesCount: languageIntegrity.translatedZonesCount,
+            sourceZonesCount: languageIntegrity.sourceZonesCount,
+            missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+            sourceLanguageContaminatedZones:
+              languageIntegrity.sourceLanguageContaminatedZones,
+            sourceContentAttempted: languageIntegrity.sourceContentAttempted ? 'yes' : 'no',
+            sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+            mappedGenericZones: languageIntegrity.mappedGenericZones,
+            issueType: languageIntegrity.languageIssueType,
+            issueIsMissingContent:
+              languageIntegrity.languageIssueType ===
+                'missing_translated_zones' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+            issueIsLanguageMismatch:
+              languageIntegrity.languageIssueType ===
+                'source_language_mismatch' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+          }),
+      );
+
+      if (languageIntegrity.languageIssueType !== 'none') {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            'Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.',
+          ),
+        );
+      }
+
+      if (
+        typeof input.sourcePageCount === 'number' &&
+        input.sourcePageCount > 0 &&
+        normalizedPayload.PAGES.length !== input.sourcePageCount
+      ) {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            `Editorial/news page mismatch: source_page_count=${input.sourcePageCount} but structured_pages=${normalizedPayload.PAGES.length}.`,
+          ),
+        );
+      }
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown'
+          ? inferEditorialNewsOrientation(normalizedPayload)
+          : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderEditorialNewsPagesHtml(normalizedPayload, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+        languageIntegrity,
+      };
+    }
+
     case 'publication_media_record': {
       const rawJson = ensureExtractionJson(
         input.documentType,
@@ -2761,6 +4126,106 @@ export async function renderSupportedStructuredDocument(
 
       return {
         structuredHtml: renderPublicationMediaRecordHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+        languageIntegrity,
+      };
+    }
+
+    case 'letters_and_statements': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildLettersAndStatementsSystemPrompt(),
+          messageContentFor(
+            buildLettersAndStatementsUserMessage({
+              sourcePageCount: input.sourcePageCount ?? null,
+            }),
+          ),
+          16384,
+          `${input.logPrefix} [letters-and-statements]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<unknown>(
+        input.documentType,
+        rawJson,
+      );
+      const normalizedPayload = normalizeLettersAndStatementsPayload(parsed);
+      const languageIntegrity = buildLettersStatementsLanguageIntegrity(
+        input,
+        normalizedPayload,
+      );
+
+      console.log(
+        `${input.logPrefix} [letters-and-statements] language integrity diagnostics: ` +
+          JSON.stringify({
+            orderId: input.orderId ?? null,
+            docId: input.documentId ?? null,
+            family: 'letters_and_statements',
+            subtype: normalizedPayload.model_key,
+            targetLanguage: languageIntegrity.targetLanguage,
+            sourceLanguage: languageIntegrity.sourceLanguage,
+            translatedPayloadFound: languageIntegrity.translatedPayloadFound ? 'yes' : 'no',
+            requiredZones: languageIntegrity.requiredZones,
+            translatedZonesFound: languageIntegrity.translatedZonesFound,
+            translatedZonesCount: languageIntegrity.translatedZonesCount,
+            sourceZonesCount: languageIntegrity.sourceZonesCount,
+            missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+            sourceLanguageContaminatedZones:
+              languageIntegrity.sourceLanguageContaminatedZones,
+            sourceContentAttempted: languageIntegrity.sourceContentAttempted ? 'yes' : 'no',
+            sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+            mappedGenericZones: languageIntegrity.mappedGenericZones,
+            issueType: languageIntegrity.languageIssueType,
+            issueIsMissingContent:
+              languageIntegrity.languageIssueType ===
+                'missing_translated_zones' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+            issueIsLanguageMismatch:
+              languageIntegrity.languageIssueType ===
+                'source_language_mismatch' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+          }),
+      );
+
+      if (languageIntegrity.languageIssueType !== 'none') {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            'Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.',
+          ),
+        );
+      }
+
+      if (
+        typeof input.sourcePageCount === 'number' &&
+        input.sourcePageCount > 0 &&
+        normalizedPayload.PAGES.length !== input.sourcePageCount
+      ) {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            `Letters/statements page mismatch: source_page_count=${input.sourcePageCount} but structured_pages=${normalizedPayload.PAGES.length}.`,
+          ),
+        );
+      }
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown'
+          ? inferLettersStatementsOrientation(normalizedPayload)
+          : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderLettersAndStatementsHtml(normalizedPayload, {
           pageCount: input.sourcePageCount,
           orientation: effectiveOrientation,
         }),

@@ -18,7 +18,9 @@
  *   - academic_transcript            (grade records, school histories, histórico escolar)
  *   - academic_record_general        (enrollment/declaration/completion/syllabus records)
  *   - corporate_business_record      (corporate registrations, bylaws, resolutions, extracts)
+ *   - editorial_news_pages           (news/editorial pages: print clipping, web article, printview, metadata)
  *   - publication_media_record       (articles, media clippings, publication metadata pages)
+ *   - letters_and_statements         (recommendation letters, declarations, letter+resume bundles)
  *   - recommendation_letter          (recommendation, expert opinion, support/reference letters)
  *   - employment_record              (employment letters, HR attestations, salary confirmations)
  *   - course_certificate_landscape   (course/training/participation/completion certificates)
@@ -26,7 +28,7 @@
  *   - unknown                        (anything else, or insufficient signals)
  *
  * Classification order matters — more-specific families are checked first:
- *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → publication_media_record → recommendation_letter → employment_record → course_certificate → eb1_evidence_photo_sheet → unknown
+ *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → editorial_news_pages → publication_media_record → letters_and_statements → recommendation_letter → employment_record → course_certificate → eb1_evidence_photo_sheet → unknown
  *
  * Integration note:
  *   This classifier is AUXILIARY — it never modifies translation behavior.
@@ -45,7 +47,9 @@ export type DocumentType =
   | 'academic_transcript'            // Grade transcripts, school records, histórico escolar
   | 'academic_record_general'        // Enrollment/declaration/completion/syllabus records
   | 'corporate_business_record'      // Corporate registries, resolutions, bylaws, business licenses
+  | 'editorial_news_pages'           // Flexible editorial/news pages (print/web/metadata/printview)
   | 'publication_media_record'       // Publication/media evidence: article pages, covers, clippings
+  | 'letters_and_statements'         // Flexible recommendations/declarations (including letter+resume bundles)
   | 'recommendation_letter'          // Recommendation/expert opinion/support/reference letters
   | 'employment_record'              // Employment letters/contracts/attestations
   | 'course_certificate_landscape'   // Course/training/participation/completion certificates
@@ -905,6 +909,119 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
   }
 
+  // ── Editorial / News Pages (Flexible Structured Family) ─────────────────
+  // Covers:
+  //   - scanned newspaper clippings
+  //   - web news articles
+  //   - web print views (with menus/cookies/related links)
+  //   - editorial metadata / cover / landing pages
+  //
+  // This family is intentionally flexible and should capture editorial/news-like
+  // evidence early so client-facing structured rendering is not blocked by overly
+  // strict subtype requirements.
+  const editorialNewsSignals: RegExp[] = [
+    /\bheadline\b/i,
+    /\bsubheadline\b/i,
+    /\bbyline\b/i,
+    /\barticle body\b/i,
+    /\bnewspaper clipping\b/i,
+    /\bpress clipping\b/i,
+    /\bmedia clipping\b/i,
+    /\bjournalist\b/i,
+    /\breporter\b/i,
+    /\bpublished (?:on|in)\b/i,
+    /\bpublication date\b/i,
+    /\bsource[:\s]/i,
+    /\bweb news\b/i,
+    /\bprint view\b/i,
+    /\bcookie(?: notice| banner)?\b/i,
+    /\brelated (?:stories|content|articles)\b/i,
+    /\bsite navigation\b/i,
+    /\bfooter links\b/i,
+    /\burl(?:\/timestamp| timestamp)?\b/i,
+    /\bdoi[:\s]/i,
+    /\babstract\b/i,
+    /\bvolume\s+\d+/i,
+    /\bissue(?:\s+no\.?|\s+number)?\s+\d+/i,
+    /\bmetadata block\b/i,
+    /\bz_headline\b/i,
+    /\bz_subheadline\b/i,
+    /\bz_byline\b/i,
+    /\bz_location_date\b/i,
+    /\bz_article_body\b/i,
+    /\bz_metadata_block\b/i,
+    /\bz_doi_block\b/i,
+    /\bz_abstract_block\b/i,
+    /\bz_cookie_notice\b/i,
+    /\bz_site_navigation\b/i,
+    /\bz_footer_links\b/i,
+    /\bz_url_timestamp\b/i,
+    /\beditorial_news_pages\b/i,
+    /\bprint_news_clipping\b/i,
+    /\bweb_news_article\b/i,
+    /\bweb_news_printview\b/i,
+    /\beditorial_article_cover_or_metadata\b/i,
+    /\beditorial_news_generic_structured\b/i,
+  ];
+
+  const editorialNewsHits = editorialNewsSignals.filter((rx) => rx.test(text)).length;
+
+  const hasPrintClippingShape =
+    /\bnewspaper clipping\b/i.test(text) ||
+    /\bpress clipping\b/i.test(text) ||
+    /\bmulti-column\b/i.test(text) ||
+    /\bheadline\b/i.test(text);
+  const hasWebArticleShape =
+    /\bweb news\b/i.test(text) ||
+    /\bpublished (?:on|in)\b/i.test(text) ||
+    /\burl(?:\/timestamp| timestamp)?\b/i.test(text) ||
+    /\bsite navigation\b/i.test(text);
+  const hasWebPrintViewShape =
+    /\bprint view\b/i.test(text) ||
+    /\bcookie(?: notice| banner)?\b/i.test(text) ||
+    /\brelated (?:stories|content|articles)\b/i.test(text) ||
+    /\bfooter links\b/i.test(text);
+  const hasEditorialMetadataShape =
+    /\bdoi[:\s]/i.test(text) ||
+    /\bmetadata block\b/i.test(text) ||
+    /\bvolume\s+\d+/i.test(text) ||
+    /\bissue(?:\s+no\.?|\s+number)?\s+\d+/i.test(text) ||
+    /\babstract\b/i.test(text);
+  const hasEditorialZoneBlueprintCore =
+    /\bpage_metadata\b/i.test(text) &&
+    /\blayout_zones\b/i.test(text) &&
+    /\btranslated_content_by_zone\b/i.test(text);
+
+  const editorialNewsCombo =
+    hasEditorialZoneBlueprintCore &&
+    (
+      hasPrintClippingShape ||
+      hasWebArticleShape ||
+      hasWebPrintViewShape ||
+      hasEditorialMetadataShape
+    );
+
+  if (editorialNewsHits > 0 || editorialNewsCombo) {
+    const activeRules = [
+      hasPrintClippingShape && 'print-news-clipping-shape',
+      hasWebArticleShape && 'web-news-article-shape',
+      hasWebPrintViewShape && 'web-news-printview-shape',
+      hasEditorialMetadataShape && 'editorial-metadata-shape',
+      hasEditorialZoneBlueprintCore && 'zone-blueprint-core',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] editorial/news signals matched: ${editorialNewsHits}` +
+      (activeRules.length > 0 ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (editorialNewsHits >= 3 || editorialNewsCombo) {
+    return { documentType: 'editorial_news_pages', confidence: 'heuristic-high' };
+  }
+  if (editorialNewsHits >= 1) {
+    return { documentType: 'editorial_news_pages', confidence: 'heuristic-low' };
+  }
+
   // ── Publications / Media Evidence ────────────────────────────────────────
   // Covers:
   //   - book covers
@@ -1024,6 +1141,123 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
   }
   if (publicationHits >= 2) {
     return { documentType: 'publication_media_record', confidence: 'heuristic-low' };
+  }
+
+  // ── Letters / Statements (Flexible Structured Family) ───────────────────
+  // Covers:
+  //   - recommendation/reference/support letters
+  //   - institutional declarations (including HR/accountant/academic statements)
+  //   - article acceptance letters
+  //   - recommendation letter bundled with attached resume/CV pages
+  //
+  // This family is intentionally flexible and should absorb letter/declaration
+  // evidence with variable structure so client-facing rendering is not blocked
+  // by low-confidence subtype signals.
+  const lettersStatementsSignals: RegExp[] = [
+    /\bdeclaration\b/i,
+    /\bstatement\b/i,
+    /\bdeclara[cç][aã]o\b/i,
+    /\bto whom it may concern\b/i,
+    /\bi hereby declare\b/i,
+    /\bwe hereby declare\b/i,
+    /\bwe certify\b/i,
+    /\bthis is to certify\b/i,
+    /\brecommendation letter\b/i,
+    /\breference letter\b/i,
+    /\bsupport letter\b/i,
+    /\bcarta de refer[eê]ncia\b/i,
+    /\bcarta de recomenda[cç][aã]o\b/i,
+    /\bhuman resources\b/i,
+    /\bhr department\b/i,
+    /\bcontador\b/i,
+    /\baccountant\b/i,
+    /\benrollment declaration\b/i,
+    /\bdeclarac[aã]o de matr[ií]cula\b/i,
+    /\barticle acceptance\b/i,
+    /\baccepted for publication\b/i,
+    /\bcurriculum vitae\b/i,
+    /\bresume attached\b/i,
+    /\bcv attached\b/i,
+    /\bsincerely\b/i,
+    /\bregards\b/i,
+    /\bsignature\b/i,
+    /\bletterhead\b/i,
+    /\bz_document_title\b/i,
+    /\bz_body_text\b/i,
+    /\bz_signature_block\b/i,
+    /\bz_signer_identity\b/i,
+    /\bz_attached_resume_section\b/i,
+    /\bletters_and_statements\b/i,
+    /\binstitutional_declaration_single_page\b/i,
+    /\brecommendation_letter_single_page\b/i,
+    /\brecommendation_letter_multi_page\b/i,
+    /\bdeclaration_with_letterhead_footer\b/i,
+    /\breference_letter_with_attached_resume\b/i,
+    /\bletters_and_statements_generic_structured\b/i,
+  ];
+
+  const lettersStatementsHits = lettersStatementsSignals.filter((rx) => rx.test(text)).length;
+
+  const hasDeclarationShape =
+    /\bdeclaration\b/i.test(text) ||
+    /\bstatement\b/i.test(text) ||
+    /\bdeclara[cç][aã]o\b/i.test(text) ||
+    /\bthis is to certify\b/i.test(text);
+  const hasRecommendationShape =
+    /\brecommendation letter\b/i.test(text) ||
+    /\breference letter\b/i.test(text) ||
+    /\bsupport letter\b/i.test(text) ||
+    /\bcarta de refer[eê]ncia\b/i.test(text);
+  const hasFormalLetterStructure =
+    /\bto whom it may concern\b/i.test(text) ||
+    /\bsincerely\b/i.test(text) ||
+    /\bregards\b/i.test(text) ||
+    /\bsignature\b/i.test(text);
+  const hasResumeAttachmentShape =
+    /\bcurriculum vitae\b/i.test(text) ||
+    /\bresume attached\b/i.test(text) ||
+    /\bcv attached\b/i.test(text) ||
+    /\battached resume\b/i.test(text);
+  const hasStructuredZoneBlueprintCore =
+    /\bpage_metadata\b/i.test(text) &&
+    /\blayout_zones\b/i.test(text) &&
+    /\btranslated_content_by_zone\b/i.test(text);
+  const hasLettersZoneSignals =
+    /\bz_document_title\b/i.test(text) ||
+    /\bz_body_text\b/i.test(text) ||
+    /\bz_signature_block\b/i.test(text) ||
+    /\bz_signer_identity\b/i.test(text) ||
+    /\bz_attached_resume_section\b/i.test(text);
+
+  const lettersStatementsCombo =
+    (
+      (hasDeclarationShape && hasFormalLetterStructure) ||
+      (hasRecommendationShape && hasFormalLetterStructure) ||
+      (hasRecommendationShape && hasResumeAttachmentShape) ||
+      (hasDeclarationShape && /\baccountant|contador|human resources|hr department|enrollment declaration\b/i.test(text))
+    ) ||
+    (hasStructuredZoneBlueprintCore && hasLettersZoneSignals);
+
+  if (lettersStatementsHits > 0 || lettersStatementsCombo) {
+    const activeRules = [
+      hasDeclarationShape && 'declaration-shape',
+      hasRecommendationShape && 'recommendation-shape',
+      hasFormalLetterStructure && 'formal-letter-structure',
+      hasResumeAttachmentShape && 'resume-attachment-shape',
+      hasStructuredZoneBlueprintCore && 'zone-blueprint-core',
+      hasLettersZoneSignals && 'letters-zone-signals',
+    ].filter(Boolean);
+    console.log(
+      `[documentClassifier] letters/statements signals matched: ${lettersStatementsHits}` +
+      (activeRules.length > 0 ? ` | combination rule: ${activeRules.join(', ')}` : ''),
+    );
+  }
+
+  if (lettersStatementsHits >= 3 || lettersStatementsCombo) {
+    return { documentType: 'letters_and_statements', confidence: 'heuristic-high' };
+  }
+  if (lettersStatementsHits >= 1) {
+    return { documentType: 'letters_and_statements', confidence: 'heuristic-low' };
   }
 
   // ── Recommendation / Expert Letters ──────────────────────────────────────
@@ -1459,8 +1693,14 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
   if (/articles[-_ ]of[-_ ](?:incorporation|organization)|operating[-_ ]agreement|bylaws?|annual[-_ ]report|good[-_ ]standing|business[-_ ]license|corporate[-_ ]resolution|business[-_ ]registration|registry[-_ ]extract|junta[-_ ]comercial|cnpj/i.test(fileUrl)) {
     return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
   }
+  if (/not[ií]cia|materia|mat[eé]ria|reportagem|jornal|newspaper|clipping|press[-_ ]coverage|media[-_ ]coverage|web[-_ ]news|news[-_ ]article|print[-_ ]view|cookie|related[-_ ]stories|headline|byline|editorial|op[-_ ]ed|doi|volume[-_ ]?\d+|issue[-_ ]?\d+|publication[-_ ]metadata|revista[-_ ]de[-_ ]estudos/i.test(fileUrl)) {
+    return { documentType: 'editorial_news_pages', confidence: 'heuristic-low' };
+  }
   if (/book[-_ ]cover|article[-_ ]cover|journal|magazine|newspaper|clipping|media[-_ ]coverage|press[-_ ]coverage|interview|conference[-_ ]paper|abstract|proceedings|doi|issn|isbn|publication[-_ ]metadata/i.test(fileUrl)) {
     return { documentType: 'publication_media_record', confidence: 'heuristic-low' };
+  }
+  if (/declarac[aã]o|declaration|statement|carta[-_ ]de[-_ ]refer[eê]ncia|recommendation[-_ ]letter|reference[-_ ]letter|support[-_ ]letter|letter[-_ ]of[-_ ]reference|hr[-_ ]declaration|human[-_ ]resources|contador|accountant[-_ ]declaration|matr[ií]cula|enrollment[-_ ]declaration|aceite[-_ ]artigo|article[-_ ]acceptance|resume|curriculum[-_ ]vitae|cv[-_ ]attached/i.test(fileUrl)) {
+    return { documentType: 'letters_and_statements', confidence: 'heuristic-low' };
   }
   if (/recommendation[-_ ]letter|expert[-_ ]opinion|support[-_ ]letter|reference[-_ ]letter|testimonial[-_ ]letter|endorsement[-_ ]letter|carta[-_ ]recomend|carta[-_ ]apoio|opinion[-_ ]letter|o[-_ ]1|eb[-_ ]1|eb[-_ ]2|niw/i.test(fileUrl)) {
     return { documentType: 'recommendation_letter', confidence: 'heuristic-low' };
