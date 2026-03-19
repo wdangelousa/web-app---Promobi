@@ -26,6 +26,11 @@ export interface Eb1EvidencePhotoSheetRenderOptions {
 
 type PhotoLayoutMode = 'single' | 'two' | 'two_plus_one';
 
+interface PageRenderMode {
+  compactOnePage: boolean;
+  photoLayoutMode: PhotoLayoutMode;
+}
+
 function escapeHtml(value: string | undefined | null): string {
   return (value ?? '')
     .replace(/&/g, '&amp;')
@@ -191,10 +196,15 @@ function collectRemainingTextZones(
   return entries;
 }
 
-function parseLineHeight(value: string | undefined): number {
+function parseLineHeight(
+  value: string | undefined,
+  compactOnePage: boolean,
+): number {
   const parsed = Number.parseFloat((value ?? '').replace(/[^0-9.]/g, ''));
-  if (!Number.isFinite(parsed)) return 1.25;
-  return Math.min(1.5, Math.max(1.1, parsed));
+  const fallback = compactOnePage ? 1.18 : 1.25;
+  if (!Number.isFinite(parsed)) return fallback;
+  const max = compactOnePage ? 1.24 : 1.5;
+  return Math.min(max, Math.max(1.1, parsed));
 }
 
 function parseFontSize(value: string | undefined, fallbackPt: number): string {
@@ -205,6 +215,27 @@ function parseFontSize(value: string | undefined, fallbackPt: number): string {
   const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ''));
   if (!Number.isFinite(numeric)) return `${fallbackPt}pt`;
   return `${Math.min(12, Math.max(8, numeric)).toFixed(1)}pt`;
+}
+
+function parsePtValue(value: string, fallbackPt: number): number {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return fallbackPt;
+  const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(numeric)) return fallbackPt;
+  return numeric;
+}
+
+function formatPtValue(value: number): string {
+  return `${value.toFixed(1)}pt`;
+}
+
+function compactFontSize(
+  value: string,
+  minPt: number,
+  deltaPt: number,
+): string {
+  const numeric = parsePtValue(value, minPt);
+  return formatPtValue(Math.max(minPt, numeric - deltaPt));
 }
 
 function resolvePhotoLayoutMode(page: Eb1EvidenceStructuredPage): PhotoLayoutMode {
@@ -260,43 +291,50 @@ function collectHighlightMarkerCount(page: Eb1EvidenceStructuredPage): number {
   return Math.max(fromZones, fromText);
 }
 
-function renderPhotoCard(index: number, text: string, marker: boolean): string {
-  return `<article class="photo-card">
+function renderPhotoCard(
+  index: number,
+  text: string,
+  marker: boolean,
+  compactOnePage: boolean,
+): string {
+  return `<article class="photo-card${compactOnePage ? ' compact-photo-card' : ''}">
   ${marker ? '<div class="highlight-marker" aria-label="highlight marker">▼</div>' : ''}
   <div class="photo-placeholder">PHOTO ${index + 1}</div>
   <div class="photo-caption">${escapeHtml(text)}</div>
 </article>`;
 }
 
-function renderPhotoStage(page: Eb1EvidenceStructuredPage): string {
-  const mode = resolvePhotoLayoutMode(page);
+function renderPhotoStage(
+  page: Eb1EvidenceStructuredPage,
+  mode: PageRenderMode,
+): string {
   const photos = collectPhotoDescriptions(page);
   const markerCount = collectHighlightMarkerCount(page);
 
-  if (mode === 'two_plus_one') {
+  if (mode.photoLayoutMode === 'two_plus_one') {
     const topLeft = photos[0] ?? '[Photo: left top photo]';
     const topRight = photos[1] ?? '[Photo: right top photo]';
     const bottom = photos[2] ?? '[Photo: bottom centered photo]';
 
     return `<section class="photo-stage two-plus-one">
   <div class="photo-row">
-    ${renderPhotoCard(0, topLeft, markerCount >= 1)}
-    ${renderPhotoCard(1, topRight, markerCount >= 2)}
+    ${renderPhotoCard(0, topLeft, markerCount >= 1, mode.compactOnePage)}
+    ${renderPhotoCard(1, topRight, markerCount >= 2, mode.compactOnePage)}
   </div>
   <div class="photo-bottom">
-    ${renderPhotoCard(2, bottom, markerCount >= 3)}
+    ${renderPhotoCard(2, bottom, markerCount >= 3, mode.compactOnePage)}
   </div>
 </section>`;
   }
 
-  if (mode === 'two') {
+  if (mode.photoLayoutMode === 'two') {
     const left = photos[0] ?? '[Photo: left photo]';
     const right = photos[1] ?? '[Photo: right photo]';
 
     return `<section class="photo-stage two-up">
   <div class="photo-row">
-    ${renderPhotoCard(0, left, markerCount >= 1)}
-    ${renderPhotoCard(1, right, markerCount >= 2)}
+    ${renderPhotoCard(0, left, markerCount >= 1, mode.compactOnePage)}
+    ${renderPhotoCard(1, right, markerCount >= 2, mode.compactOnePage)}
   </div>
 </section>`;
   }
@@ -304,16 +342,25 @@ function renderPhotoStage(page: Eb1EvidenceStructuredPage): string {
   const single = photos[0] ?? '[Photo: single centered photo]';
   return `<section class="photo-stage single">
   <div class="photo-single-wrap">
-    ${renderPhotoCard(0, single, markerCount >= 1)}
+    ${renderPhotoCard(0, single, markerCount >= 1, mode.compactOnePage)}
   </div>
 </section>`;
 }
 
-function renderNonTextLegend(page: Eb1EvidenceStructuredPage): string {
+function renderNonTextLegend(
+  page: Eb1EvidenceStructuredPage,
+  compactOnePage: boolean,
+): string {
   const elements = (page.NON_TEXTUAL_ELEMENTS ?? [])
     .map((line) => normalizeWhitespace(line))
     .filter(Boolean);
   if (elements.length === 0) return '';
+
+  if (compactOnePage) {
+    return `<section class="non-text-legend compact">
+  <div class="non-text-inline">${escapeHtml(elements.join(' • '))}</div>
+</section>`;
+  }
 
   const items = elements
     .map((line) => `<li>${escapeHtml(line)}</li>`)
@@ -325,7 +372,11 @@ function renderNonTextLegend(page: Eb1EvidenceStructuredPage): string {
 </section>`;
 }
 
-function renderPage(page: Eb1EvidenceStructuredPage, pageIndex: number): string {
+function renderPage(
+  page: Eb1EvidenceStructuredPage,
+  pageIndex: number,
+  mode: PageRenderMode,
+): string {
   const contentByZoneId = buildResolvedContentByZoneId(page);
   const consumedZoneIds = new Set<string>();
 
@@ -342,15 +393,34 @@ function renderPage(page: Eb1EvidenceStructuredPage, pageIndex: number): string 
 
   const metadata = page.PAGE_METADATA;
   const hints = page.RENDERING_HINTS;
-  const spacingProfile = hints?.recommended_spacing_profile === 'compact' ? 'compact' : 'normal';
-  const lineHeight = parseLineHeight(hints?.recommended_line_height);
+  const spacingProfile =
+    mode.compactOnePage || hints?.recommended_spacing_profile === 'compact'
+      ? 'compact'
+      : 'normal';
+  const lineHeight = parseLineHeight(
+    hints?.recommended_line_height,
+    mode.compactOnePage,
+  );
   const fonts = metadata?.suggested_font_size_by_section ?? {};
+  const baseTitleSize = parseFontSize(fonts.z_evidence_title, 11);
+  const baseBodySize = parseFontSize(fonts.z_explanatory_paragraph, 11);
+  const baseFooterSize = parseFontSize(fonts.z_footer_identity, 11);
+  const titleSize = mode.compactOnePage
+    ? compactFontSize(baseTitleSize, 9.8, 0.5)
+    : baseTitleSize;
+  const bodySize = mode.compactOnePage
+    ? compactFontSize(baseBodySize, 9.6, 0.6)
+    : baseBodySize;
+  const footerSize = mode.compactOnePage
+    ? compactFontSize(baseFooterSize, 9.4, 0.4)
+    : baseFooterSize;
 
   const styleVars = [
     `--evidence-line-height:${lineHeight}`,
-    `--evidence-title-size:${parseFontSize(fonts.z_evidence_title, 11)}`,
-    `--evidence-body-size:${parseFontSize(fonts.z_explanatory_paragraph, 11)}`,
-    `--evidence-footer-size:${parseFontSize(fonts.z_footer_identity, 11)}`,
+    `--evidence-title-size:${titleSize}`,
+    `--evidence-body-size:${bodySize}`,
+    `--evidence-footer-size:${footerSize}`,
+    `--evidence-page-min-height:${mode.compactOnePage ? '7.86in' : '8.02in'}`,
   ].join(';');
 
   const titleFallback = nonEmpty(title) ?? 'EVIDENCE';
@@ -364,15 +434,15 @@ function renderPage(page: Eb1EvidenceStructuredPage, pageIndex: number): string 
 
   const footerText = nonEmpty(footer) ?? '[illegible]';
 
-  return `<section class="evidence-page spacing-${spacingProfile}" data-page-number="${metadata?.page_number ?? pageIndex + 1}" style="${styleVars}">
+  return `<section class="evidence-page spacing-${spacingProfile}${mode.compactOnePage ? ' one-page-compact' : ''} layout-${mode.photoLayoutMode}" data-page-number="${metadata?.page_number ?? pageIndex + 1}" style="${styleVars}">
   <header class="evidence-header">
     <h1 class="evidence-title">${escapeHtml(titleFallback)}</h1>
     ${paragraphHtml}
     ${additionalHtml}
   </header>
 
-  ${renderPhotoStage(page)}
-  ${renderNonTextLegend(page)}
+  ${renderPhotoStage(page, mode)}
+  ${renderNonTextLegend(page, mode.compactOnePage)}
 
   <footer class="evidence-footer">${escapeHtml(footerText)}</footer>
 </section>`;
@@ -397,20 +467,20 @@ body {
 }
 .evidence-page {
   width: 100%;
-  min-height: 10.25in;
+  min-height: var(--evidence-page-min-height, 8.02in);
   border: 0.7px solid #dde5f0;
   border-radius: 4px;
-  padding: 0.2in 0.22in;
+  padding: 0.16in 0.18in;
   display: flex;
   flex-direction: column;
-  gap: 0.14in;
+  gap: 0.1in;
   line-height: var(--evidence-line-height);
 }
 .evidence-header {
   display: block;
 }
 .evidence-title {
-  margin: 0 0 0.07in;
+  margin: 0 0 0.05in;
   font-size: var(--evidence-title-size);
   font-weight: 700;
   text-transform: uppercase;
@@ -418,7 +488,7 @@ body {
 }
 .evidence-paragraph,
 .evidence-extra {
-  margin: 0 0 0.06in;
+  margin: 0 0 0.045in;
   font-size: var(--evidence-body-size);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -428,30 +498,35 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.1in;
+  gap: 0.075in;
   align-items: center;
 }
 .photo-row {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.16in;
+  gap: 0.12in;
 }
 .photo-bottom,
 .photo-single-wrap {
-  width: 54%;
+  width: 56%;
 }
 .photo-card {
   border: 0.8px solid #d6dfeb;
   border-radius: 4px;
   background: #fafcff;
-  padding: 0.08in;
+  padding: 0.06in;
   position: relative;
-  min-height: 2.05in;
+  min-height: 1.68in;
+  display: flex;
+  flex-direction: column;
+  gap: 0.045in;
 }
 .photo-placeholder {
   width: 100%;
-  min-height: 1.5in;
+  min-height: 1.18in;
+  max-height: 1.66in;
+  aspect-ratio: 4 / 3;
   border: 0.8px dashed #b9c7dc;
   border-radius: 4px;
   display: flex;
@@ -462,30 +537,30 @@ body {
   letter-spacing: 0.5px;
 }
 .photo-caption {
-  margin-top: 0.07in;
-  font-size: 8.9pt;
+  margin-top: 0.02in;
+  font-size: 8.4pt;
   color: #1f2937;
-  line-height: 1.25;
+  line-height: 1.18;
   white-space: pre-wrap;
 }
 .highlight-marker {
   position: absolute;
-  top: -0.18in;
-  left: 0.12in;
+  top: -0.14in;
+  left: 0.1in;
   color: #f59e0b;
   font-weight: 800;
-  font-size: 17pt;
+  font-size: 15pt;
   line-height: 1;
 }
 .non-text-legend {
   border: 0.8px solid #dce4ef;
   border-radius: 4px;
   background: #f9fbff;
-  padding: 0.08in 0.1in;
+  padding: 0.06in 0.08in;
 }
 .non-text-legend h3 {
-  margin: 0 0 0.04in;
-  font-size: 8.2pt;
+  margin: 0 0 0.03in;
+  font-size: 7.8pt;
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: #374151;
@@ -495,9 +570,19 @@ body {
   padding-left: 0.18in;
 }
 .non-text-legend li {
-  margin: 0 0 0.03in;
-  font-size: 8.5pt;
-  line-height: 1.2;
+  margin: 0 0 0.02in;
+  font-size: 8pt;
+  line-height: 1.15;
+}
+.non-text-legend.compact {
+  padding: 0.035in 0.055in;
+}
+.non-text-inline {
+  font-size: 7.4pt;
+  line-height: 1.08;
+  color: #334155;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .evidence-footer {
   margin-top: auto;
@@ -506,11 +591,69 @@ body {
   text-align: left;
 }
 .spacing-compact .photo-card {
-  min-height: 1.8in;
+  min-height: 1.52in;
 }
 .spacing-compact .evidence-paragraph,
 .spacing-compact .evidence-extra {
-  margin-bottom: 0.045in;
+  margin-bottom: 0.032in;
+}
+.evidence-page.one-page-compact {
+  padding: 0.13in 0.14in;
+  gap: 0.075in;
+}
+.evidence-page.one-page-compact .evidence-title {
+  margin-bottom: 0.035in;
+}
+.evidence-page.one-page-compact .evidence-paragraph,
+.evidence-page.one-page-compact .evidence-extra {
+  margin-bottom: 0.028in;
+}
+.evidence-page.one-page-compact.layout-single .photo-single-wrap {
+  width: 58%;
+}
+.evidence-page.one-page-compact.layout-single .photo-card {
+  min-height: 2.12in;
+}
+.evidence-page.one-page-compact.layout-single .photo-placeholder {
+  min-height: 1.82in;
+  max-height: 2.12in;
+}
+.evidence-page.one-page-compact.layout-two .photo-card {
+  min-height: 1.5in;
+}
+.evidence-page.one-page-compact.layout-two .photo-placeholder {
+  min-height: 1.16in;
+  max-height: 1.34in;
+}
+.evidence-page.one-page-compact.layout-two_plus_one .photo-row .photo-card {
+  min-height: 1.36in;
+}
+.evidence-page.one-page-compact.layout-two_plus_one .photo-row .photo-placeholder {
+  min-height: 1.01in;
+  max-height: 1.17in;
+}
+.evidence-page.one-page-compact.layout-two_plus_one .photo-bottom {
+  width: 52%;
+}
+.evidence-page.one-page-compact.layout-two_plus_one .photo-bottom .photo-card {
+  min-height: 1.52in;
+}
+.evidence-page.one-page-compact.layout-two_plus_one .photo-bottom .photo-placeholder {
+  min-height: 1.16in;
+  max-height: 1.34in;
+}
+.evidence-page.one-page-compact .photo-caption {
+  font-size: 7.4pt;
+  line-height: 1.08;
+}
+.evidence-page.one-page-compact .highlight-marker {
+  top: -0.11in;
+  left: 0.08in;
+  font-size: 13pt;
+}
+.evidence-page.one-page-compact .non-text-inline {
+  font-size: 6.9pt;
+  line-height: 1.04;
 }
 .page-break {
   break-before: page;
@@ -538,8 +681,18 @@ export function renderEb1EvidencePhotoSheetHtml(
   const pageOrientation = orientation === 'landscape' ? 'landscape' : 'portrait';
 
   const pages = payload.PAGES ?? [];
+  const compactOnePage =
+    options.pageCount === 1 &&
+    pages.length === 1 &&
+    pageOrientation === 'portrait';
   const htmlPages = pages
-    .map((page, index) => `${index > 0 ? '<div class="page-break"></div>' : ''}${renderPage(page, index)}`)
+    .map((page, index) => {
+      const mode: PageRenderMode = {
+        compactOnePage,
+        photoLayoutMode: resolvePhotoLayoutMode(page),
+      };
+      return `${index > 0 ? '<div class="page-break"></div>' : ''}${renderPage(page, index, mode)}`;
+    })
     .join('');
 
   return `<!doctype html>
