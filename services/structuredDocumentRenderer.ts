@@ -113,6 +113,7 @@ import type {
   Eb1EvidenceLayoutZone,
   Eb1EvidencePhotoSheet,
   Eb1EvidenceStructuredPage,
+  Eb1EvidenceTranslatedZoneContent,
 } from '@/types/eb1EvidencePhotoSheet';
 
 export type SupportedStructuredDocumentType = Exclude<DocumentType, 'unknown'>;
@@ -1597,11 +1598,244 @@ function isEb1EvidenceStructuredPage(
   value: unknown,
 ): value is Eb1EvidenceStructuredPage {
   if (!isPlainObject(value)) return false;
-  return (
-    isPlainObject(value.PAGE_METADATA) &&
-    Array.isArray(value.LAYOUT_ZONES) &&
-    Array.isArray(value.TRANSLATED_CONTENT_BY_ZONE)
+  const hasLayoutZones =
+    Array.isArray(value.LAYOUT_ZONES) || isPlainObject(value.LAYOUT_ZONES);
+  const hasTranslatedZones =
+    Array.isArray(value.TRANSLATED_CONTENT_BY_ZONE) ||
+    isPlainObject(value.TRANSLATED_CONTENT_BY_ZONE);
+  return isPlainObject(value.PAGE_METADATA) && hasLayoutZones && hasTranslatedZones;
+}
+
+function normalizeEb1EvidenceLayoutZones(
+  raw: unknown,
+): Eb1EvidenceLayoutZone[] {
+  const normalized: Eb1EvidenceLayoutZone[] = [];
+
+  const pushZone = (
+    zoneIdRaw: unknown,
+    zoneTypeRaw: unknown,
+    relativePositionRaw: unknown,
+    visualStyleRaw: unknown,
+    compactionPriorityRaw: unknown,
+  ): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+    normalized.push({
+      zone_id: zoneId,
+      zone_type:
+        normalizeWhitespace(
+          typeof zoneTypeRaw === 'string' ? zoneTypeRaw : '',
+        ) || 'other',
+      relative_position:
+        normalizeWhitespace(
+          typeof relativePositionRaw === 'string' ? relativePositionRaw : '',
+        ) || 'center',
+      visual_style:
+        normalizeWhitespace(
+          typeof visualStyleRaw === 'string' ? visualStyleRaw : '',
+        ) || 'other',
+      compaction_priority:
+        normalizeWhitespace(
+          typeof compactionPriorityRaw === 'string' ? compactionPriorityRaw : '',
+        ) || 'medium',
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      pushZone(
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : '',
+        entry.zone_type,
+        entry.relative_position,
+        entry.visual_style,
+        entry.compaction_priority,
+      );
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (isPlainObject(value)) {
+      pushZone(
+        typeof value.zone_id === 'string'
+          ? value.zone_id
+          : typeof value.zoneId === 'string'
+            ? value.zoneId
+            : key,
+        value.zone_type,
+        value.relative_position,
+        value.visual_style,
+        value.compaction_priority,
+      );
+      continue;
+    }
+
+    pushZone(key, 'other', 'center', 'other', 'medium');
+  }
+
+  return normalized;
+}
+
+function normalizeEb1EvidenceTranslatedZones(
+  raw: unknown,
+): Eb1EvidenceTranslatedZoneContent[] {
+  const normalized: Eb1EvidenceTranslatedZoneContent[] = [];
+
+  const pushContent = (zoneIdRaw: unknown, contentRaw: unknown): void => {
+    const zoneId = normalizeWhitespace(
+      typeof zoneIdRaw === 'string' ? zoneIdRaw : '',
+    );
+    if (!zoneId) return;
+    const content = normalizeWhitespace(
+      typeof contentRaw === 'string'
+        ? contentRaw
+        : collectStringSegments(contentRaw).join('\n'),
+    );
+    if (!content) return;
+    normalized.push({ zone_id: zoneId, content });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isPlainObject(entry)) continue;
+      const zoneId =
+        typeof entry.zone_id === 'string'
+          ? entry.zone_id
+          : typeof entry.zoneId === 'string'
+            ? entry.zoneId
+            : typeof entry.id === 'string'
+              ? entry.id
+              : '';
+      const contentCandidate =
+        typeof entry.content === 'string'
+          ? entry.content
+          : typeof entry.text === 'string'
+            ? entry.text
+            : typeof entry.translated_content === 'string'
+              ? entry.translated_content
+              : typeof entry.translatedText === 'string'
+                ? entry.translatedText
+                : typeof entry.value === 'string'
+                  ? entry.value
+                  : collectStringSegments(entry.content ?? entry.text ?? entry).join('\n');
+      pushContent(zoneId, contentCandidate);
+    }
+    return normalized;
+  }
+
+  if (!isPlainObject(raw)) return normalized;
+
+  for (const [zoneId, value] of Object.entries(raw)) {
+    pushContent(zoneId, value);
+  }
+
+  return normalized;
+}
+
+function normalizeEb1EvidenceStructuredPage(
+  raw: unknown,
+  fallbackPageNumber: number,
+): Eb1EvidenceStructuredPage | null {
+  if (!isPlainObject(raw) || !isPlainObject(raw.PAGE_METADATA)) return null;
+
+  const metadata = raw.PAGE_METADATA;
+  const pageNumber =
+    typeof metadata.page_number === 'number' && Number.isFinite(metadata.page_number)
+      ? metadata.page_number
+      : fallbackPageNumber;
+  const detectedDocumentType =
+    typeof metadata.detected_document_type === 'string'
+      ? metadata.detected_document_type
+      : 'EB1 evidence photo sheet';
+  const suggestedOrientation =
+    metadata.suggested_orientation === 'portrait' ||
+    metadata.suggested_orientation === 'landscape' ||
+    metadata.suggested_orientation === 'unknown'
+      ? metadata.suggested_orientation
+      : 'unknown';
+  const estimatedDensity =
+    metadata.estimated_density === 'low' ||
+    metadata.estimated_density === 'medium' ||
+    metadata.estimated_density === 'high'
+      ? metadata.estimated_density
+      : 'medium';
+  const suggestedFontStyle =
+    typeof metadata.suggested_font_style === 'string'
+      ? metadata.suggested_font_style
+      : 'unknown';
+  const suggestedFontSizes = isPlainObject(metadata.suggested_font_size_by_section)
+    ? Object.fromEntries(
+        Object.entries(metadata.suggested_font_size_by_section).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : {};
+
+  const normalizedLayoutZones = normalizeEb1EvidenceLayoutZones(raw.LAYOUT_ZONES);
+  const normalizedTranslatedZones = normalizeEb1EvidenceTranslatedZones(
+    raw.TRANSLATED_CONTENT_BY_ZONE,
   );
+  const normalizedNonTextualElements = Array.isArray(raw.NON_TEXTUAL_ELEMENTS)
+    ? raw.NON_TEXTUAL_ELEMENTS
+        .map((entry) => normalizeWhitespace(typeof entry === 'string' ? entry : ''))
+        .filter((entry): entry is string => entry.length > 0)
+    : [];
+  const renderingHints = isPlainObject(raw.RENDERING_HINTS)
+    ? raw.RENDERING_HINTS
+    : {};
+
+  return {
+    PAGE_METADATA: {
+      page_number: pageNumber,
+      detected_document_type: detectedDocumentType,
+      suggested_family:
+        typeof metadata.suggested_family === 'string'
+          ? metadata.suggested_family
+          : 'eb1_evidence_photo_sheet',
+      suggested_model_key:
+        typeof metadata.suggested_model_key === 'string'
+          ? metadata.suggested_model_key
+          : 'unknown',
+      suggested_orientation: suggestedOrientation,
+      estimated_density: estimatedDensity,
+      suggested_font_style: suggestedFontStyle,
+      suggested_font_size_by_section: suggestedFontSizes,
+    },
+    LAYOUT_ZONES: normalizedLayoutZones,
+    TRANSLATED_CONTENT_BY_ZONE: normalizedTranslatedZones,
+    NON_TEXTUAL_ELEMENTS: normalizedNonTextualElements,
+    RENDERING_HINTS: {
+      recommended_spacing_profile:
+        typeof renderingHints.recommended_spacing_profile === 'string'
+          ? renderingHints.recommended_spacing_profile
+          : 'normal',
+      recommended_line_height:
+        typeof renderingHints.recommended_line_height === 'string'
+          ? renderingHints.recommended_line_height
+          : '1.25',
+      recommended_photo_layout_mode:
+        typeof renderingHints.recommended_photo_layout_mode === 'string'
+          ? renderingHints.recommended_photo_layout_mode
+          : 'single centered portrait photo block',
+      whether_images_must_remain_side_by_side_or_stacked:
+        typeof renderingHints.whether_images_must_remain_side_by_side_or_stacked === 'string'
+          ? renderingHints.whether_images_must_remain_side_by_side_or_stacked
+          : 'single',
+      page_parity_risk_notes:
+        typeof renderingHints.page_parity_risk_notes === 'string'
+          ? renderingHints.page_parity_risk_notes
+          : '',
+    },
+  };
 }
 
 function normalizeEb1EvidencePhotoSheetPayload(
@@ -1630,11 +1864,25 @@ function normalizeEb1EvidencePhotoSheetPayload(
     );
   }
 
+  const rootTranslatedZones = normalizeEb1EvidenceTranslatedZones(
+    parsed.TRANSLATED_CONTENT_BY_ZONE,
+  );
   const pages = Array.isArray(parsed.PAGES)
-    ? parsed.PAGES.filter((page): page is Eb1EvidenceStructuredPage =>
-        isEb1EvidenceStructuredPage(page),
-      )
+    ? parsed.PAGES
+        .map((page, index) =>
+          isEb1EvidenceStructuredPage(page)
+            ? normalizeEb1EvidenceStructuredPage(page, index + 1)
+            : null,
+        )
+        .filter((page): page is Eb1EvidenceStructuredPage => page !== null)
     : [];
+
+  if (pages.length === 1 && pages[0].TRANSLATED_CONTENT_BY_ZONE.length === 0 && rootTranslatedZones.length > 0) {
+    pages[0] = {
+      ...pages[0],
+      TRANSLATED_CONTENT_BY_ZONE: rootTranslatedZones,
+    };
+  }
 
   if (pages.length > 0) {
     return {
@@ -1663,15 +1911,22 @@ function normalizeEb1EvidencePhotoSheetPayload(
     };
   }
 
-  if (
-    isEb1EvidenceStructuredPage(parsed) &&
-    !Array.isArray(parsed.PAGES)
-  ) {
+  if (isEb1EvidenceStructuredPage(parsed) && !Array.isArray(parsed.PAGES)) {
+    const normalizedSinglePage = normalizeEb1EvidenceStructuredPage(parsed, 1);
+    if (!normalizedSinglePage) {
+      throw new StructuredRenderingRequiredError(
+        'eb1_evidence_photo_sheet',
+        buildStructuredFailureMessage(
+          'eb1_evidence_photo_sheet',
+          'EB1 evidence extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+        ),
+      );
+    }
     return {
       document_type: 'eb1_evidence_photo_sheet',
       family: 'relationship_evidence',
       model_key: 'unknown',
-      PAGES: [parsed],
+      PAGES: [normalizedSinglePage],
       QUALITY_FLAGS: [],
       orientation: 'unknown',
       page_count: null,
@@ -1688,20 +1943,40 @@ function normalizeEb1EvidencePhotoSheetPayload(
 }
 
 function isEb1EvidenceTextBearingZone(zone: Eb1EvidenceLayoutZone): boolean {
-  const zoneType = normalizeZoneBindingId(zone.zone_type);
-  const zoneId = normalizeZoneBindingId(zone.zone_id);
-  if (!zoneType && !zoneId) return true;
-  if (
-    zoneType.includes('photo') ||
-    zoneType.includes('image') ||
-    zoneType.includes('highlight') ||
-    zoneType.includes('marker') ||
-    zoneId.includes('photo') ||
-    zoneId.includes('gallery') ||
-    zoneId.includes('highlight')
-  ) {
+  const signal = normalizeZoneBindingId(
+    `${zone.zone_type} ${zone.zone_id} ${zone.visual_style}`,
+  );
+  if (!signal) return true;
+
+  const nonTextKeywords = [
+    'photo',
+    'image',
+    'highlight',
+    'marker',
+    'arrow',
+    'gallery',
+    'logo',
+    'seal',
+    'border',
+    'ornamental',
+    'ornament',
+    'decorative',
+    'decoration',
+    'watermark',
+    'badge',
+    'icon',
+    'emblem',
+    'coat',
+    'insignia',
+    'frame',
+    'non_text',
+    'nontext',
+  ];
+
+  if (nonTextKeywords.some((keyword) => signal.includes(keyword))) {
     return false;
   }
+
   return true;
 }
 
