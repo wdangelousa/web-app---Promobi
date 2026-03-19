@@ -22,10 +22,11 @@
  *   - recommendation_letter          (recommendation, expert opinion, support/reference letters)
  *   - employment_record              (employment letters, HR attestations, salary confirmations)
  *   - course_certificate_landscape   (course/training/participation/completion certificates)
+ *   - eb1_evidence_photo_sheet       (EB1 evidence sheets with title/paragraph/photo zones)
  *   - unknown                        (anything else, or insufficient signals)
  *
  * Classification order matters — more-specific families are checked first:
- *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → publication_media_record → recommendation_letter → employment_record → course_certificate → unknown
+ *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → publication_media_record → recommendation_letter → employment_record → course_certificate → eb1_evidence_photo_sheet → unknown
  *
  * Integration note:
  *   This classifier is AUXILIARY — it never modifies translation behavior.
@@ -48,6 +49,7 @@ export type DocumentType =
   | 'recommendation_letter'          // Recommendation/expert opinion/support/reference letters
   | 'employment_record'              // Employment letters/contracts/attestations
   | 'course_certificate_landscape'   // Course/training/participation/completion certificates
+  | 'eb1_evidence_photo_sheet'       // EB1 evidence photo sheets with zone-structured pages
   | 'unknown';
 
 export type ClassificationConfidence =
@@ -1365,6 +1367,68 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
     return { documentType: 'course_certificate_landscape', confidence: 'heuristic-low' };
   }
 
+  // ── EB1 Evidence Photo Sheets ──────────────────────────────────────────────
+  // Covers visually structured USCIS-oriented EB1 evidence pages with:
+  // - evidence title
+  // - explanatory paragraph
+  // - one or more photos
+  // - optional highlight arrows
+  // - footer identity
+  //
+  // Typical extraction signatures:
+  // PAGE_METADATA / LAYOUT_ZONES / TRANSLATED_CONTENT_BY_ZONE /
+  // NON_TEXTUAL_ELEMENTS / RENDERING_HINTS.
+  const eb1EvidenceSignals: RegExp[] = [
+    /\bevidence\s*\d{1,3}\b/i,
+    /\bpage_metadata\b/i,
+    /\blayout_zones\b/i,
+    /\btranslated_content_by_zone\b/i,
+    /\bnon_textual_elements\b/i,
+    /\brendering_hints\b/i,
+    /\bz_evidence_title\b/i,
+    /\bz_explanatory_paragraph\b/i,
+    /\bz_single_photo\b/i,
+    /\bz_photo_gallery\b/i,
+    /\bz_top_photo_gallery\b/i,
+    /\bz_bottom_center_photo\b/i,
+    /\bz_footer_identity\b/i,
+    /\bhighlight marker\b/i,
+    /\byellow arrow\b/i,
+    /\bphoto (?:gallery|block|arrangement)\b/i,
+    /\beb-?1\b/i,
+  ];
+
+  const eb1EvidenceHits = eb1EvidenceSignals.filter((rx) => rx.test(text)).length;
+
+  const hasEvidenceTitle =
+    /\bevidence\s*\d{1,3}\b/i.test(text) ||
+    /\bz_evidence_title\b/i.test(text);
+  const hasZoneBlueprintCore =
+    /\bpage_metadata\b/i.test(text) &&
+    /\blayout_zones\b/i.test(text) &&
+    /\btranslated_content_by_zone\b/i.test(text);
+  const hasPhotoZoneSignals =
+    /\bz_single_photo\b/i.test(text) ||
+    /\bz_photo_gallery\b/i.test(text) ||
+    /\bz_top_photo_gallery\b/i.test(text) ||
+    /\bphoto (?:gallery|block|arrangement)\b/i.test(text);
+
+  const eb1EvidenceCombo = hasEvidenceTitle && hasZoneBlueprintCore && hasPhotoZoneSignals;
+
+  if (eb1EvidenceHits > 0 || eb1EvidenceCombo) {
+    console.log(
+      `[documentClassifier] eb1 evidence-photo signals matched: ${eb1EvidenceHits}` +
+      (eb1EvidenceCombo ? ' | combination rule: title+zone-blueprint+photo-zones' : ''),
+    );
+  }
+
+  if (eb1EvidenceHits >= 4 || eb1EvidenceCombo) {
+    return { documentType: 'eb1_evidence_photo_sheet', confidence: 'heuristic-high' };
+  }
+  if (eb1EvidenceHits >= 2) {
+    return { documentType: 'eb1_evidence_photo_sheet', confidence: 'heuristic-low' };
+  }
+
   return { documentType: 'unknown', confidence: 'heuristic-low' };
 }
 
@@ -1409,6 +1473,9 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
   // These are lower-confidence hints only; translated text is always preferred.
   if (/certif[io]cat[eo]|certifica[cç][aã]o|participac[aã]o|conclus[aã]o[-_ ]curso/i.test(fileUrl)) {
     return { documentType: 'course_certificate_landscape', confidence: 'heuristic-low' };
+  }
+  if (/eb[-_ ]?1|evidence[-_ ]?\d+|evid[eê]ncia[-_ ]?\d+|imagens?[-_ ]do[-_ ]recebimento|photo[-_ ]sheet|photo[-_ ]evidence|trof[eé]u|medalha|honraria|colar[-_ ]evocativo/i.test(fileUrl)) {
+    return { documentType: 'eb1_evidence_photo_sheet', confidence: 'heuristic-low' };
   }
   return { documentType: 'unknown', confidence: 'heuristic-low' };
 }

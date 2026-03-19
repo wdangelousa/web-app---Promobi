@@ -669,6 +669,7 @@ const STRUCTURED_DOCUMENT_LABELS: Record<SupportedStructuredDocumentType, string
   recommendation_letter: 'Recommendation / Expert Letter',
   employment_record: 'Employment Record',
   course_certificate_landscape: 'Training Certificate',
+  eb1_evidence_photo_sheet: 'EB1 Evidence Photo Sheet',
 };
 
 async function runSharedStructuredPipeline(
@@ -681,7 +682,8 @@ async function runSharedStructuredPipeline(
     | 'employment_records'
     | 'corporate_business_records'
     | 'publications_media'
-    | 'recommendation_letters',
+    | 'recommendation_letters'
+    | 'relationship_evidence',
   documentType: SupportedStructuredDocumentType,
 ): Promise<StructuredPipelineResult> {
   const ctx = `Order #${input.orderId ?? '?'} Doc #${input.documentId ?? '?'}`;
@@ -841,7 +843,8 @@ export async function dispatchStructuredPipeline(
     familyDetection.family !== 'employment_records' &&
     familyDetection.family !== 'corporate_business_records' &&
     familyDetection.family !== 'publications_media' &&
-    familyDetection.family !== 'recommendation_letters'
+    familyDetection.family !== 'recommendation_letters' &&
+    familyDetection.family !== 'relationship_evidence'
   ) {
     return {
       success: false,

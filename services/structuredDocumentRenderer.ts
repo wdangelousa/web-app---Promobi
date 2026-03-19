@@ -51,6 +51,10 @@ import {
   buildPublicationMediaRecordSystemPrompt,
   buildPublicationMediaRecordUserMessage,
 } from '@/lib/publicationMediaRecordPrompt';
+import {
+  buildEb1EvidencePhotoSheetSystemPrompt,
+  buildEb1EvidencePhotoSheetUserMessage,
+} from '@/lib/eb1EvidencePhotoSheetPrompt';
 import { renderMarriageCertificateHtml } from '@/lib/marriageCertRenderer';
 import { renderCertificateLandscapeHtml } from '@/lib/certificateLandscapeRenderer';
 import { renderAcademicDiplomaHtml } from '@/lib/academicDiplomaRenderer';
@@ -67,6 +71,7 @@ import { renderEmploymentRecordHtml } from '@/lib/employmentRecordRenderer';
 import { renderCorporateBusinessRecordHtml } from '@/lib/corporateBusinessRecordRenderer';
 import { renderRecommendationLetterHtml } from '@/lib/recommendationLetterRenderer';
 import { renderPublicationMediaRecordHtml } from '@/lib/publicationMediaRecordRenderer';
+import { renderEb1EvidencePhotoSheetHtml } from '@/lib/eb1EvidencePhotoSheetRenderer';
 import {
   detectSourceLanguageLeakageFromSegments,
   normalizeLanguageCode,
@@ -104,6 +109,11 @@ import type { EmploymentRecord } from '@/types/employmentRecord';
 import type { CorporateBusinessRecord } from '@/types/corporateBusinessRecord';
 import type { RecommendationLetter } from '@/types/recommendationLetter';
 import type { PublicationMediaRecord } from '@/types/publicationMediaRecord';
+import type {
+  Eb1EvidenceLayoutZone,
+  Eb1EvidencePhotoSheet,
+  Eb1EvidenceStructuredPage,
+} from '@/types/eb1EvidencePhotoSheet';
 
 export type SupportedStructuredDocumentType = Exclude<DocumentType, 'unknown'>;
 
@@ -120,6 +130,7 @@ export const STRUCTURED_RENDERER_BY_DOCUMENT_TYPE: Record<SupportedStructuredDoc
   recommendation_letter: 'recommendationLetterRenderer',
   employment_record: 'employmentRecordRenderer',
   course_certificate_landscape: 'certificateLandscapeRenderer',
+  eb1_evidence_photo_sheet: 'eb1EvidencePhotoSheetRenderer',
 };
 
 // Backward-compatible alias while older call sites are migrated.
@@ -138,6 +149,7 @@ export const SUPPORTED_STRUCTURED_DOCUMENT_TYPES: readonly SupportedStructuredDo
   'recommendation_letter',
   'employment_record',
   'course_certificate_landscape',
+  'eb1_evidence_photo_sheet',
 ] as const;
 
 export function isSupportedStructuredDocumentType(
@@ -1581,6 +1593,348 @@ function buildCompactCivilLanguageIntegrity(
   return diagnostics;
 }
 
+function isEb1EvidenceStructuredPage(
+  value: unknown,
+): value is Eb1EvidenceStructuredPage {
+  if (!isPlainObject(value)) return false;
+  return (
+    isPlainObject(value.PAGE_METADATA) &&
+    Array.isArray(value.LAYOUT_ZONES) &&
+    Array.isArray(value.TRANSLATED_CONTENT_BY_ZONE)
+  );
+}
+
+function normalizeEb1EvidencePhotoSheetPayload(
+  parsed: unknown,
+): Eb1EvidencePhotoSheet {
+  if (!isPlainObject(parsed)) {
+    throw new StructuredRenderingRequiredError(
+      'eb1_evidence_photo_sheet',
+      buildStructuredFailureMessage(
+        'eb1_evidence_photo_sheet',
+        'EB1 evidence payload is not a valid JSON object.',
+      ),
+    );
+  }
+
+  const rootDocumentType = typeof parsed.document_type === 'string'
+    ? parsed.document_type
+    : '';
+  if (rootDocumentType !== 'eb1_evidence_photo_sheet') {
+    throw new StructuredRenderingRequiredError(
+      'eb1_evidence_photo_sheet',
+      buildStructuredFailureMessage(
+        'eb1_evidence_photo_sheet',
+        `Structured payload discriminator mismatch: expected "eb1_evidence_photo_sheet" but got "${rootDocumentType || 'missing'}".`,
+      ),
+    );
+  }
+
+  const pages = Array.isArray(parsed.PAGES)
+    ? parsed.PAGES.filter((page): page is Eb1EvidenceStructuredPage =>
+        isEb1EvidenceStructuredPage(page),
+      )
+    : [];
+
+  if (pages.length > 0) {
+    return {
+      document_type: 'eb1_evidence_photo_sheet',
+      family:
+        parsed.family === 'eb1_evidence_photo_sheet' ||
+        parsed.family === 'relationship_evidence'
+          ? parsed.family
+          : 'relationship_evidence',
+      model_key:
+        parsed.model_key === 'eb1_single_photo_with_highlight_footer_v1' ||
+        parsed.model_key === 'eb1_two_photo_sheet_v1' ||
+        parsed.model_key === 'eb1_two_plus_one_photo_sheet_v1'
+          ? parsed.model_key
+          : 'unknown',
+      PAGES: pages,
+      QUALITY_FLAGS: Array.isArray(parsed.QUALITY_FLAGS)
+        ? parsed.QUALITY_FLAGS.filter((item): item is string => typeof item === 'string')
+        : [],
+      orientation:
+        parsed.orientation === 'landscape' || parsed.orientation === 'portrait'
+          ? parsed.orientation
+          : 'unknown',
+      page_count:
+        typeof parsed.page_count === 'number' ? parsed.page_count : null,
+    };
+  }
+
+  if (
+    isEb1EvidenceStructuredPage(parsed) &&
+    !Array.isArray(parsed.PAGES)
+  ) {
+    return {
+      document_type: 'eb1_evidence_photo_sheet',
+      family: 'relationship_evidence',
+      model_key: 'unknown',
+      PAGES: [parsed],
+      QUALITY_FLAGS: [],
+      orientation: 'unknown',
+      page_count: null,
+    };
+  }
+
+  throw new StructuredRenderingRequiredError(
+    'eb1_evidence_photo_sheet',
+    buildStructuredFailureMessage(
+      'eb1_evidence_photo_sheet',
+      'EB1 evidence extraction requires PAGE_METADATA/LAYOUT_ZONES/TRANSLATED_CONTENT_BY_ZONE schema with page entries.',
+    ),
+  );
+}
+
+function isEb1EvidenceTextBearingZone(zone: Eb1EvidenceLayoutZone): boolean {
+  const zoneType = normalizeZoneBindingId(zone.zone_type);
+  const zoneId = normalizeZoneBindingId(zone.zone_id);
+  if (!zoneType && !zoneId) return true;
+  if (
+    zoneType.includes('photo') ||
+    zoneType.includes('image') ||
+    zoneType.includes('highlight') ||
+    zoneType.includes('marker') ||
+    zoneId.includes('photo') ||
+    zoneId.includes('gallery') ||
+    zoneId.includes('highlight')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+interface Eb1EvidenceZoneBindingResolution {
+  requiredZones: string[];
+  translatedZonesFound: string[];
+  missingTranslatedZones: string[];
+  mappedGenericZones: string[];
+  resolvedZoneContents: Array<{ zoneLabel: string; content: string }>;
+  allTranslatedSegments: string[];
+}
+
+function resolveEb1EvidenceZoneBindings(
+  payload: Eb1EvidencePhotoSheet,
+): Eb1EvidenceZoneBindingResolution {
+  const requiredZones: string[] = [];
+  const translatedZonesFound: string[] = [];
+  const missingTranslatedZones: string[] = [];
+  const mappedGenericZones: string[] = [];
+  const resolvedZoneContents = new Map<string, string>();
+  const allTranslatedSegments: string[] = [];
+
+  for (const page of payload.PAGES ?? []) {
+    const pageNumber = page.PAGE_METADATA?.page_number ?? '?';
+    const layoutZones = (page.LAYOUT_ZONES ?? [])
+      .map((zone, index) => {
+        const originalId = normalizeWhitespace(zone.zone_id);
+        const normalizedId = normalizeZoneBindingId(zone.zone_id);
+        if (!originalId || !normalizedId) return null;
+        return {
+          index,
+          originalId,
+          normalizedId,
+          label: `page_${pageNumber}:${originalId}`,
+          textBearing: isEb1EvidenceTextBearingZone(zone),
+        };
+      })
+      .filter((zone): zone is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        label: string;
+        textBearing: boolean;
+      } => zone !== null);
+
+    const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
+      .map((entry, index) => {
+        const originalId = normalizeWhitespace(entry.zone_id);
+        const normalizedId = normalizeZoneBindingId(entry.zone_id);
+        const content = normalizeWhitespace(entry.content);
+        if (!originalId || !normalizedId || !content) return null;
+        return { index, originalId, normalizedId, content };
+      })
+      .filter((entry): entry is {
+        index: number;
+        originalId: string;
+        normalizedId: string;
+        content: string;
+      } => entry !== null);
+
+    for (const entry of translatedEntries) {
+      allTranslatedSegments.push(entry.content);
+    }
+
+    requiredZones.push(
+      ...layoutZones
+        .filter((zone) => zone.textBearing)
+        .map((zone) => zone.label),
+    );
+
+    const layoutByNormalizedId = new Map<string, number[]>();
+    for (const zone of layoutZones) {
+      const existing = layoutByNormalizedId.get(zone.normalizedId) ?? [];
+      existing.push(zone.index);
+      layoutByNormalizedId.set(zone.normalizedId, existing);
+    }
+
+    const consumedTranslatedIndexes = new Set<number>();
+    const consumedLayoutIndexes = new Set<number>();
+
+    const assign = (
+      layoutIndex: number,
+      translatedIndex: number,
+      mappedGenericSource?: string,
+    ): void => {
+      const layoutZone = layoutZones.find((zone) => zone.index === layoutIndex);
+      const translatedEntry = translatedEntries.find(
+        (entry) => entry.index === translatedIndex,
+      );
+      if (!layoutZone || !translatedEntry) return;
+
+      consumedLayoutIndexes.add(layoutZone.index);
+      consumedTranslatedIndexes.add(translatedEntry.index);
+      if (layoutZone.textBearing) {
+        translatedZonesFound.push(layoutZone.label);
+      }
+      const existing = resolvedZoneContents.get(layoutZone.label) ?? '';
+      resolvedZoneContents.set(
+        layoutZone.label,
+        existing ? `${existing}\n${translatedEntry.content}` : translatedEntry.content,
+      );
+
+      if (mappedGenericSource) {
+        mappedGenericZones.push(
+          `page_${pageNumber}:${mappedGenericSource}->${layoutZone.originalId}`,
+        );
+      }
+    };
+
+    for (const entry of translatedEntries) {
+      const candidates = layoutByNormalizedId.get(entry.normalizedId) ?? [];
+      const availableLayout = candidates.find(
+        (candidateIndex) => !consumedLayoutIndexes.has(candidateIndex),
+      );
+      if (availableLayout === undefined) continue;
+      assign(availableLayout, entry.index);
+    }
+
+    const unmatchedLayout = layoutZones.filter(
+      (zone) => !consumedLayoutIndexes.has(zone.index),
+    );
+    const unmatchedGenericTranslated = translatedEntries.filter(
+      (entry) =>
+        !consumedTranslatedIndexes.has(entry.index) &&
+        isGenericCivilZoneId(entry.normalizedId),
+    );
+
+    const fallbackMappings = Math.min(
+      unmatchedLayout.length,
+      unmatchedGenericTranslated.length,
+    );
+    for (let i = 0; i < fallbackMappings; i += 1) {
+      const zone = unmatchedLayout[i];
+      const entry = unmatchedGenericTranslated[i];
+      assign(zone.index, entry.index, entry.originalId);
+    }
+
+    for (const zone of layoutZones) {
+      if (!zone.textBearing) continue;
+      if (!consumedLayoutIndexes.has(zone.index)) {
+        missingTranslatedZones.push(zone.label);
+      }
+    }
+  }
+
+  return {
+    requiredZones,
+    translatedZonesFound: Array.from(new Set(translatedZonesFound)),
+    missingTranslatedZones,
+    mappedGenericZones,
+    resolvedZoneContents: Array.from(resolvedZoneContents.entries()).map(
+      ([zoneLabel, content]) => ({ zoneLabel, content }),
+    ),
+    allTranslatedSegments,
+  };
+}
+
+function inferEb1EvidenceOrientation(
+  payload: Eb1EvidencePhotoSheet,
+): DocumentOrientation {
+  if (payload.orientation === 'portrait' || payload.orientation === 'landscape') {
+    return payload.orientation;
+  }
+
+  const pageHint = payload.PAGES?.[0]?.PAGE_METADATA?.suggested_orientation;
+  if (pageHint === 'portrait' || pageHint === 'landscape') {
+    return pageHint;
+  }
+
+  return 'portrait';
+}
+
+function buildEb1EvidenceLanguageIntegrity(
+  input: StructuredRenderInput,
+  payload: Eb1EvidencePhotoSheet,
+): StructuredRenderLanguageIntegrity {
+  const diagnostics = buildDefaultLanguageIntegrity(input);
+  const resolvedBindings = resolveEb1EvidenceZoneBindings(payload);
+
+  diagnostics.translatedPayloadFound = true;
+  diagnostics.requiredZones = resolvedBindings.requiredZones;
+  diagnostics.sourceZonesCount = resolvedBindings.requiredZones.length;
+  diagnostics.translatedZonesFound = resolvedBindings.translatedZonesFound;
+  diagnostics.translatedZonesCount = resolvedBindings.translatedZonesFound.length;
+  diagnostics.missingTranslatedZones = resolvedBindings.missingTranslatedZones;
+  diagnostics.mappedGenericZones = resolvedBindings.mappedGenericZones;
+  diagnostics.sourceContentAttempted = diagnostics.missingTranslatedZones.length > 0;
+
+  const sourceLanguageContaminatedZones: string[] = [];
+  const sourceLanguageMarkers = new Set<string>();
+
+  for (const resolvedZone of resolvedBindings.resolvedZoneContents) {
+    const zoneLeakage = detectSourceLanguageLeakageFromSegments(
+      [resolvedZone.content],
+      {
+        sourceLanguage: diagnostics.sourceLanguage,
+        targetLanguage: diagnostics.targetLanguage,
+      },
+    );
+    if (!zoneLeakage.detected) continue;
+    sourceLanguageContaminatedZones.push(resolvedZone.zoneLabel);
+    for (const marker of zoneLeakage.matchedMarkers) {
+      sourceLanguageMarkers.add(`${resolvedZone.zoneLabel}:${marker}`);
+    }
+  }
+
+  const globalLeakage = detectSourceLanguageLeakageFromSegments(
+    resolvedBindings.allTranslatedSegments,
+    {
+      sourceLanguage: diagnostics.sourceLanguage,
+      targetLanguage: diagnostics.targetLanguage,
+    },
+  );
+  for (const marker of globalLeakage.matchedMarkers) {
+    sourceLanguageMarkers.add(marker);
+  }
+  if (globalLeakage.detected && sourceLanguageContaminatedZones.length === 0) {
+    sourceLanguageContaminatedZones.push('payload');
+  }
+
+  diagnostics.sourceLanguageMarkers = Array.from(sourceLanguageMarkers);
+  diagnostics.sourceLanguageContaminatedZones = sourceLanguageContaminatedZones;
+  diagnostics.sourceContentAttempted =
+    diagnostics.sourceContentAttempted ||
+    sourceLanguageContaminatedZones.length > 0;
+  diagnostics.languageIssueType = resolveLanguageIssueType(
+    diagnostics.missingTranslatedZones.length > 0,
+    sourceLanguageContaminatedZones.length > 0,
+  );
+
+  return diagnostics;
+}
+
 export async function renderSupportedStructuredDocument(
   input: StructuredRenderInput,
 ): Promise<StructuredRenderOutput> {
@@ -2171,6 +2525,106 @@ export async function renderSupportedStructuredDocument(
 
       return {
         structuredHtml: renderRecommendationLetterHtml(parsed, {
+          pageCount: input.sourcePageCount,
+          orientation: effectiveOrientation,
+        }),
+        orientationForKit: effectiveOrientation,
+        rendererName,
+        languageIntegrity,
+      };
+    }
+
+    case 'eb1_evidence_photo_sheet': {
+      const rawJson = ensureExtractionJson(
+        input.documentType,
+        await callClaudeForJson(
+          input.client,
+          buildEb1EvidencePhotoSheetSystemPrompt(),
+          messageContentFor(
+            buildEb1EvidencePhotoSheetUserMessage({
+              sourcePageCount: input.sourcePageCount ?? null,
+            }),
+          ),
+          16384,
+          `${input.logPrefix} [eb1-evidence-photo-sheet]`,
+        ),
+      );
+
+      const parsed = parseStructuredJson<unknown>(
+        input.documentType,
+        rawJson,
+      );
+      const normalizedPayload = normalizeEb1EvidencePhotoSheetPayload(parsed);
+      const languageIntegrity = buildEb1EvidenceLanguageIntegrity(
+        input,
+        normalizedPayload,
+      );
+
+      console.log(
+        `${input.logPrefix} [eb1-evidence-photo-sheet] language integrity diagnostics: ` +
+          JSON.stringify({
+            orderId: input.orderId ?? null,
+            docId: input.documentId ?? null,
+            family: 'relationship_evidence',
+            subtype: normalizedPayload.model_key,
+            targetLanguage: languageIntegrity.targetLanguage,
+            sourceLanguage: languageIntegrity.sourceLanguage,
+            translatedPayloadFound: languageIntegrity.translatedPayloadFound ? 'yes' : 'no',
+            requiredZones: languageIntegrity.requiredZones,
+            translatedZonesFound: languageIntegrity.translatedZonesFound,
+            translatedZonesCount: languageIntegrity.translatedZonesCount,
+            sourceZonesCount: languageIntegrity.sourceZonesCount,
+            missingTranslatedZones: languageIntegrity.missingTranslatedZones,
+            sourceLanguageContaminatedZones:
+              languageIntegrity.sourceLanguageContaminatedZones,
+            sourceContentAttempted: languageIntegrity.sourceContentAttempted ? 'yes' : 'no',
+            sourceLanguageMarkers: languageIntegrity.sourceLanguageMarkers,
+            mappedGenericZones: languageIntegrity.mappedGenericZones,
+            issueType: languageIntegrity.languageIssueType,
+            issueIsMissingContent:
+              languageIntegrity.languageIssueType ===
+                'missing_translated_zones' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+            issueIsLanguageMismatch:
+              languageIntegrity.languageIssueType ===
+                'source_language_mismatch' ||
+              languageIntegrity.languageIssueType ===
+                'missing_and_source_language_mismatch',
+          }),
+      );
+
+      if (languageIntegrity.languageIssueType !== 'none') {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            'Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.',
+          ),
+        );
+      }
+
+      if (
+        typeof input.sourcePageCount === 'number' &&
+        input.sourcePageCount > 0 &&
+        normalizedPayload.PAGES.length !== input.sourcePageCount
+      ) {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            `EB1 evidence page mismatch: source_page_count=${input.sourcePageCount} but structured_pages=${normalizedPayload.PAGES.length}.`,
+          ),
+        );
+      }
+
+      const effectiveOrientation: DocumentOrientation =
+        input.detectedOrientation === 'unknown'
+          ? inferEb1EvidenceOrientation(normalizedPayload)
+          : input.detectedOrientation;
+
+      return {
+        structuredHtml: renderEb1EvidencePhotoSheetHtml(normalizedPayload, {
           pageCount: input.sourcePageCount,
           orientation: effectiveOrientation,
         }),

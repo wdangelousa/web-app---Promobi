@@ -143,6 +143,7 @@ export const DOCUMENT_TYPE_TO_FAMILY: Record<KnownDocumentType, RegisteredDocume
   recommendation_letter: 'recommendation_letters',
   employment_record: 'employment_records',
   course_certificate_landscape: 'academic_records',
+  eb1_evidence_photo_sheet: 'relationship_evidence',
 };
 
 const BASE_SAFE_BLOCKS: readonly FamilySafeDefaultBlock[] = [
@@ -371,17 +372,17 @@ export const DOCUMENT_FAMILY_IMPLEMENTATION_MATRIX: Record<
   relationship_evidence: {
     family: 'relationship_evidence',
     detectionImplemented: true,
-    previewRendererImplemented: false,
-    finalDeliveryRendererImplemented: false,
-    portraitSupported: false,
-    landscapeSupported: false,
+    previewRendererImplemented: true,
+    finalDeliveryRendererImplemented: true,
+    portraitSupported: true,
+    landscapeSupported: true,
     denseTableHandling: false,
-    signatureSealHandling: false,
-    notes: 'Detection exists, but client-facing structured rendering is not implemented.',
-    priorityLevel: 3,
-    orientationCapability: 'none',
-    tableCapability: 'none',
-    signatureCapability: 'none',
+    signatureSealHandling: true,
+    notes: 'Production-ready for EB1 evidence photo sheets through the generic structured evidence renderer. Family-specific specializations can be layered later.',
+    priorityLevel: 2,
+    orientationCapability: 'basic',
+    tableCapability: 'basic',
+    signatureCapability: 'basic',
   },
   corporate_business_records: {
     family: 'corporate_business_records',
@@ -505,7 +506,7 @@ const SUPPORTED_DOCUMENT_TYPES_BY_FAMILY: Record<DocumentFamily, readonly KnownD
   ],
   employment_records: ['employment_record'],
   financial_tax_records: [],
-  relationship_evidence: [],
+  relationship_evidence: ['eb1_evidence_photo_sheet'],
   corporate_business_records: ['corporate_business_record'],
   investment_source_of_funds: [],
   recommendation_letters: ['recommendation_letter'],
@@ -624,6 +625,21 @@ const FAMILY_HEURISTIC_RULES: Record<
   relationship_evidence: [
     { pattern: /\b(?:relationship evidence|joint account|joint lease|affidavit)\b/i, weight: 2 },
     { pattern: /\b(?:photos?|chat logs?|wedding invitation)\b/i, weight: 1 },
+    {
+      pattern:
+        /\b(?:evidence\s*\d+|page_metadata|layout_zones|translated_content_by_zone|non_textual_elements|rendering_hints|eb-?1)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:z_evidence_title|z_explanatory_paragraph|z_single_photo|z_photo_gallery|z_top_photo_gallery|z_bottom_center_photo|z_footer_identity)\b/i,
+      weight: 2,
+    },
+    {
+      pattern:
+        /\b(?:trophy|medal|honor|honour|highlight marker|yellow arrow|photo gallery|ceremony)\b/i,
+      weight: 1,
+    },
   ],
   corporate_business_records: [
     {
