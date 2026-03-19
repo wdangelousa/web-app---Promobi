@@ -24,6 +24,12 @@ import {
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
 } from '@/lib/translationArtifactSource'
+import {
+  isLikelyImageSource,
+  resolveGroupedSourceImageCountHintFromOrderMetadata,
+  resolveSourcePageCount,
+  type SourcePageCountResolution,
+} from '@/lib/sourcePageCountResolver'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -50,6 +56,9 @@ interface ReleasePageParityDiagnostics {
   orderId: number
   docId: number
   detected_family: string
+  source_artifact_type: string
+  source_page_count_strategy: string
+  resolved_source_page_count: number | null
   source_page_count: number | null
   translated_page_count: number | null
   parity_status: 'pass' | 'fail'
@@ -74,6 +83,49 @@ async function getPdfPageCountFromUrl(url: string): Promise<number | null> {
     return pdfDoc.getPageCount()
   } catch {
     return null
+  }
+}
+
+async function resolveSourcePageCountFromUrl(input: {
+  fileUrl: string | null | undefined
+  groupedSourceImageCountHint?: number | null
+}): Promise<SourcePageCountResolution> {
+  if (!input.fileUrl) {
+    return {
+      sourceArtifactType: 'unknown',
+      sourcePageCountStrategy: 'undetermined',
+      resolvedSourcePageCount: null,
+      parityVerifiable: false,
+    }
+  }
+
+  try {
+    const res = await fetch(input.fileUrl)
+    if (!res.ok) {
+      return await resolveSourcePageCount({
+        fileUrl: input.fileUrl,
+        groupedSourceImageCountHint: input.groupedSourceImageCountHint ?? null,
+        hybridSinglePageEvidence: input.groupedSourceImageCountHint === 1,
+      })
+    }
+
+    const contentType = res.headers.get('content-type') ?? undefined
+    const fileBuffer = await res.arrayBuffer()
+    return await resolveSourcePageCount({
+      fileUrl: input.fileUrl,
+      contentType,
+      fileBuffer,
+      groupedSourceImageCountHint: input.groupedSourceImageCountHint ?? null,
+      hybridSinglePageEvidence:
+        input.groupedSourceImageCountHint === 1 &&
+        !isLikelyImageSource(input.fileUrl, contentType),
+    })
+  } catch {
+    return await resolveSourcePageCount({
+      fileUrl: input.fileUrl,
+      groupedSourceImageCountHint: input.groupedSourceImageCountHint ?? null,
+      hybridSinglePageEvidence: input.groupedSourceImageCountHint === 1,
+    })
   }
 }
 
@@ -335,9 +387,24 @@ export async function releaseToClient(
         ? getStructuredRendererName(classification.documentType)
         : 'unknown'
 
-      const sourcePageCount = d.originalFileUrl
-        ? await getPdfPageCountFromUrl(d.originalFileUrl)
-        : null
+      const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
+        orderMetadata: parsedOrderMetadata,
+        documentId: d.id,
+        originalFileUrl: d.originalFileUrl,
+        exactNameOnDoc: d.exactNameOnDoc ?? null,
+      })
+      const sourcePageResolution = d.originalFileUrl
+        ? await resolveSourcePageCountFromUrl({
+            fileUrl: d.originalFileUrl,
+            groupedSourceImageCountHint,
+          })
+        : {
+            sourceArtifactType: 'unknown' as const,
+            sourcePageCountStrategy: 'undetermined' as const,
+            resolvedSourcePageCount: null,
+            parityVerifiable: false,
+          }
+      const sourcePageCount = sourcePageResolution.resolvedSourcePageCount
       const deliveryTotalPageCount = d.delivery_pdf_url
         ? await getPdfPageCountFromUrl(d.delivery_pdf_url)
         : null
@@ -347,6 +414,9 @@ export async function releaseToClient(
           orderId,
           docId: d.id,
           detected_family: family,
+          source_artifact_type: sourcePageResolution.sourceArtifactType,
+          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
           source_page_count: sourcePageCount,
           translated_page_count: null,
           parity_status: 'fail',
@@ -375,6 +445,9 @@ export async function releaseToClient(
           orderId,
           docId: d.id,
           detected_family: family,
+          source_artifact_type: sourcePageResolution.sourceArtifactType,
+          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
           source_page_count: sourcePageCount,
           translated_page_count: translatedPageCount,
           parity_status: 'fail',
@@ -399,6 +472,9 @@ export async function releaseToClient(
         orderId,
         docId: d.id,
         detected_family: family,
+        source_artifact_type: sourcePageResolution.sourceArtifactType,
+        source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+        resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
         source_page_count: sourcePageCount,
         translated_page_count: translatedPageCount,
         parity_status: 'pass',

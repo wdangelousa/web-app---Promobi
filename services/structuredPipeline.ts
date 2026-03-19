@@ -43,6 +43,7 @@ import {
   isSupportedStructuredDocumentType,
   type SupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer';
+import { resolveSourcePageCount } from '@/lib/sourcePageCountResolver';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -248,6 +249,20 @@ export async function runMarriageCertStructuredPipeline(
         log('orientation source: unavailable');
       }
       detectedOrientation = orientation;
+
+      const sourcePageResolution = await resolveSourcePageCount({
+        fileUrl: input.fileUrl,
+        contentType: input.contentType,
+        fileBuffer: input.fileBuffer,
+        isPdfHint: isPdf,
+        pdfPageCountHint: pageCount ?? null,
+      });
+      pageCount = sourcePageResolution.resolvedSourcePageCount ?? undefined;
+      log(
+        `source page count resolution: artifact=${sourcePageResolution.sourceArtifactType} ` +
+          `strategy=${sourcePageResolution.sourcePageCountStrategy} ` +
+          `resolved=${sourcePageResolution.resolvedSourcePageCount ?? 'n/a'}`,
+      );
 
       // ── Render HTML with real pageCount (or undefined → conservative fallback) ─
       const structuredHtml = renderMarriageCertificateHtml(
@@ -536,6 +551,20 @@ export async function runCertificateLandscapeStructuredPipeline(
       log('orientation source: unavailable');
     }
 
+    const sourcePageResolution = await resolveSourcePageCount({
+      fileUrl: input.fileUrl,
+      contentType: input.contentType,
+      fileBuffer: input.fileBuffer,
+      isPdfHint: isPdf,
+      pdfPageCountHint: detectedPageCount ?? null,
+    });
+    detectedPageCount = sourcePageResolution.resolvedSourcePageCount;
+    log(
+      `source page count resolution: artifact=${sourcePageResolution.sourceArtifactType} ` +
+        `strategy=${sourcePageResolution.sourcePageCountStrategy} ` +
+        `resolved=${sourcePageResolution.resolvedSourcePageCount ?? 'n/a'}`,
+    );
+
     // ── Effective orientation — certificate-class override ────────────────────
     // effectiveOrientation is what the renderer and preview use.
     // For course_certificate_landscape, the document class itself is strong evidence
@@ -719,6 +748,20 @@ async function runSharedStructuredPipeline(
       log('original document orientation: unknown');
       log('orientation source: unavailable');
     }
+
+    const sourcePageResolution = await resolveSourcePageCount({
+      fileUrl: input.fileUrl,
+      contentType: input.contentType,
+      fileBuffer: input.fileBuffer,
+      isPdfHint: isPdf,
+      pdfPageCountHint: sourcePageCount ?? null,
+    });
+    sourcePageCount = sourcePageResolution.resolvedSourcePageCount ?? undefined;
+    log(
+      `source page count resolution: artifact=${sourcePageResolution.sourceArtifactType} ` +
+        `strategy=${sourcePageResolution.sourcePageCountStrategy} ` +
+        `resolved=${sourcePageResolution.resolvedSourcePageCount ?? 'n/a'}`,
+    );
 
     const resolved = await renderStructuredFamilyDocument({
       client,

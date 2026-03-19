@@ -45,7 +45,15 @@ import {
   type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
 } from '@/services/structuredDocumentRenderer';
-import { resolveTranslationArtifactSelection } from '@/lib/translationArtifactSource';
+import {
+  parseOrderMetadata,
+  resolveTranslationArtifactSelection,
+} from '@/lib/translationArtifactSource';
+import {
+  isLikelyImageSource,
+  resolveGroupedSourceImageCountHintFromOrderMetadata,
+  resolveSourcePageCount,
+} from '@/lib/sourcePageCountResolver';
 
 function buildExternalOverrideLanguageIntegrity(
   sourceLanguage?: string | null,
@@ -78,6 +86,11 @@ async function generatePreviewFromExternalPdf(params: {
   originalFileBuffer: ArrayBuffer;
   isOriginalPdf: boolean;
   sourcePageCount?: number;
+  sourceArtifactType?: string;
+  sourcePageCountStrategy?: string;
+  groupedSourceImageCountHint?: number | null;
+  originalFileUrl?: string | null;
+  originalContentType?: string | null;
   orientation: DocumentOrientation;
 }): Promise<{ success: boolean; previewUrl?: string; error?: string }> {
   const res = await fetch(params.externalTranslationUrl);
@@ -105,6 +118,11 @@ async function generatePreviewFromExternalPdf(params: {
     coverVariant: params.coverVariant,
     documentTypeLabel: params.docTypeLabel,
     sourcePageCount: params.sourcePageCount,
+    sourceArtifactType: params.sourceArtifactType,
+    sourcePageCountStrategy: params.sourcePageCountStrategy,
+    groupedSourceImageCount: params.groupedSourceImageCountHint ?? undefined,
+    originalFileUrl: params.originalFileUrl,
+    originalContentType: params.originalContentType,
     orientation: params.orientation === 'landscape' ? 'landscape' : undefined,
     documentFamily: 'external_translation',
     rendererName: 'externalPdfOverride',
@@ -165,6 +183,7 @@ export async function previewStructuredKit(
       where: { id: documentId },
       select: {
         id: true,
+        orderId: true,
         translatedText: true,
         translatedFileUrl: true,
         externalTranslationUrl: true,
@@ -172,6 +191,11 @@ export async function previewStructuredKit(
         sourceLanguage: true,
         docType: true,
         exactNameOnDoc: true,
+        order: {
+          select: {
+            metadata: true,
+          },
+        },
       },
     });
 
@@ -240,26 +264,70 @@ export async function previewStructuredKit(
       }
     }
 
-    // ── Step 2: Get page count and orientation from original PDF ────────────
+    // ── Step 2: Resolve source page count + orientation ─────────────────────
 
     let sourcePageCount: number | undefined;
     let detectedOrientation: DocumentOrientation = 'unknown';
+    let sourceArtifactType: string | undefined;
+    let sourcePageCountStrategy: string | undefined;
+
+    const parsedOrderMetadata = parseOrderMetadata(
+      doc.order?.metadata as string | null | undefined,
+    );
+    const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
+      orderMetadata: parsedOrderMetadata,
+      documentId: doc.id,
+      originalFileUrl: doc.originalFileUrl,
+      exactNameOnDoc: doc.exactNameOnDoc ?? null,
+    });
+    let extractedPdfPageCount: number | null = null;
 
     if (isOriginalPdf && originalFileBuffer.byteLength > 0) {
       try {
         const pdfDoc = await PDFDocument.load(originalFileBuffer, {
           ignoreEncryption: true,
         });
-        sourcePageCount = pdfDoc.getPageCount();
+        extractedPdfPageCount = pdfDoc.getPageCount();
         const orientResult = detectOrientationFromPdfDoc(pdfDoc);
         detectedOrientation = orientResult.orientation;
         console.log(
-          `${logPrefix} — original pages: ${sourcePageCount}, orientation: ${detectedOrientation}`,
+          `${logPrefix} — original pages: ${extractedPdfPageCount}, orientation: ${detectedOrientation}`,
         );
       } catch {
         console.warn(`${logPrefix} — PDF metadata extraction failed`);
       }
     }
+
+    const sourcePageResolution = await resolveSourcePageCount({
+      fileUrl: doc.originalFileUrl,
+      contentType,
+      fileBuffer: originalFileBuffer,
+      isPdfHint: isOriginalPdf,
+      pdfPageCountHint: extractedPdfPageCount,
+      explicitPageCountHint: groupedSourceImageCountHint,
+      groupedSourceImageCountHint,
+      hybridSinglePageEvidence:
+        groupedSourceImageCountHint === 1 &&
+        !isOriginalPdf &&
+        !isLikelyImageSource(doc.originalFileUrl, contentType),
+    });
+
+    sourcePageCount = sourcePageResolution.resolvedSourcePageCount ?? undefined;
+    sourceArtifactType = sourcePageResolution.sourceArtifactType;
+    sourcePageCountStrategy = sourcePageResolution.sourcePageCountStrategy;
+
+    console.log(
+      `${logPrefix} — source page count resolution: ${JSON.stringify({
+        orderId,
+        docId: documentId,
+        sourceArtifactType,
+        sourcePageCountStrategy,
+        resolvedSourcePageCount: sourcePageResolution.resolvedSourcePageCount,
+        sourceContentType: contentType,
+        groupedSourceImageCountHint: groupedSourceImageCountHint ?? null,
+        parityStatus: sourcePageResolution.parityVerifiable ? 'resolvable' : 'indeterminate',
+      })}`,
+    );
 
     // ── External translated PDF override ─────────────────────────────────────
     if (
@@ -277,6 +345,11 @@ export async function previewStructuredKit(
         originalFileBuffer,
         isOriginalPdf,
         sourcePageCount,
+        sourceArtifactType,
+        sourcePageCountStrategy,
+        groupedSourceImageCountHint,
+        originalFileUrl: doc.originalFileUrl,
+        originalContentType: contentType,
         orientation: detectedOrientation,
       });
     }
@@ -396,6 +469,11 @@ export async function previewStructuredKit(
       coverVariant,
       documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
       sourcePageCount,
+      sourceArtifactType,
+      sourcePageCountStrategy,
+      groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
+      originalFileUrl: doc.originalFileUrl,
+      originalContentType: contentType,
       orientation: orientationForKit === 'landscape' ? 'landscape' : undefined,
       documentFamily: resolvedFamilyForKit,
       rendererName: resolvedRendererForKit,

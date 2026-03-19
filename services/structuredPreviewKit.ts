@@ -64,6 +64,11 @@ import {
   detectSourceLanguageLeakageFromHtml,
   normalizeLanguageCode,
 } from '@/lib/translatedLanguageIntegrity';
+import {
+  resolveSourcePageCount,
+  type SourceArtifactType,
+  type SourcePageCountStrategy,
+} from '@/lib/sourcePageCountResolver';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -191,6 +196,12 @@ export interface StructuredPreviewKitInput {
   orientation?: DocumentOrientation;
   documentTypeLabel?: string;
   sourcePageCount?: number;
+  sourceArtifactType?: SourceArtifactType | string;
+  sourcePageCountStrategy?: SourcePageCountStrategy | string;
+  groupedSourceImageCount?: number;
+  originalFileUrl?: string | null;
+  originalContentType?: string | null;
+  hybridSinglePageEvidence?: boolean;
   documentDate?: string;
   documentFamily?: string;
   rendererName?: string;
@@ -260,6 +271,9 @@ export interface PageParityDiagnostic {
   false_positive_source_language_marker: string[];
   missing_translated_zone_content: string[];
   language_gate_source: LanguageGateSource;
+  source_artifact_type: string;
+  source_page_count_strategy: string;
+  resolved_source_page_count: number | null;
   source_page_count: number | null;
   translated_page_count: number | null;
   gotenberg_endpoint_used: string | null;
@@ -1079,6 +1093,12 @@ export async function buildStructuredKitBuffer(
       upstreamMarkerClassification.falsePositiveSourceLanguageMarker,
     missing_translated_zone_content: languageIntegrity.missingTranslatedZones,
     language_gate_source: 'upstream_language_integrity' as const,
+    source_artifact_type: input.sourceArtifactType ?? 'unknown',
+    source_page_count_strategy: input.sourcePageCountStrategy ?? 'undetermined',
+    resolved_source_page_count:
+      typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
+        ? input.sourcePageCount
+        : null,
     gotenberg_endpoint_used: null as string | null,
     gotenberg_failure_type: null as string | null,
     gotenberg_failure_detail: null as string | null,
@@ -1368,33 +1388,54 @@ export async function buildStructuredKitBuffer(
     log(`translated pages: ${translatedPageCount}`);
 
     let originalPdfDocForAssembly: PDFDocument | null = null;
-    let effectiveSourcePageCount =
-      typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
-        ? input.sourcePageCount
-        : undefined;
+    let extractedPdfPageCount: number | null = null;
 
     if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
       try {
         originalPdfDocForAssembly = await PDFDocument.load(input.originalFileBuffer, {
           ignoreEncryption: true,
         });
-        const extractedSourcePages = originalPdfDocForAssembly.getPageCount();
-        if (effectiveSourcePageCount === undefined) {
-          effectiveSourcePageCount = extractedSourcePages;
-        } else if (effectiveSourcePageCount !== extractedSourcePages) {
-          log(
-            `source page count corrected from ${effectiveSourcePageCount} to ${extractedSourcePages} using original PDF metadata`,
-          );
-          effectiveSourcePageCount = extractedSourcePages;
-        }
+        extractedPdfPageCount = originalPdfDocForAssembly.getPageCount();
       } catch (err) {
         log(`source page extraction failed: ${err}`);
       }
     }
 
+    const sourcePageResolution = await resolveSourcePageCount({
+      fileUrl: input.originalFileUrl,
+      contentType: input.originalContentType,
+      fileBuffer: input.originalFileBuffer,
+      isPdfHint: input.isOriginalPdf,
+      pdfPageCountHint:
+        extractedPdfPageCount ??
+        (typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
+          ? input.sourcePageCount
+          : null),
+      explicitPageCountHint:
+        typeof input.sourcePageCount === 'number' && input.sourcePageCount > 0
+          ? input.sourcePageCount
+          : null,
+      groupedSourceImageCountHint: input.groupedSourceImageCount,
+      hybridSinglePageEvidence: input.hybridSinglePageEvidence,
+    });
+    log(
+      `source page count resolution: artifact=${sourcePageResolution.sourceArtifactType} ` +
+        `strategy=${sourcePageResolution.sourcePageCountStrategy} ` +
+        `resolved=${sourcePageResolution.resolvedSourcePageCount ?? 'n/a'}`,
+    );
+
+    const effectiveSourcePageCount =
+      sourcePageResolution.resolvedSourcePageCount ?? undefined;
+    const sourceResolutionDiagnostics = {
+      source_artifact_type: sourcePageResolution.sourceArtifactType,
+      source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+      resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+    } as const;
+
     if (effectiveSourcePageCount === undefined) {
       const diagnostics: PageParityDiagnostic = {
         ...baseDiagnostics,
+        ...sourceResolutionDiagnostics,
         source_page_count: null,
         translated_page_count: translatedPageCount,
         parity_status: 'fail',
@@ -1415,6 +1456,7 @@ export async function buildStructuredKitBuffer(
     if (translatedPageCount !== effectiveSourcePageCount) {
       const diagnostics: PageParityDiagnostic = {
         ...baseDiagnostics,
+        ...sourceResolutionDiagnostics,
         source_page_count: effectiveSourcePageCount,
         translated_page_count: translatedPageCount,
         parity_status: 'fail',
@@ -1435,6 +1477,7 @@ export async function buildStructuredKitBuffer(
 
     const passDiagnostics: PageParityDiagnostic = {
       ...baseDiagnostics,
+      ...sourceResolutionDiagnostics,
       source_page_count: effectiveSourcePageCount,
       translated_page_count: translatedPageCount,
       parity_status: 'pass',

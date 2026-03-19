@@ -23,6 +23,11 @@ import {
   resolveTranslationArtifactSelection,
   upsertDeliveryArtifactRegistryRecord,
 } from "@/lib/translationArtifactSource";
+import {
+  isLikelyImageSource,
+  resolveGroupedSourceImageCountHintFromOrderMetadata,
+  resolveSourcePageCount,
+} from '@/lib/sourcePageCountResolver';
 
 interface DeliveryKitResult {
   success: boolean;
@@ -144,23 +149,66 @@ export async function generateDeliveryKit(
       }
     }
 
-    // ── Step 2: Get page count and orientation from original PDF ──────────────
+    // ── Step 2: Resolve source page count + orientation ───────────────────────
     let sourcePageCount: number | undefined;
     let detectedOrientation: DocumentOrientation = "unknown";
+    let sourceArtifactType: string | undefined;
+    let sourcePageCountStrategy: string | undefined;
+    const parsedOrderMetadata = parseOrderMetadata(
+      order.metadata as string | null | undefined,
+    );
+    const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
+      orderMetadata: parsedOrderMetadata,
+      documentId: doc.id,
+      originalFileUrl: doc.originalFileUrl,
+      exactNameOnDoc: doc.exactNameOnDoc ?? null,
+    });
+    let extractedPdfPageCount: number | null = null;
 
     if (isOriginalPdf && originalFileBuffer.byteLength > 0) {
       try {
         const pdfDoc = await PDFDocument.load(originalFileBuffer, { ignoreEncryption: true });
-        sourcePageCount = pdfDoc.getPageCount();
+        extractedPdfPageCount = pdfDoc.getPageCount();
         const orientResult = detectOrientationFromPdfDoc(pdfDoc);
         detectedOrientation = orientResult.orientation;
         console.log(
-          `${logPrefix} — original pages: ${sourcePageCount}, orientation: ${detectedOrientation}`
+          `${logPrefix} — original pages: ${extractedPdfPageCount}, orientation: ${detectedOrientation}`
         );
       } catch {
         console.warn(`${logPrefix} — PDF metadata extraction failed`);
       }
     }
+
+    const sourcePageResolution = await resolveSourcePageCount({
+      fileUrl: doc.originalFileUrl,
+      contentType,
+      fileBuffer: originalFileBuffer,
+      isPdfHint: isOriginalPdf,
+      pdfPageCountHint: extractedPdfPageCount,
+      explicitPageCountHint: groupedSourceImageCountHint,
+      groupedSourceImageCountHint,
+      hybridSinglePageEvidence:
+        groupedSourceImageCountHint === 1 &&
+        !isOriginalPdf &&
+        !isLikelyImageSource(doc.originalFileUrl, contentType),
+    });
+
+    sourcePageCount = sourcePageResolution.resolvedSourcePageCount ?? undefined;
+    sourceArtifactType = sourcePageResolution.sourceArtifactType;
+    sourcePageCountStrategy = sourcePageResolution.sourcePageCountStrategy;
+
+    console.log(
+      `${logPrefix} — source page count resolution: ${JSON.stringify({
+        orderId,
+        docId: documentId,
+        sourceArtifactType,
+        sourcePageCountStrategy,
+        resolvedSourcePageCount: sourcePageResolution.resolvedSourcePageCount,
+        sourceContentType: contentType,
+        groupedSourceImageCountHint: groupedSourceImageCountHint ?? null,
+        parityStatus: sourcePageResolution.parityVerifiable ? 'resolvable' : 'indeterminate',
+      })}`,
+    );
 
     // ── Step 3: Classify document type ────────────────────────────────────────
     const documentLabelHint =
@@ -212,6 +260,11 @@ export async function generateDeliveryKit(
           orientation: detectedOrientation === "landscape" ? "landscape" : undefined,
           documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
           sourcePageCount,
+          sourceArtifactType,
+          sourcePageCountStrategy,
+          groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
+          originalFileUrl: doc.originalFileUrl,
+          originalContentType: contentType,
           documentFamily: "external_translation",
           rendererName: "externalPdfOverride",
           surface: preview ? "preview-kit" : "delivery-kit",
@@ -283,6 +336,11 @@ export async function generateDeliveryKit(
           orientation: orientationForKit === "landscape" ? "landscape" : undefined,
           documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
           sourcePageCount,
+          sourceArtifactType,
+          sourcePageCountStrategy,
+          groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
+          originalFileUrl: doc.originalFileUrl,
+          originalContentType: contentType,
           documentFamily: renderAssertion.family,
           rendererName: resolved.rendererName,
           surface: preview ? "preview-kit" : "delivery-kit",
@@ -362,9 +420,8 @@ export async function generateDeliveryKit(
 
     // ── Step 7: DB update (official delivery only) ────────────────────────────
     if (!preview) {
-      const metadata = parseOrderMetadata(order.metadata as string | null | undefined);
       const nextMetadata = upsertDeliveryArtifactRegistryRecord(
-        metadata,
+        parsedOrderMetadata,
         documentId,
         {
           source: artifactSelection.source,
