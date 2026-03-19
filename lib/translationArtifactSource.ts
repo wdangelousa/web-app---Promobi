@@ -29,9 +29,17 @@ export interface DeliveryArtifactRegistryRecord {
   generatedAt: string;
 }
 
+export interface DocumentDeliveryStatusRecord {
+  deliveryStatus: 'sent';
+  sentAt: string;
+  sentBy: string | null;
+  deliveryPdfUrl: string | null;
+}
+
 type JsonObject = Record<string, unknown>;
 
 const REGISTRY_KEY = 'translationArtifactRegistryV1';
+const DELIVERY_STATUS_REGISTRY_KEY = 'deliveryDocumentStatusV1';
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -152,3 +160,53 @@ export function getDeliveryArtifactRegistryRecord(
   return registry[String(docId)] ?? null;
 }
 
+export function readDocumentDeliveryStatusRegistry(
+  metadata: JsonObject,
+): Record<string, DocumentDeliveryStatusRecord> {
+  const container = metadata[DELIVERY_STATUS_REGISTRY_KEY];
+  if (!container || typeof container !== 'object') return {};
+
+  const out: Record<string, DocumentDeliveryStatusRecord> = {};
+  for (const [docKey, value] of Object.entries(container as JsonObject)) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonObject;
+    const deliveryStatus = normalizeOptionalString(
+      record.deliveryStatus as string | null | undefined,
+    );
+    const sentAt = normalizeOptionalString(record.sentAt as string | null | undefined);
+    const sentBy = normalizeOptionalString(record.sentBy as string | null | undefined);
+
+    if (deliveryStatus === 'sent' && sentAt) {
+      out[docKey] = {
+        deliveryStatus: 'sent',
+        sentAt,
+        sentBy,
+        deliveryPdfUrl: normalizeOptionalString(
+          record.deliveryPdfUrl as string | null | undefined,
+        ),
+      };
+    }
+  }
+
+  return out;
+}
+
+export function upsertDocumentDeliveryStatusRecord(
+  metadata: JsonObject,
+  docId: number,
+  record: DocumentDeliveryStatusRecord,
+): JsonObject {
+  const nextMetadata: JsonObject = { ...metadata };
+  const registry = readDocumentDeliveryStatusRegistry(nextMetadata);
+  registry[String(docId)] = record;
+  nextMetadata[DELIVERY_STATUS_REGISTRY_KEY] = registry;
+  return nextMetadata;
+}
+
+export function getDocumentDeliveryStatusRecord(
+  metadata: JsonObject,
+  docId: number,
+): DocumentDeliveryStatusRecord | null {
+  const registry = readDocumentDeliveryStatusRegistry(metadata);
+  return registry[String(docId)] ?? null;
+}

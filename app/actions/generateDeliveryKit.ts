@@ -436,7 +436,6 @@ export async function generateDeliveryKit(
           where: { id: documentId },
           data: {
             delivery_pdf_url: urlData.publicUrl,
-            translation_status: "approved",
           },
         }),
         prisma.order.update({

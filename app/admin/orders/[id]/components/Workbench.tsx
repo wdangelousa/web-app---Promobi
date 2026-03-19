@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
+import { readDocumentDeliveryStatusRegistry } from '@/lib/translationArtifactSource'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -31,14 +32,30 @@ type Order = {
     totalAmount: number
     extraDiscount?: number | null
     finalPaidAmount?: number | null
+    metadata?: Record<string, unknown> | null
     documents: Document[]
     user: { fullName: string; email: string }
 }
 
 type StatusInfo = { label: string; pill: string }
 
-function getStatusInfo(doc: Document): StatusInfo {
-    if (doc.delivery_pdf_url) return { label: 'Kit Gerado', pill: 'bg-blue-500/20 text-blue-300 ring-blue-500/30' }
+type DocumentDeliveryStatusRecord = {
+    deliveryStatus: 'sent'
+    sentAt: string
+    sentBy: string | null
+    deliveryPdfUrl: string | null
+}
+
+function getStatusInfo(doc: Document, deliveryStatusRecord: DocumentDeliveryStatusRecord | null): StatusInfo {
+    if (deliveryStatusRecord?.deliveryStatus === 'sent') {
+        return { label: 'Enviado', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
+    }
+    if (doc.delivery_pdf_url && doc.isReviewed) {
+        return { label: 'Kit Gerado + Revisado', pill: 'bg-indigo-500/20 text-indigo-300 ring-indigo-500/30' }
+    }
+    if (doc.delivery_pdf_url) {
+        return { label: 'Kit Gerado (Aguardando revisão)', pill: 'bg-blue-500/20 text-blue-300 ring-blue-500/30' }
+    }
     if (doc.isReviewed) return { label: 'Revisado ✓', pill: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30' }
     return { label: 'Pendente', pill: 'bg-gray-600/40 text-gray-400 ring-gray-500/20' }
 }
@@ -88,6 +105,21 @@ export default function Workbench({ order }: { order: Order }) {
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
+    const deliveryStatusRegistry = useMemo(
+        () => readDocumentDeliveryStatusRegistry((order.metadata ?? {}) as Record<string, unknown>),
+        [order.metadata],
+    )
+    const sentDocIds = useMemo(
+        () =>
+            order.documents
+                .filter((doc) => deliveryStatusRegistry[String(doc.id)]?.deliveryStatus === 'sent')
+                .map((doc) => doc.id),
+        [order.documents, deliveryStatusRegistry],
+    )
+    const sentDocumentCount = sentDocIds.length
+    const totalDocumentCount = order.documents.length
+    const hasAnySentDocs = sentDocumentCount > 0
+    const hasPartialDelivery = hasAnySentDocs && sentDocumentCount < totalDocumentCount
     const isPaid = !['PENDING', 'PENDING_PAYMENT', 'AWAITING_VERIFICATION'].includes(order.status)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const replaceFileInputRef = useRef<HTMLInputElement>(null)
@@ -354,11 +386,24 @@ export default function Workbench({ order }: { order: Order }) {
 
             if (generatedCount === 0) throw new Error('Nenhum kit foi gerado.\n' + errors.join('\n'))
 
-            const { releaseToClient } = await import('../../../../actions/workbench')
-            const releaseResult = await releaseToClient(order.id, 'Isabele', { sendToClient, sendToTranslator })
+            const { sendSelectedDocuments } = await import('../../../../actions/workbench')
+            const releaseResult = await sendSelectedDocuments(order.id, selectedDocsForDelivery, 'Isabele', {
+                sendToClient,
+                sendToTranslator,
+            })
 
-            if (releaseResult.success) alert(`✅ ${generatedCount} Kit(s) gerado(s) com sucesso!`)
-            else alert(`✅ Kits gerados, mas email não enviado: ${releaseResult.error}`)
+            if (releaseResult.success) {
+                if (releaseResult.lifecycleStatus === 'partially_sent') {
+                    alert(
+                        `✅ ${generatedCount} Kit(s) gerado(s) com sucesso!\n` +
+                        `Envio parcial concluído (${releaseResult.sentDocumentCount}/${releaseResult.totalDocumentCount} documentos enviados).`,
+                    )
+                } else {
+                    alert(`✅ ${generatedCount} Kit(s) gerado(s) e enviados com sucesso!`)
+                }
+            } else {
+                alert(`✅ Kits gerados, mas envio não concluído: ${releaseResult.error}`)
+            }
             window.location.reload()
         } catch (err: any) {
             alert('Erro ao gerar kits: ' + err.message)
@@ -410,8 +455,16 @@ export default function Workbench({ order }: { order: Order }) {
         if (!confirm('Reenviar e-mail de entrega?')) return
         setIsResending(true)
         try {
-            const { releaseToClient } = await import('../../../../actions/workbench')
-            const result = await releaseToClient(order.id, 'Isabele', { sendToClient: true, sendToTranslator: true, isRetry: true })
+            if (sentDocIds.length === 0) {
+                alert('Nenhum documento marcado como enviado para reenviar.')
+                return
+            }
+            const { sendSelectedDocuments } = await import('../../../../actions/workbench')
+            const result = await sendSelectedDocuments(order.id, sentDocIds, 'Isabele', {
+                sendToClient: true,
+                sendToTranslator: true,
+                isRetry: true,
+            })
             if (result.success) alert('✅ E-mail reenviado!')
             else alert('❌ Erro: ' + result.error)
         } catch (err: any) {
@@ -428,9 +481,14 @@ export default function Workbench({ order }: { order: Order }) {
             <div className="w-56 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
                 <div className="p-4 flex flex-col gap-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Documentos</span>
-                    {order.status === 'COMPLETED' && (
+                    {hasAnySentDocs && (
                         <div className="flex flex-col gap-1.5 px-0.5">
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase"><CheckCircle className="h-3 w-3" /> Status: Enviado</div>
+                            <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase ${hasPartialDelivery ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                <CheckCircle className="h-3 w-3" />
+                                {hasPartialDelivery
+                                    ? `Status: Envio Parcial (${sentDocumentCount}/${totalDocumentCount})`
+                                    : `Status: Enviado (${sentDocumentCount}/${totalDocumentCount})`}
+                            </div>
                             <button onClick={handleResendEmail} disabled={isResending} className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50">
                                 {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Reenviar E-mail
                             </button>
@@ -447,7 +505,8 @@ export default function Workbench({ order }: { order: Order }) {
                         const isActive = doc.id === selectedDocId
                         const isChecked = selectedDocsForDelivery.includes(doc.id)
                         const docWithReview = { ...doc, isReviewed: localReviewed.has(doc.id) }
-                        const { label: statusLabel, pill: pillClass } = getStatusInfo(docWithReview)
+                        const deliveryStatusRecord = (deliveryStatusRegistry[String(doc.id)] ?? null) as DocumentDeliveryStatusRecord | null
+                        const { label: statusLabel, pill: pillClass } = getStatusInfo(docWithReview, deliveryStatusRecord)
 
                         return (
                             <div key={doc.id} className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md group transition-colors ${isActive ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>

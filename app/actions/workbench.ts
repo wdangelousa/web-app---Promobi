@@ -22,7 +22,9 @@ import {
 import {
   getDeliveryArtifactRegistryRecord,
   parseOrderMetadata,
+  readDocumentDeliveryStatusRegistry,
   resolveTranslationArtifactSelection,
+  upsertDocumentDeliveryStatusRecord,
 } from '@/lib/translationArtifactSource'
 import {
   isLikelyImageSource,
@@ -68,6 +70,13 @@ interface ReleasePageParityDiagnostics {
   compaction_attempted: boolean
   certification_generation_blocked: boolean
   release_blocked: boolean
+}
+
+interface ReleaseToClientOptions {
+  sendToClient: boolean
+  sendToTranslator: boolean
+  isRetry?: boolean
+  selectedDocumentIds?: number[]
 }
 
 function logReleasePageParityDiagnostics(diagnostics: ReleasePageParityDiagnostics) {
@@ -222,18 +231,58 @@ export async function approveDocument(
   }
 }
 
-// ─── releaseToClient ──────────────────────────────────────────────────────────
+// ─── releaseToClient / sendSelectedDocuments ─────────────────────────────────
+
+export async function sendSelectedDocuments(
+  orderId: number,
+  documentIds: number[],
+  releasedBy: string,
+  options: Omit<ReleaseToClientOptions, 'selectedDocumentIds'> = {
+    sendToClient: true,
+    sendToTranslator: false,
+    isRetry: false,
+  },
+): Promise<{
+  success: boolean
+  error?: string
+  lifecycleStatus?: 'sent' | 'partially_sent'
+  sentDocumentCount?: number
+  totalDocumentCount?: number
+}> {
+  const selectedDocumentIds = [...new Set(documentIds.filter((id) => Number.isInteger(id) && id > 0))]
+  if (selectedDocumentIds.length === 0) {
+    return {
+      success: false,
+      error: 'Selecione pelo menos 1 documento para envio.',
+    }
+  }
+
+  return releaseToClient(orderId, releasedBy, {
+    ...options,
+    selectedDocumentIds,
+  })
+}
 
 export async function releaseToClient(
   orderId: number,
   releasedBy: string,
-  options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean } = { sendToClient: true, sendToTranslator: false, isRetry: false }
-): Promise<{ success: boolean; error?: string }> {
+  options: ReleaseToClientOptions = { sendToClient: true, sendToTranslator: false, isRetry: false },
+): Promise<{
+  success: boolean
+  error?: string
+  lifecycleStatus?: 'sent' | 'partially_sent'
+  sentDocumentCount?: number
+  totalDocumentCount?: number
+}> {
   try {
     const user = await getCurrentUser()
     if (!user) return { success: false, error: 'Não autorizado.' }
 
-    // Load order with documents and user
+    if (!options.sendToClient && !options.sendToTranslator) {
+      return { success: false, error: 'Selecione ao menos um destinatário para envio.' }
+    }
+
+    // Load order with documents and user.
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -250,6 +299,7 @@ export async function releaseToClient(
             sourceLanguage: true,
             delivery_pdf_url: true,
             translation_status: true,
+            isReviewed: true,
           },
         },
       },
@@ -259,21 +309,55 @@ export async function releaseToClient(
 
     const parsedOrderMetadata = parseOrderMetadata(order.metadata as string | null | undefined)
 
-    // Safety check: all docs must be approved AND have structured-generated delivery artifacts.
-    const notReady = order.documents.filter((d) => {
-      if (d.translation_status !== 'approved') return true
+    const uniqueSelectedDocumentIds = options.selectedDocumentIds
+      ? [...new Set(options.selectedDocumentIds.filter((id) => Number.isInteger(id) && id > 0))]
+      : []
+    const selectedDocumentIds =
+      uniqueSelectedDocumentIds.length > 0
+        ? uniqueSelectedDocumentIds
+        : order.documents.map((d) => d.id)
+    const selectedDocIdSet = new Set(selectedDocumentIds)
+    const docsToRelease = order.documents.filter((d) => selectedDocIdSet.has(d.id))
+
+    if (docsToRelease.length === 0) {
+      return {
+        success: false,
+        error: 'Nenhum documento selecionado para envio.',
+      }
+    }
+
+    const invalidSelectionIds = selectedDocumentIds.filter(
+      (docId) => !order.documents.some((d) => d.id === docId),
+    )
+    if (invalidSelectionIds.length > 0) {
+      return {
+        success: false,
+        error: `Documento(s) inválido(s) para o pedido #${orderId}: ${invalidSelectionIds.join(', ')}`,
+      }
+    }
+
+    // Safety check: selected docs must be reviewed/approved and have structured delivery artifacts.
+    const notReady = docsToRelease.filter((d) => {
+      const reviewApproved = d.isReviewed || d.translation_status === 'approved'
+      if (!reviewApproved) return true
       if (!d.delivery_pdf_url) return true
       return !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id)
     })
     if (notReady.length > 0) {
+      const missingReview = notReady.filter(
+        (d) => !(d.isReviewed || d.translation_status === 'approved'),
+      ).length
+      const missingKit = notReady.filter((d) => !d.delivery_pdf_url).length
       const missingStructured = notReady.filter(
-        d => d.delivery_pdf_url && !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id),
+        (d) => d.delivery_pdf_url && !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id),
       ).length
       return {
         success: false,
         error:
-          `${notReady.length} documento(s) não estão prontos para liberação estruturada. ` +
-          `Aprovação e PDF estruturado são obrigatórios para todos os documentos.` +
+          `${notReady.length} documento(s) selecionado(s) não estão prontos para envio. ` +
+          `Revisão/aprovação e PDF estruturado são obrigatórios para os documentos selecionados.` +
+          (missingReview > 0 ? ` ${missingReview} sem revisão/aprovação.` : '') +
+          (missingKit > 0 ? ` ${missingKit} sem kit gerado.` : '') +
           (missingStructured > 0
             ? ` ${missingStructured} documento(s) têm PDF fora do pipeline estruturado e foram bloqueados.`
             : ''),
@@ -281,7 +365,7 @@ export async function releaseToClient(
     }
 
     // Absolute page-parity release guard:
-    // translated_page_count MUST equal source_page_count for every document.
+    // translated_page_count MUST equal source_page_count for every selected document.
     const parityFailures: Array<{
       docId: number
       reason: string
@@ -296,7 +380,7 @@ export async function releaseToClient(
       recordedSource: string | null
     }> = []
 
-    for (const d of order.documents) {
+    for (const d of docsToRelease) {
       const artifactSelection = resolveTranslationArtifactSelection({
         externalTranslationUrl: d.externalTranslationUrl,
         translatedText: d.translatedText,
@@ -519,40 +603,81 @@ export async function releaseToClient(
       }
     }
 
-    // Update order status → COMPLETED, record who released
-    let meta: Record<string, any> = {}
+    // Send delivery email only for selected docs.
+    // Document "sent" state is persisted only after email dispatch succeeds.
     try {
-      meta = typeof order.metadata === 'string'
-        ? JSON.parse(order.metadata as string)
-        : (order.metadata as any ?? {})
-    } catch { /* keep empty */ }
-
-    meta.delivery = {
-      releasedBy,
-      releasedAt: new Date().toISOString(),
-      structuredOnly: true,
+      await sendDeliveryEmail(order, docsToRelease, options)
+    } catch (err: any) {
+      console.error('[releaseToClient] Critical failure calling sendDeliveryEmail:', err)
+      return {
+        success: false,
+        error:
+          `Falha no envio do e-mail de entrega para os documentos selecionados. ` +
+          `${err?.message ?? 'Erro desconhecido.'}`,
+      }
     }
+
+    const dispatchTimestamp = new Date().toISOString()
+    let nextMetadata: Record<string, unknown> = { ...parsedOrderMetadata }
+    for (const d of docsToRelease) {
+      nextMetadata = upsertDocumentDeliveryStatusRecord(nextMetadata, d.id, {
+        deliveryStatus: 'sent',
+        sentAt: dispatchTimestamp,
+        sentBy: releasedBy,
+        deliveryPdfUrl: normalizeNullableUrl(d.delivery_pdf_url),
+      })
+    }
+
+    const deliveryRegistry = readDocumentDeliveryStatusRegistry(nextMetadata)
+    const totalDocumentCount = order.documents.length
+    const sentDocumentCount = order.documents.filter(
+      (doc) => deliveryRegistry[String(doc.id)]?.deliveryStatus === 'sent',
+    ).length
+    const lifecycleStatus: 'sent' | 'partially_sent' =
+      sentDocumentCount === totalDocumentCount ? 'sent' : 'partially_sent'
+
+    const previousDeliveryMeta =
+      nextMetadata.delivery && typeof nextMetadata.delivery === 'object'
+        ? (nextMetadata.delivery as Record<string, unknown>)
+        : {}
+
+    nextMetadata.delivery = {
+      ...previousDeliveryMeta,
+      releasedBy,
+      releasedAt: dispatchTimestamp,
+      structuredOnly: true,
+      lifecycleStatus,
+      lastDispatchDocumentIds: docsToRelease.map((d) => d.id),
+      sentDocumentCount,
+      totalDocumentCount,
+    }
+
+    const shouldMarkOrderCompleted = lifecycleStatus === 'sent'
+    const nextOrderStatus = shouldMarkOrderCompleted ? 'COMPLETED' : order.status
 
     await prisma.order.update({
       where: { id: orderId },
       data: {
-        status: 'COMPLETED',
-        metadata: JSON.stringify(meta),
+        status: nextOrderStatus,
+        sentAt: shouldMarkOrderCompleted ? new Date(dispatchTimestamp) : order.sentAt,
+        metadata: JSON.stringify(nextMetadata),
       },
     })
 
-    // Send delivery email to selected recipients (AWAIT for better reliability during verification)
-    if (options.sendToClient || options.sendToTranslator) {
-      try {
-        await sendDeliveryEmail(order, options)
-      } catch (err) {
-        console.error('[releaseToClient] Critical failure calling sendDeliveryEmail:', err)
-      }
+    const completionLabel = shouldMarkOrderCompleted
+      ? options.isRetry
+        ? 'RESENT'
+        : 'COMPLETED'
+      : options.isRetry
+        ? 'PARTIAL_RESEND'
+        : 'PARTIALLY_SENT'
+    console.log(`[releaseToClient] ✅ Order #${orderId} ${completionLabel} by ${releasedBy}`)
+    return {
+      success: true,
+      lifecycleStatus,
+      sentDocumentCount,
+      totalDocumentCount,
     }
-
-    console.log(`[releaseToClient] ✅ Order #${orderId} ${options.isRetry ? 'RESENT' : 'COMPLETED'} by ${releasedBy}`)
-    return { success: true }
-
   } catch (err: any) {
     console.error('[releaseToClient]', err)
     return { success: false, error: err.message ?? 'Erro ao liberar pedido.' }
@@ -561,7 +686,11 @@ export async function releaseToClient(
 
 // ─── Delivery email to client ─────────────────────────────────────────────────
 
-async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean }) {
+async function sendDeliveryEmail(
+  order: any,
+  selectedDocs: Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>,
+  options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean },
+) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
 
@@ -590,11 +719,13 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
 
   console.log(`[sendDeliveryEmail] ${options.isRetry ? 'REENVIO MANUAL' : 'DISPARO INICIAL'} - Disparando e-mail para: ${recipients.join(', ')}`)
 
-  const docs = order.documents as Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>
+  const docs = selectedDocs.filter((d) => d.delivery_pdf_url)
+  if (docs.length === 0) {
+    throw new Error(`No selected documents with delivery kit URL for Order #${order.id}.`)
+  }
 
   // Build download links list substituindo Flexbox por Tabelas
   const docLinks = docs
-    .filter(d => d.delivery_pdf_url)
     .map((d, i) => {
       const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
       return `
@@ -640,9 +771,9 @@ async function sendDeliveryEmail(order: any, options: { sendToClient: boolean; s
               </p>
 
               <div style="margin: 24px 0;">
-                <p style="font-size: 11px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">
-                  ${docs.filter(d => d.delivery_pdf_url).length} Documento(s) Liberado(s)
-                </p>
+                  <p style="font-size: 11px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">
+                  ${docs.length} Documento(s) Liberado(s)
+                  </p>
                 ${docLinks}
               </div>
 
