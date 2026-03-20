@@ -1,3 +1,9 @@
+/**
+ * DEPRECATED — This file and initiateTranslation() are superseded by the
+ * Anthropic-powered translation route (app/api/translate/claude/route.ts).
+ * The caller (processPaymentSuccess in app/api/webhooks/route.ts) is dead code
+ * and not invoked by the active POST handler. Do not add new callers here.
+ */
 
 'use server'
 

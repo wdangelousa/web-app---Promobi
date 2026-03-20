@@ -506,15 +506,23 @@ export default function Workbench({ order }: { order: Order }) {
     const handleAttachPlanBFile = async (file: File) => {
         if (!selectedDoc) return
         if (!confirm('Tem certeza? Isso substituirá o arquivo original do documento por esta versão (Plano B).')) return
+        // Cosmetic replacements (scan quality, rotation, orientation) preserve the existing translation.
+        // Content-changing replacements clear it so the pipeline must be restarted.
+        const preserveTranslation = confirm(
+            'É uma substituição COSMÉTICA?\n(qualidade de scan, rotação, orientação — sem mudança de conteúdo)\n\nOK = preservar tradução existente\nCancelar = limpar tradução e reiniciar pipeline'
+        )
         setIsReplacing(true)
         try {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
+            formData.append('preserveTranslation', String(preserveTranslation))
             const { replaceOriginalDocument } = await import('../../../../actions/replaceOriginalDocument')
             const res = await replaceOriginalDocument(formData)
             if (res.success) {
-                alert('Documento original substituído (Plano B) com sucesso!')
+                alert(preserveTranslation
+                    ? 'Plano B aplicado. Tradução preservada.'
+                    : 'Plano B aplicado. Tradução limpa — reinicie o pipeline de tradução.')
                 router.refresh()
             } else {
                 alert('Erro no upload: ' + res.error)
@@ -569,15 +577,24 @@ export default function Workbench({ order }: { order: Order }) {
         const file = e.target.files?.[0]
         if (!file || !selectedDoc) return
         if (!confirm('Tem certeza? Isso substituirá o arquivo enviado pelo cliente por esta nova versão.')) return
+        // Cosmetic replacements (scan quality, rotation, orientation) preserve the existing translation.
+        const preserveTranslation = confirm(
+            'É uma substituição COSMÉTICA?\n(qualidade de scan, rotação, orientação — sem mudança de conteúdo)\n\nOK = preservar tradução existente\nCancelar = limpar tradução e reiniciar pipeline'
+        )
         setIsReplacing(true)
         try {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('documentId', selectedDoc.id.toString())
+            formData.append('preserveTranslation', String(preserveTranslation))
             const { replaceOriginalDocument } = await import('../../../../actions/replaceOriginalDocument')
             const res = await replaceOriginalDocument(formData)
-            if (res.success) router.refresh()
-            else alert('Erro ao substituir original: ' + res.error)
+            if (res.success) {
+                if (!preserveTranslation) alert('Original substituído. Tradução limpa — reinicie o pipeline de tradução.')
+                router.refresh()
+            } else {
+                alert('Erro ao substituir original: ' + res.error)
+            }
         } catch (err: any) {
             alert('Erro inesperado: ' + err.message)
         } finally {
@@ -787,7 +804,7 @@ export default function Workbench({ order }: { order: Order }) {
                         <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Trocar Original</button>
 
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleExternalUpload} />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><UploadCloud className="h-3.5 w-3.5" /> PDF Externo</button>
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingExternal} className={`px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors ${(selectedDoc.externalTranslationUrl ?? optimisticExternalUrl) ? 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}><UploadCloud className="h-3.5 w-3.5" />{(selectedDoc.externalTranslationUrl ?? optimisticExternalUrl) ? '● PDF Ext Ativo' : 'PDF Externo'}</button>
 
                         {order.status !== 'CANCELLED' && (
                             <ManualApprovalButton

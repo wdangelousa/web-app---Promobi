@@ -788,7 +788,10 @@ export async function releaseToClient(
 
     // Safety check: selected docs must be reviewed/approved and have structured delivery artifacts.
     const notReady = docsToRelease.filter((d) => {
+      // External PDF: operator explicitly provided the final artifact — treat as reviewed.
+      const isExternalPdfActive = Boolean(normalizeNullableUrl(d.externalTranslationUrl))
       const reviewApproved = d.isReviewed || d.translation_status === 'approved'
+        || (isExternalPdfActive && d.translation_status === 'translated')
       if (!reviewApproved) return true
       if (!d.delivery_pdf_url) return true
       return !isStructuredDeliveryArtifactUrl(d.delivery_pdf_url, orderId, d.id)

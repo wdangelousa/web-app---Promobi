@@ -1,7 +1,9 @@
 'use server'
 
-import * as deepl from 'deepl-node'
+import Anthropic from '@anthropic-ai/sdk'
 import prisma from '../../lib/prisma'
+import { buildTranslationPrompt } from '@/lib/translationPrompt'
+import { sanitizeTranslationHtml } from '@/lib/translationHtmlSanitizer'
 
 // ─── Azure Document Intelligence ─────────────────────────────────────────────
 
@@ -174,10 +176,9 @@ export async function generateTranslationDraft(orderId: number) {
     })
     if (!order) return { success: false, error: 'Order not found' }
 
-    const authKey = process.env.DEEPL_API_KEY
-    if (!authKey) return { success: false, error: 'Missing DEEPL_API_KEY' }
+    if (!process.env.ANTHROPIC_API_KEY) return { success: false, error: 'Missing ANTHROPIC_API_KEY' }
 
-    const translator = new deepl.Translator(authKey)
+    const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     let completedCount = 0
     let lastTranslatedText = ''
 
@@ -196,15 +197,30 @@ export async function generateTranslationDraft(orderId: number) {
           continue
         }
 
-        // Step B: Translate HTML via DeepL, preserving layout tags
-        const result = await translator.translateText(htmlSource, null, 'en-US', {
-          tagHandling: 'html',
+        // Step B: Translate extracted HTML via Anthropic
+        const rawLang = doc.sourceLanguage ?? 'pt'
+        const sourceLang = (['PT_BR', 'ES', 'pt', 'es'].includes(rawLang) ? rawLang : 'pt') as 'PT_BR' | 'ES' | 'pt' | 'es'
+        const systemPrompt = buildTranslationPrompt(sourceLang)
+        const response = await anthropicClient.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8192,
+          system: systemPrompt,
+          messages: [{
+            role: 'user',
+            content: [{
+              type: 'text',
+              text: `Translate the following HTML document to English, preserving all HTML tags:\n\n${htmlSource}`,
+            }],
+          }],
         })
-        const translatedHtml = Array.isArray(result)
-          ? result.map(r => r.text).join('\n')
-          : result.text
+        const rawTranslation = response.content[0].type === 'text' ? response.content[0].text : ''
+        if (!rawTranslation) {
+          console.warn(`[AzureTranslation] Doc #${doc.id} — Anthropic returned empty translation — skipping`)
+          continue
+        }
+        const translatedHtml = sanitizeTranslationHtml(rawTranslation)
 
-        console.log(`[AzureTranslation] DeepL translated ${translatedHtml.length} chars for doc #${doc.id}`)
+        console.log(`[AzureTranslation] Anthropic translated ${translatedHtml.length} chars for doc #${doc.id}`)
 
         await prisma.document.update({
           where: { id: doc.id },

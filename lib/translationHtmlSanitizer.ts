@@ -46,6 +46,45 @@ export function sanitizeTranslationHtml(rawHtml: string): string {
   return html.trim();
 }
 
+/**
+ * Faithful-layout sanitizer — preserves table structure and meaningful line breaks.
+ * Used when the translation pipeline is 'structured' (i.e. the source document was
+ * classified into a supported structured family, or the operator selected faithful_layout).
+ *
+ * Differences from sanitizeTranslationHtml:
+ *   - Step 2 (flattenSimpleTables) is skipped: tables produced by the faithful prompt
+ *     are kept as <table> elements instead of being flattened to inline paragraphs.
+ *   - All other steps are identical.
+ */
+export function sanitizeTranslationHtmlFaithful(rawHtml: string): string {
+  let html = rawHtml;
+
+  // 0. Strip markdown fences
+  html = html.replace(/^```html?\s*/i, '').replace(/\s*```\s*$/i, '');
+
+  // 0.4. Plain text → <p> tags (skipped if HTML already present)
+  html = convertPlainTextToHtml(html);
+
+  // 0.5. Markdown → HTML (safety net)
+  html = convertMarkdownToHtml(html);
+
+  // 1. Flatten headings → bold uppercase paragraphs
+  html = flattenHeadings(html);
+
+  // Step 2 intentionally omitted — preserve table structure.
+
+  // 3. Compact remaining tables (reduce padding, add border styles)
+  html = compactRemainingTables(html);
+
+  // 4. Remove empty paragraphs and excessive <br> tags
+  html = removeEmptyElements(html);
+
+  // 5. Collapse multiple consecutive line breaks
+  html = collapseWhitespace(html);
+
+  return html.trim();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 0.4. CONVERT PLAIN TEXT TO HTML
 // Runs first: if the input contains no HTML tags at all, wraps each non-empty

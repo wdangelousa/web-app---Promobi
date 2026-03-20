@@ -1,3 +1,8 @@
+/**
+ * DEPRECATED — translateDocument() is only called by app/actions/translation.ts
+ * which is itself dead code (its caller processPaymentSuccess is not invoked).
+ * Translation is handled by the Anthropic route (app/api/translate/claude/route.ts).
+ */
 
 import * as deepl from 'deepl-node';
 import { createClient } from '@supabase/supabase-js';

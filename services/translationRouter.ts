@@ -3,44 +3,60 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Translation Router — decides which pipeline handles a translation request.
  *
- * Current state: always returns 'legacy'.
- *   - USE_STRUCTURED_TRANSLATION=false (default) → legacy pipeline only
- *   - USE_STRUCTURED_TRANSLATION=true            → legacy pipeline runs normally;
- *                                                   structured pipeline ALSO runs in parallel
- *                                                   (see services/structuredPipeline.ts)
+ * Routing logic:
+ *   - 'structured'  → document type is in an implemented structured family AND
+ *                     either the feature flag is on or forcedBlueprint=true.
+ *   - 'standard'    → all other cases (plain Claude translation output).
  *
- * The structured pipeline runs alongside the legacy one — it does not replace it.
+ * Callers must still validate forcedBlueprint eligibility and handle the 422
+ * guard independently (router does not return errors — only pipeline labels).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { FEATURE_FLAGS } from '@/lib/featureFlags';
+import { isDocumentTypeInImplementedStructuredFamily } from '@/services/documentFamilyRegistry';
+import type { DocumentType } from '@/services/documentClassifier';
 
-export type TranslationPipeline = 'legacy' | 'structured';
+export type TranslationPipeline = 'structured' | 'standard';
 
 export interface TranslationRouterContext {
   orderId?: string | number;
   documentId?: string | number;
+  /** Classified document type — required to make an accurate routing decision. */
+  documentType?: DocumentType;
+  /** True when the operator explicitly requested faithful_layout / anthropic_blueprint. */
+  forcedBlueprint?: boolean;
 }
 
 /**
- * Selects the appropriate translation pipeline based on feature flags.
- * Always returns 'legacy' until the structured pipeline is implemented.
+ * Returns the translation pipeline to use for this request.
+ *
+ * 'structured'  → run structured extraction + rendering pipeline.
+ * 'standard'    → return plain Claude translation HTML as-is.
+ *
+ * When documentType is absent the router cannot determine eligibility and
+ * defaults to 'standard' (safe fallback).
  */
 export function selectTranslationPipeline(context?: TranslationRouterContext): TranslationPipeline {
-  const label = context
-    ? `Order #${context.orderId ?? '?'} Doc #${context.documentId ?? '?'} —`
-    : '';
-
-  if (FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION) {
-    console.log(
-      `[translationRouter] ${label} structured translation enabled — legacy + structured pipelines will both run`
-    );
-    return 'legacy';
+  if (!context?.documentType) {
+    console.log('[translationRouter] documentType absent — pipeline: standard');
+    return 'standard';
   }
 
-  console.log(`[translationRouter] ${label} pipeline selected: legacy (USE_STRUCTURED_TRANSLATION=false)`);
-  return 'legacy';
-}
+  const { orderId, documentId, documentType, forcedBlueprint } = context;
+  const label = orderId != null ? `Order #${orderId} Doc #${documentId ?? '?'} —` : '';
+  const familyImplemented = isDocumentTypeInImplementedStructuredFamily(documentType);
 
-// NOTE: The structured pipeline implementation lives in services/structuredPipeline.ts.
-// Use isEligibleForStructuredPipeline() and dispatchStructuredPipeline() from there.
+  if (forcedBlueprint && familyImplemented) {
+    console.log(`[translationRouter] ${label} pipeline: structured (forced blueprint, family=${documentType})`);
+    return 'structured';
+  }
+
+  if (FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION && familyImplemented) {
+    console.log(`[translationRouter] ${label} pipeline: structured (flag enabled, family=${documentType})`);
+    return 'structured';
+  }
+
+  console.log(`[translationRouter] ${label} pipeline: standard (documentType=${documentType}, forcedBlueprint=${forcedBlueprint ?? false}, flagEnabled=${FEATURE_FLAGS.USE_STRUCTURED_TRANSLATION}, familyImplemented=${familyImplemented})`);
+  return 'standard';
+}

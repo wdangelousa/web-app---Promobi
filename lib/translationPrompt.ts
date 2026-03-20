@@ -370,3 +370,69 @@ Do NOT add commentary, translator notes, or formatting suggestions.
 Do NOT wrap output in markdown code fences.
 Do NOT include HTML tags — output plain text only.
 Output ONLY the translated content.`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FAITHFUL LAYOUT — HTML output rules (replaces OUTPUT_RULES for faithful path)
+// Used by buildFaithfulTranslationPrompt. All translation fidelity rules above
+// still apply; only the output format changes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FAITHFUL_OUTPUT_RULES = `OUTPUT FORMAT — FAITHFUL HTML LAYOUT:
+
+Output the translation as valid HTML. Preserve the visual structure of the source document.
+
+SECTION HEADERS — each on its own line:
+  <p><strong>SECTION TITLE IN ALL CAPS</strong></p>
+
+FIELD GROUPS (spouse details, registration info, officer block, etc.) — output as tables:
+  <table>
+    <tr><td><strong>Label</strong></td><td>Value</td></tr>
+    <tr><td><strong>Label</strong></td><td>Value</td></tr>
+  </table>
+  Each label–value pair is its own <tr>. Never merge multiple fields into one cell or one paragraph.
+
+REGISTRY/FOOTER LINES (CNS, officer name, address, phone, attestation, digital seal, electronic signature):
+  One <p> per line. Do NOT pack multiple items into one <p>.
+
+HARD LINE BREAKS within a field value:
+  Use <br/> inside the <td> cell. Do NOT compress a multi-line value onto one line.
+
+CRITICAL:
+- Output valid HTML only — no markdown, no code fences, no commentary
+- Tables stay as <table> — never convert rows to prose or a bulleted list
+- Preserve ALL CAPS where the original uses ALL CAPS (names, headings, registry values)
+- Preserve all numbers exactly: CPF, matrícula, CNS, book/page, seal, amounts, dates
+- Do NOT translate proper names of people, cities, or states
+- Do NOT write colons between labels and values (write "Nationality Brazilian", not "Nationality: Brazilian")
+- Do NOT reorder sections
+- Do NOT convert R$ to USD
+- Do NOT alter law references (always "Law nº 6.015/73")
+- Do NOT omit any field, seal, stamp, annotation, validation, or electronic signature block`;
+
+/**
+ * Faithful-layout prompt variant.
+ * Uses all the same translation fidelity rules but instructs Claude to output
+ * HTML with tables preserved instead of plain text.
+ * Used when the operator explicitly selects faithful_layout / anthropic_blueprint.
+ */
+export function buildFaithfulTranslationPrompt(sourceLanguage: TranslationLanguage): string {
+  const isPtBr = sourceLanguage === 'PT_BR' || sourceLanguage === 'pt';
+  const sourceLangLabel = isPtBr ? 'Brazilian Portuguese' : 'Spanish';
+  const domainExpertise = isPtBr ? PT_BR_EXPERTISE : ES_EXPERTISE;
+
+  return `You are Promobidocs' certified translation specialist. You translate from ${sourceLangLabel} to English (United States) for USCIS immigration filings, academic credential evaluations, and official legal proceedings.
+
+${CORE_STANDARDS}
+
+${DOCUMENTARY_FIDELITY}
+
+${BRACKET_NOTATION}
+
+${NON_TEXTUAL_ELEMENTS}
+
+${TAX_CONFIDENTIALITY_POLICY}
+
+${domainExpertise}
+
+${FAITHFUL_OUTPUT_RULES}`;
+}

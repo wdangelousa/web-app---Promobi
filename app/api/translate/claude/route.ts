@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { sanitizeTranslationHtml } from "@/lib/translationHtmlSanitizer";
-import { buildTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
+import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful } from "@/lib/translationHtmlSanitizer";
+import { buildTranslationPrompt, buildFaithfulTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
 import { selectTranslationPipeline } from "@/services/translationRouter";
 import { classifyDocument } from "@/services/documentClassifier";
 import { isDocumentTypeInImplementedStructuredFamily } from "@/services/documentFamilyRegistry";
-import {
-  isEligibleForStructuredPipeline,
-  dispatchStructuredPipeline,
-} from "@/services/structuredPipeline";
+import { dispatchStructuredPipeline } from "@/services/structuredPipeline";
 
 // Allow up to 5 minutes for translation (large PDFs + retries on overload)
 export const maxDuration = 300;
@@ -99,9 +96,6 @@ export async function POST(req: Request) {
       normalizedTranslationMode === "external_pdf" ||
       normalizedTranslationPipeline === "external_pdf";
 
-    // Router: always 'legacy' until structured pipeline is implemented
-    selectTranslationPipeline({ orderId, documentId });
-
     if (!fileUrl) {
       return NextResponse.json({ error: "fileUrl is required" }, { status: 400 });
     }
@@ -135,8 +129,29 @@ export async function POST(req: Request) {
       contentType.includes("image/") ||
       /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
 
-    // ── Layer 1: Pure translation prompt (no HTML awareness) ──
-    const systemPrompt = buildTranslationPrompt(sourceLanguage as TranslationLanguage);
+    // ── Pre-classify from URL for prompt selection ──
+    // Pipeline routing requires post-translation classification, but we must pick
+    // a prompt before calling Claude. A fileUrl-only pre-classification provides
+    // an early structural signal: if the filename reliably hints at a structured
+    // family (e.g. "casamento", "diploma", "transcript"), use the faithful prompt
+    // so Claude emits HTML tables. The authoritative classification (~line 215)
+    // still drives routing — this only determines the prompt.
+    const preClassification = classifyDocument({ fileUrl, sourceLanguage });
+    const preClassifiedAsStructured =
+      isDocumentTypeInImplementedStructuredFamily(preClassification.documentType);
+    console.log(
+      `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `preClassification=${preClassification.documentType} (${preClassification.confidence}) ` +
+      `preClassifiedAsStructured=${preClassifiedAsStructured}`,
+    );
+
+    // ── Layer 1: Translation prompt ──
+    // Faithful path: operator forced blueprint OR pre-classified as structured family.
+    // Standard path: all other cases (plain-text output rules — unchanged).
+    const useFaithfulPrompt = forceBlueprintPipeline || preClassifiedAsStructured;
+    const systemPrompt = useFaithfulPrompt
+      ? buildFaithfulTranslationPrompt(sourceLanguage as TranslationLanguage)
+      : buildTranslationPrompt(sourceLanguage as TranslationLanguage);
     const userMessage = buildUserMessage(sourceLangLabel, isPdf);
 
     // ── Build message content based on file type ──
@@ -199,29 +214,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Claude returned empty translation" }, { status: 500 });
     }
 
-    // ── Document classification (auxiliary — does not affect translation output) ──
+    // ── Document classification ──
     const classification = classifyDocument({ fileUrl, translatedText: rawTranslation, sourceLanguage });
     console.log(
       `[documentClassifier] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `detected document type: ${classification.documentType} (confidence: ${classification.confidence})`
     );
 
-    // ── Structured pipeline (forced by modality when faithful_layout is selected) ──
-    const structuredEligible = isEligibleForStructuredPipeline(classification.documentType);
+    // ── Router: select pipeline based on classification ──
+    const pipeline = selectTranslationPipeline({
+      orderId,
+      documentId,
+      documentType: classification.documentType,
+      forcedBlueprint: forceBlueprintPipeline,
+    });
     const structuredFamilyImplemented = isDocumentTypeInImplementedStructuredFamily(
       classification.documentType,
     );
-    const shouldRunStructuredPipeline = forceBlueprintPipeline
-      ? structuredFamilyImplemented
-      : structuredEligible;
+    const shouldRunStructuredPipeline = pipeline === 'structured';
 
     console.log(
       `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `mode=${normalizedTranslationMode} pipeline=${normalizedTranslationPipeline} ` +
       `selectionSource=${translationSelectionSource ?? "unknown"} ` +
       `forceBlueprint=${forceBlueprintPipeline ? "yes" : "no"} ` +
-      `eligibleByFlag=${structuredEligible ? "yes" : "no"} ` +
-      `familyImplemented=${structuredFamilyImplemented ? "yes" : "no"}`
+      `routerDecision=${pipeline} familyImplemented=${structuredFamilyImplemented ? "yes" : "no"}`
     );
 
     if (forceBlueprintPipeline && !structuredFamilyImplemented) {
@@ -234,6 +251,7 @@ export async function POST(req: Request) {
       );
     }
 
+    let structuredPipelineFailed = false;
     if (shouldRunStructuredPipeline) {
       try {
         console.log(
@@ -248,18 +266,25 @@ export async function POST(req: Request) {
           documentId,
         }, classification.documentType);
 
-        if (forceBlueprintPipeline && !structuredResult.success) {
-          return NextResponse.json(
-            {
-              error:
-                structuredResult.error ||
-                "Faithful pipeline failed for this document. Try Standard.",
-            },
-            { status: 502 },
+        if (!structuredResult.success) {
+          structuredPipelineFailed = true;
+          console.warn(
+            `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+            `structured pipeline failed: ${structuredResult.error ?? "unknown error"}`
           );
+          if (forceBlueprintPipeline) {
+            return NextResponse.json(
+              {
+                error:
+                  structuredResult.error ||
+                  "Faithful pipeline failed for this document. Try Standard.",
+              },
+              { status: 502 },
+            );
+          }
         }
       } catch (structuredErr) {
-        // Defensive outer catch — dispatchStructuredPipeline already catches internally
+        structuredPipelineFailed = true;
         console.error(
           `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
           `unexpected error escaped pipeline: ${structuredErr}`
@@ -280,13 +305,28 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── Layer 3: Sanitize for Gotenberg (format HTML, compact layout) ──
-    const translatedText = sanitizeTranslationHtml(rawTranslation);
+    // ── Layer 3: Sanitize for Gotenberg ──
+    // Structured path: faithful sanitizer — preserves tables, skips table flattening.
+    // Standard path: standard sanitizer — compacts layout for single-page density.
+    const isFaithfulPath = pipeline === 'structured';
+    const translatedText = isFaithfulPath
+      ? sanitizeTranslationHtmlFaithful(rawTranslation)
+      : sanitizeTranslationHtml(rawTranslation);
+
+    // ── Page divergence signal ──
+    // Counts structural elements (<p> + <tr>) in the sanitized output.
+    // High counts indicate the translation may span more pages than the source.
+    const structuralElementCount =
+      (translatedText.match(/<p[\s>]/gi) ?? []).length +
+      (translatedText.match(/<tr[\s>]/gi) ?? []).length;
+    // Rough heuristic: ~20 elements per page. Flag if output looks like >5 pages.
+    const pageDivergenceFlag = structuralElementCount > 100;
 
     console.log(
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
-      `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction)`
+      `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction) ` +
+      `faithfulPath=${isFaithfulPath} structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
     );
 
     return NextResponse.json({
@@ -297,6 +337,10 @@ export async function POST(req: Request) {
         : "standard_structured",
       structuredPipelineExecuted: shouldRunStructuredPipeline,
       structuredPipelineForced: forceBlueprintPipeline,
+      structuredPipelineFailed,
+      faithfulPathUsed: isFaithfulPath,
+      structuralElementCount,
+      pageDivergenceFlag,
     });
   } catch (error: any) {
     console.error("[/api/translate/claude] Error:", error);

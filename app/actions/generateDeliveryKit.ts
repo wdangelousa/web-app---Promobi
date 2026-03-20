@@ -2,17 +2,13 @@
 
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { PDFDocument } from "pdf-lib";
 import Anthropic from "@anthropic-ai/sdk";
 import { classifyDocument } from "@/services/documentClassifier";
 import {
   buildStructuredKitBuffer,
   type StructuredPageParityDecision,
 } from "@/services/structuredPreviewKit";
-import {
-  detectOrientationFromPdfDoc,
-  type DocumentOrientation,
-} from "@/lib/documentOrientationDetector";
+import { type DocumentOrientation } from "@/lib/documentOrientationDetector";
 import {
   assertStructuredClientFacingRender,
   formatStructuredRenderingFailureMessage,
@@ -25,11 +21,7 @@ import {
   resolveTranslationArtifactSelection,
   upsertDeliveryArtifactRegistryRecord,
 } from "@/lib/translationArtifactSource";
-import {
-  isLikelyImageSource,
-  resolveGroupedSourceImageCountHintFromOrderMetadata,
-  resolveSourcePageCount,
-} from '@/lib/sourcePageCountResolver';
+import { resolveKitSetup } from "@/services/structuredKitSetup";
 
 interface DeliveryKitResult {
   success: boolean;
@@ -149,31 +141,7 @@ export async function generateDeliveryKit(
       };
     }
 
-    // ── Step 1: Fetch original file ───────────────────────────────────────────
-    let originalFileBuffer: ArrayBuffer = new ArrayBuffer(0);
-    let isOriginalPdf = false;
-    let contentType = "application/octet-stream";
-
-    if (doc.originalFileUrl) {
-      try {
-        const res = await fetch(doc.originalFileUrl);
-        if (res.ok) {
-          originalFileBuffer = await res.arrayBuffer();
-          contentType = res.headers.get("content-type") ?? "application/octet-stream";
-          isOriginalPdf =
-            contentType.includes("pdf") ||
-            doc.originalFileUrl.toLowerCase().includes(".pdf");
-        }
-      } catch {
-        console.warn(`${logPrefix} — original file fetch failed`);
-      }
-    }
-
-    // ── Step 2: Resolve source page count + orientation ───────────────────────
-    let sourcePageCount: number | undefined;
-    let detectedOrientation: DocumentOrientation = "unknown";
-    let sourceArtifactType: string | undefined;
-    let sourcePageCountStrategy: string | undefined;
+    // ── Steps 1–2: Fetch file, detect orientation, resolve page count ──────────
     const parsedOrderMetadata = parseOrderMetadata(
       order.metadata as string | null | undefined,
     );
@@ -181,58 +149,25 @@ export async function generateDeliveryKit(
       parsedOrderMetadata,
       documentId,
     );
-    const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
-      orderMetadata: parsedOrderMetadata,
-      documentId: doc.id,
+
+    const kitSetup = await resolveKitSetup({
       originalFileUrl: doc.originalFileUrl,
-      exactNameOnDoc: doc.exactNameOnDoc ?? null,
+      exactNameOnDoc: doc.exactNameOnDoc,
+      documentId: doc.id,
+      parsedOrderMetadata,
+      logPrefix,
     });
-    let extractedPdfPageCount: number | null = null;
 
-    if (isOriginalPdf && originalFileBuffer.byteLength > 0) {
-      try {
-        const pdfDoc = await PDFDocument.load(originalFileBuffer, { ignoreEncryption: true });
-        extractedPdfPageCount = pdfDoc.getPageCount();
-        const orientResult = detectOrientationFromPdfDoc(pdfDoc);
-        detectedOrientation = orientResult.orientation;
-        console.log(
-          `${logPrefix} — original pages: ${extractedPdfPageCount}, orientation: ${detectedOrientation}`
-        );
-      } catch {
-        console.warn(`${logPrefix} — PDF metadata extraction failed`);
-      }
-    }
-
-    const sourcePageResolution = await resolveSourcePageCount({
-      fileUrl: doc.originalFileUrl,
+    const {
+      originalFileBuffer,
+      isOriginalPdf,
       contentType,
-      fileBuffer: originalFileBuffer,
-      isPdfHint: isOriginalPdf,
-      pdfPageCountHint: extractedPdfPageCount,
-      explicitPageCountHint: groupedSourceImageCountHint,
+      detectedOrientation,
+      sourcePageCount,
+      sourceArtifactType,
+      sourcePageCountStrategy,
       groupedSourceImageCountHint,
-      hybridSinglePageEvidence:
-        groupedSourceImageCountHint === 1 &&
-        !isOriginalPdf &&
-        !isLikelyImageSource(doc.originalFileUrl, contentType),
-    });
-
-    sourcePageCount = sourcePageResolution.resolvedSourcePageCount ?? undefined;
-    sourceArtifactType = sourcePageResolution.sourceArtifactType;
-    sourcePageCountStrategy = sourcePageResolution.sourcePageCountStrategy;
-
-    console.log(
-      `${logPrefix} — source page count resolution: ${JSON.stringify({
-        orderId,
-        docId: documentId,
-        sourceArtifactType,
-        sourcePageCountStrategy,
-        resolvedSourcePageCount: sourcePageResolution.resolvedSourcePageCount,
-        sourceContentType: contentType,
-        groupedSourceImageCountHint: groupedSourceImageCountHint ?? null,
-        parityStatus: sourcePageResolution.parityVerifiable ? 'resolvable' : 'indeterminate',
-      })}`,
-    );
+    } = kitSetup;
 
     // ── Step 3: Classify document type ────────────────────────────────────────
     const documentLabelHint =
