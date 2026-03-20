@@ -31,7 +31,12 @@ const SEARCH_ITEMS: SearchItem[] = [
   { id: 'relatorios', title: 'Relatórios', description: 'Análises e exportação de dados', icon: <FileText className="w-4 h-4" />, path: '/admin/reports', category: 'Funcionalidades' },
 ];
 
-export const SearchBar = () => {
+interface SearchBarProps {
+  placeholder?: string;
+  onSearch?: (value: string) => void;
+}
+
+export const SearchBar = ({ placeholder, onSearch }: SearchBarProps = {}) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchItem[]>([]);
@@ -45,6 +50,12 @@ export const SearchBar = () => {
       return;
     }
 
+    // Call onSearch callback if provided (simple mode)
+    if (onSearch) {
+      onSearch(query);
+      return;
+    }
+
     const filtered = SEARCH_ITEMS.filter(item => 
       item.title.toLowerCase().includes(query.toLowerCase()) ||
       item.description.toLowerCase().includes(query.toLowerCase()) ||
@@ -52,7 +63,7 @@ export const SearchBar = () => {
     );
     setResults(filtered.slice(0, 5));
     setSelectedIndex(0);
-  }, [query]);
+  }, [query, onSearch]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -98,46 +109,60 @@ export const SearchBar = () => {
   return (
     <div className="relative w-full" ref={containerRef}>
       <div 
-        onClick={() => setIsOpen(true)}
+        onClick={() => !onSearch && setIsOpen(true)}
         className={cn(
-          "flex items-center gap-3 px-4 py-2.5 rounded-xl border border-gray-200 bg-white/50 backdrop-blur-sm cursor-pointer transition-all duration-200",
-          "hover:border-blue-400 hover:ring-4 hover:ring-blue-50 group",
-          isOpen && "border-blue-500 ring-4 ring-blue-50"
+          "flex items-center gap-3 px-4 py-2.5 rounded-xl border border-gray-200 bg-white/50 backdrop-blur-sm transition-all duration-200 group",
+          !onSearch && "cursor-pointer hover:border-blue-400 hover:ring-4 hover:ring-blue-50",
+          !onSearch && isOpen && "border-blue-500 ring-4 ring-blue-50"
         )}
       >
         <Search className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
-        <span className="text-sm text-gray-500 flex-1">Buscar funcionalidade...</span>
-        <div className="hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[10px] font-medium text-gray-400">
-          <Command className="w-2.5 h-2.5" />
-          <span>K</span>
-        </div>
+        {onSearch ? (
+          // Simple mode: inline input
+          <input
+            placeholder={placeholder || "Buscar..."}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        ) : (
+          // Complex mode: default behavior
+          <>
+            <span className="text-sm text-gray-500 flex-1">Buscar funcionalidade...</span>
+            <div className="hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[10px] font-medium text-gray-400">
+              <Command className="w-2.5 h-2.5" />
+              <span>K</span>
+            </div>
+          </>
+        )}
       </div>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
-          >
+      {!onSearch && (
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+            >
             <div className="p-2 border-b border-gray-100 flex items-center gap-3">
-              <Search className="w-4 h-4 text-gray-400 ml-2" />
-              <input
-                autoFocus
-                placeholder="O que você está procurando?"
-                className="flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-gray-400"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onKeyDown}
-              />
-              <button 
-                onClick={() => setIsOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
+                <Search className="w-4 h-4 text-gray-400 ml-2" />
+                <input
+                  autoFocus
+                  placeholder="O que você está procurando?"
+                  className="flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-gray-400"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onKeyDown}
+                />
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
 
             <div className="max-h-[320px] overflow-y-auto p-2">
               {query === '' ? (
@@ -212,6 +237,7 @@ export const SearchBar = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      )}
     </div>
   );
 };
