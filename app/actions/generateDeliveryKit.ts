@@ -171,7 +171,18 @@ export async function generateDeliveryKit(
       sourceArtifactType,
       sourcePageCountStrategy,
       groupedSourceImageCountHint,
+      originalFetchFailed,
     } = kitSetup;
+
+    if (originalFetchFailed) {
+      return {
+        success: false,
+        error:
+          `Original source file could not be fetched for document #${documentId}. ` +
+          `Kit assembly requires the original to be appended as Part 3. ` +
+          `Verify that originalFileUrl is set and accessible.`,
+      };
+    }
 
     // ── Step 3: Classify document type ────────────────────────────────────────
     const documentLabelHint =

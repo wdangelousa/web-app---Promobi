@@ -45,6 +45,13 @@ export interface KitSetupResult {
   sourcePageCountStrategy: string | undefined;
   groupedSourceImageCountHint: number | null;
   extractedPdfPageCount: number | null;
+  /**
+   * True when the original file fetch was attempted but failed (non-ok HTTP
+   * status, network error, or missing originalFileUrl). Callers must check
+   * this and return an explicit error rather than silently building an
+   * incomplete kit.
+   */
+  originalFetchFailed: boolean;
 }
 
 export async function resolveKitSetup(input: KitSetupInput): Promise<KitSetupResult> {
@@ -55,8 +62,12 @@ export async function resolveKitSetup(input: KitSetupInput): Promise<KitSetupRes
   let originalFileBuffer: ArrayBuffer = new ArrayBuffer(0);
   let isOriginalPdf = false;
   let contentType = 'application/octet-stream';
+  let originalFetchFailed = false;
 
-  if (originalFileUrl) {
+  if (!originalFileUrl) {
+    originalFetchFailed = true;
+    console.warn(`${logPrefix} — original file URL is missing; cannot assemble complete kit`);
+  } else {
     try {
       const res = await fetch(originalFileUrl);
       if (res.ok) {
@@ -65,9 +76,20 @@ export async function resolveKitSetup(input: KitSetupInput): Promise<KitSetupRes
         isOriginalPdf =
           contentType.includes('pdf') ||
           originalFileUrl.toLowerCase().includes('.pdf');
+        if (originalFileBuffer.byteLength === 0) {
+          originalFetchFailed = true;
+          console.warn(`${logPrefix} — original file fetched but returned empty body (${originalFileUrl})`);
+        }
+      } else {
+        originalFetchFailed = true;
+        console.warn(
+          `${logPrefix} — original file fetch returned HTTP ${res.status} for ${originalFileUrl}; ` +
+          `kit will be incomplete without the original`,
+        );
       }
-    } catch {
-      console.warn(`${logPrefix} — original file fetch failed`);
+    } catch (fetchErr) {
+      originalFetchFailed = true;
+      console.warn(`${logPrefix} — original file fetch threw: ${fetchErr}`);
     }
   }
 
@@ -135,5 +157,6 @@ export async function resolveKitSetup(input: KitSetupInput): Promise<KitSetupRes
     sourcePageCountStrategy: sourcePageResolution.sourcePageCountStrategy,
     groupedSourceImageCountHint,
     extractedPdfPageCount,
+    originalFetchFailed,
   };
 }
