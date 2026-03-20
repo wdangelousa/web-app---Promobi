@@ -1973,6 +1973,8 @@ function normalizeEditorialNewsStructuredPage(
       estimated_density: estimatedDensity,
       suggested_font_style: suggestedFontStyle,
       suggested_font_size_by_section: suggestedFontSizes,
+      is_scanned_clipping: metadata.is_scanned_clipping === true,
+      has_graphic_elements: metadata.has_graphic_elements === true,
     },
     LAYOUT_ZONES: normalizedLayoutZones,
     TRANSLATED_CONTENT_BY_ZONE: normalizedTranslatedZones,
