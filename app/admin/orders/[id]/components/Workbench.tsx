@@ -7,8 +7,10 @@ import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, Th
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
-import { readDocumentDeliveryStatusRegistry } from '@/lib/translationArtifactSource'
+import { readDocumentDeliveryStatusRegistry, readTranslationModeRegistry, type TranslationModeSelected } from '@/lib/translationArtifactSource'
 import { readFinancialLedger } from '@/lib/manualPayment'
+import ModalPortal from '@/components/ui/ModalPortal'
+import { UI_Z_INDEX } from '@/lib/uiZIndex'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -64,6 +66,34 @@ type PreviewParityDecisionPayload = {
     blockingReason: 'page_parity_mismatch' | 'page_parity_unverifiable_source_page_count'
     translationArtifactSource: 'external_pdf' | 'structured_internal' | 'legacy_internal' | 'unknown'
 }
+
+type TranslationModeOption = {
+    mode: TranslationModeSelected
+    label: string
+    description: string
+    intendedUse: string
+}
+
+const IA_PROMOBI_MODE_OPTIONS: TranslationModeOption[] = [
+    {
+        mode: 'standard',
+        label: 'Standard',
+        description: 'Best for simpler, more textual documents.',
+        intendedUse: 'Declarations, letters, straightforward textual records, and low-layout-sensitivity documents.',
+    },
+    {
+        mode: 'faithful_layout',
+        label: 'Faithful to the original document',
+        description: 'Best for certificates, civil records, diplomas, news pages, and highly formatted documents.',
+        intendedUse: 'Civil records, diplomas/certificates, editorial/news pages, EB1 evidence photo sheets, and highly formatted documents.',
+    },
+    {
+        mode: 'external_pdf',
+        label: 'Use external PDF',
+        description: 'Use an already prepared translated PDF.',
+        intendedUse: 'When a reviewed translated PDF already exists outside the normal generation flow.',
+    },
+]
 
 function getStatusInfo(doc: Document, deliveryStatusRecord: DocumentDeliveryStatusRecord | null): StatusInfo {
     if (deliveryStatusRecord?.deliveryStatus === 'sent') {
@@ -123,6 +153,10 @@ export default function Workbench({ order }: { order: Order }) {
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
     const [showFinancialModal, setShowFinancialModal] = useState(false)
+    const [showTranslationModeModal, setShowTranslationModeModal] = useState(false)
+    const [selectedTranslationMode, setSelectedTranslationMode] = useState<TranslationModeSelected>('standard')
+    const [translationModeError, setTranslationModeError] = useState<string | null>(null)
+    const [isSavingTranslationMode, setIsSavingTranslationMode] = useState(false)
 
     const [isAddingDoc, setIsAddingDoc] = useState(false)
     const [isDeletingDocId, setIsDeletingDocId] = useState<number | null>(null)
@@ -133,6 +167,16 @@ export default function Workbench({ order }: { order: Order }) {
     const deliveryStatusRegistry = useMemo(
         () => readDocumentDeliveryStatusRegistry((order.metadata ?? {}) as Record<string, unknown>),
         [order.metadata],
+    )
+    const translationModeRegistry = useMemo(
+        () => readTranslationModeRegistry((order.metadata ?? {}) as Record<string, unknown>),
+        [order.metadata],
+    )
+    const selectedDocTranslationModeRecord = selectedDoc
+        ? translationModeRegistry[String(selectedDoc.id)] ?? null
+        : null
+    const externalPdfAvailableForSelectedDoc = Boolean(
+        optimisticExternalUrl || selectedDoc?.externalTranslationUrl,
     )
     const sentDocIds = useMemo(
         () =>
@@ -188,6 +232,14 @@ export default function Workbench({ order }: { order: Order }) {
         setParityRelevantPageCountInput('')
         setSelectedParityMode('strict_all_pages')
     }, [selectedDoc?.id])
+
+    useEffect(() => {
+        setSelectedTranslationMode(
+            selectedDocTranslationModeRecord?.translationModeSelected ?? 'standard',
+        )
+        setTranslationModeError(null)
+        setShowTranslationModeModal(false)
+    }, [selectedDoc?.id, selectedDocTranslationModeRecord?.translationModeSelected])
 
     const toggleDocForDelivery = (docId: number) => {
         setSelectedDocsForDelivery((prev) => prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId])
@@ -328,37 +380,76 @@ export default function Workbench({ order }: { order: Order }) {
         })
     }
 
-    const handleTranslateAI = async () => {
-        if (!selectedDoc || !selectedDoc.originalFileUrl) {
+    const handleOpenIAPromobiModal = () => {
+        if (!selectedDoc) return
+        if (!selectedDoc.originalFileUrl) {
             alert('Documento original indisponível.')
             return
         }
-        setIsTranslating(true)
+        setSelectedTranslationMode(
+            selectedDocTranslationModeRecord?.translationModeSelected ?? 'standard',
+        )
+        setTranslationModeError(null)
+        setShowTranslationModeModal(true)
+    }
+
+    const handleSaveTranslationModeOnly = async () => {
+        if (!selectedDoc) return
+
+        setIsSavingTranslationMode(true)
+        setTranslationModeError(null)
         try {
-            const res = await fetch('/api/translate/claude', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fileUrl: selectedDoc.originalFileUrl,
-                    documentId: selectedDoc.id,
-                    orderId: order.id,
-                    sourceLanguage: selectedDoc.sourceLanguage || 'pt',
-                })
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || 'Erro na API Claude')
-
-            const cleanedText = cleanAiHtml(data.translatedText)
-            justTranslatedRef.current = cleanedText
-            setEditorContent(cleanedText)
-
-            if (data.qaReport?.flags?.length) {
-                console.log('[QA Report]', data.qaReport.flags)
+            const { saveIAPromobiTranslationModality } = await import('../../../../actions/workbench')
+            const result = await saveIAPromobiTranslationModality(
+                order.id,
+                selectedDoc.id,
+                selectedTranslationMode,
+            )
+            if (!result.success) {
+                setTranslationModeError(result.error || 'Failed to save modality.')
+                return
             }
-
+            setShowTranslationModeModal(false)
             router.refresh()
         } catch (err: any) {
-            alert('Erro ao acionar IA: ' + err.message)
+            setTranslationModeError(err?.message || 'Failed to save modality.')
+        } finally {
+            setIsSavingTranslationMode(false)
+        }
+    }
+
+    const handleSaveAndGenerateByMode = async () => {
+        if (!selectedDoc) return
+        if (selectedTranslationMode === 'external_pdf' && !externalPdfAvailableForSelectedDoc) {
+            setTranslationModeError('Use external PDF requires an active external PDF for this document.')
+            return
+        }
+
+        setIsTranslating(true)
+        setTranslationModeError(null)
+        try {
+            const { saveAndGenerateIAPromobiTranslation } = await import('../../../../actions/workbench')
+            const result = await saveAndGenerateIAPromobiTranslation(
+                order.id,
+                selectedDoc.id,
+                selectedTranslationMode,
+            )
+
+            if (!result.success) {
+                setTranslationModeError(result.error || 'Failed to generate translation.')
+                return
+            }
+
+            if (typeof result.translatedText === 'string' && result.translatedText.trim().length > 0) {
+                const cleanedText = cleanAiHtml(result.translatedText)
+                justTranslatedRef.current = cleanedText
+                setEditorContent(cleanedText)
+            }
+
+            setShowTranslationModeModal(false)
+            router.refresh()
+        } catch (err: any) {
+            setTranslationModeError(err?.message || 'Failed to generate translation.')
         } finally {
             setIsTranslating(false)
         }
@@ -690,7 +781,7 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button onClick={handleTranslateAI} disabled={isTranslating} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Zap className="h-3.5 w-3.5" /> IA Promobi</button>
+                        <button onClick={handleOpenIAPromobiModal} disabled={isTranslating || isSavingTranslationMode} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Zap className="h-3.5 w-3.5" /> IA Promobi</button>
 
                         <input type="file" ref={replaceFileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleReplaceOriginal} />
                         <button onClick={() => replaceFileInputRef.current?.click()} disabled={isReplacing} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Trocar Original</button>
@@ -729,149 +820,287 @@ export default function Workbench({ order }: { order: Order }) {
                 </div>
             </div>
 
-            {showPreviewModal && (
-                <div className="fixed inset-0 z-[60] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPreviewModal(false)}>
-                    <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
-                            <span className="text-white font-semibold flex items-center gap-2"><Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
-                            <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
-                        </div>
-                        <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
-                            {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
+            {showTranslationModeModal && selectedDoc && (
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 bg-gray-900/55 backdrop-blur-sm flex items-center justify-center p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                    >
+                        <div
+                            className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="px-6 py-5 border-b border-gray-200">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    How do you want to generate this translation?
+                                </h3>
+                            </div>
+
+                            <div className="p-6 space-y-4">
+                                {IA_PROMOBI_MODE_OPTIONS.map((option) => {
+                                    const isActive = selectedTranslationMode === option.mode
+                                    return (
+                                        <button
+                                            key={option.mode}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedTranslationMode(option.mode)
+                                                setTranslationModeError(null)
+                                            }}
+                                            className={`w-full text-left rounded-xl border px-4 py-4 transition-colors ${
+                                                isActive
+                                                    ? 'border-purple-500 bg-purple-50'
+                                                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-sm font-bold text-gray-900">
+                                                        {option.label}
+                                                    </div>
+                                                    <div className="text-sm text-gray-600 mt-1">
+                                                        {option.description}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-2">
+                                                        {option.intendedUse}
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    className={`mt-0.5 h-4 w-4 rounded-full border ${
+                                                        isActive
+                                                            ? 'border-purple-600 bg-purple-600'
+                                                            : 'border-gray-300 bg-white'
+                                                    }`}
+                                                />
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+
+                                {selectedTranslationMode === 'external_pdf' && !externalPdfAvailableForSelectedDoc && (
+                                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                        External PDF is not available for this document. Upload an external PDF first.
+                                    </div>
+                                )}
+
+                                {translationModeError && (
+                                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                        {translationModeError}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (isTranslating || isSavingTranslationMode) return
+                                        setShowTranslationModeModal(false)
+                                        setTranslationModeError(null)
+                                    }}
+                                    disabled={isTranslating || isSavingTranslationMode}
+                                    className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-white disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveTranslationModeOnly}
+                                    disabled={isTranslating || isSavingTranslationMode}
+                                    className="px-4 py-2 rounded-lg border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                                >
+                                    {isSavingTranslationMode ? 'Saving...' : 'Save modality'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveAndGenerateByMode}
+                                    disabled={
+                                        isTranslating ||
+                                        isSavingTranslationMode ||
+                                        (selectedTranslationMode === 'external_pdf' && !externalPdfAvailableForSelectedDoc)
+                                    }
+                                    className="px-4 py-2 rounded-lg bg-purple-600 text-sm font-bold text-white hover:bg-purple-700 disabled:opacity-50"
+                                >
+                                    {isTranslating ? 'Generating...' : 'Save and generate translation'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </ModalPortal>
+            )}
+
+            {showPreviewModal && (
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                        onClick={() => setShowPreviewModal(false)}
+                    >
+                        <div
+                            className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
+                                <span className="text-white font-semibold flex items-center gap-2"><Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
+                                <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
+                            </div>
+                            <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
+                                {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
+                            </div>
+                        </div>
+                    </div>
+                </ModalPortal>
             )}
 
             {showParityDecisionModal && parityDecisionContext && (
-                <div className="fixed inset-0 z-[65] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-amber-50">
-                            <h3 className="text-lg font-bold text-gray-900">Decisão de Paridade de Páginas</h3>
-                            <p className="text-sm text-gray-700 mt-1">
-                                Detectamos diferença entre páginas do original e da tradução. A regra padrão continua sendo paridade estrita, mas você pode escolher como tratar este caso.
-                            </p>
-                        </div>
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                    >
+                        <div
+                            className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                        >
+                            <div className="px-6 py-4 border-b border-gray-200 bg-amber-50">
+                                <h3 className="text-lg font-bold text-gray-900">Decisão de Paridade de Páginas</h3>
+                                <p className="text-sm text-gray-700 mt-1">
+                                    Detectamos diferença entre páginas do original e da tradução. A regra padrão continua sendo paridade estrita, mas você pode escolher como tratar este caso.
+                                </p>
+                            </div>
 
-                        <div className="p-6 space-y-5">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                                    <div className="text-[11px] uppercase font-bold text-gray-500">Original (físicas)</div>
-                                    <div className="text-base font-semibold text-gray-900">
-                                        {parityDecisionContext.sourcePhysicalPageCount ?? 'n/d'}
+                            <div className="p-6 space-y-5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                        <div className="text-[11px] uppercase font-bold text-gray-500">Original (físicas)</div>
+                                        <div className="text-base font-semibold text-gray-900">
+                                            {parityDecisionContext.sourcePhysicalPageCount ?? 'n/d'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                        <div className="text-[11px] uppercase font-bold text-gray-500">Original (relevantes)</div>
+                                        <div className="text-base font-semibold text-gray-900">
+                                            {parityDecisionContext.sourceRelevantPageCount ?? 'n/d'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                        <div className="text-[11px] uppercase font-bold text-gray-500">Tradução</div>
+                                        <div className="text-base font-semibold text-gray-900">
+                                            {parityDecisionContext.translatedPageCount ?? 'n/d'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                        <div className="text-[11px] uppercase font-bold text-gray-500">Origem do artefato</div>
+                                        <div className="text-base font-semibold text-gray-900">
+                                            {artifactSourceLabel[parityDecisionContext.translationArtifactSource]}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                                    <div className="text-[11px] uppercase font-bold text-gray-500">Original (relevantes)</div>
-                                    <div className="text-base font-semibold text-gray-900">
-                                        {parityDecisionContext.sourceRelevantPageCount ?? 'n/d'}
-                                    </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Modo de tratamento</label>
+                                    <select
+                                        value={selectedParityMode}
+                                        onChange={(e) => setSelectedParityMode(e.target.value as PageParityMode)}
+                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900"
+                                    >
+                                        {parityDecisionContext.suggestedModes.map((mode) => (
+                                            <option key={mode} value={mode}>
+                                                {parityModeLabel[mode]}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-600">{parityModeHint[selectedParityMode]}</p>
                                 </div>
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                                    <div className="text-[11px] uppercase font-bold text-gray-500">Tradução</div>
-                                    <div className="text-base font-semibold text-gray-900">
-                                        {parityDecisionContext.translatedPageCount ?? 'n/d'}
+
+                                {selectedParityMode === 'content_pages_only' && (
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                                            Quantidade de páginas relevantes
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            step={1}
+                                            value={parityRelevantPageCountInput}
+                                            onChange={(e) => setParityRelevantPageCountInput(e.target.value)}
+                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                                            placeholder="Ex.: 2"
+                                        />
                                     </div>
-                                </div>
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                                    <div className="text-[11px] uppercase font-bold text-gray-500">Origem do artefato</div>
-                                    <div className="text-base font-semibold text-gray-900">
-                                        {artifactSourceLabel[parityDecisionContext.translationArtifactSource]}
+                                )}
+
+                                {selectedParityMode !== 'strict_all_pages' && (
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                                            Justificativa da decisão
+                                        </label>
+                                        <textarea
+                                            value={parityJustification}
+                                            onChange={(e) => setParityJustification(e.target.value)}
+                                            rows={3}
+                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 resize-y"
+                                            placeholder="Descreva por que esta exceção é válida para este documento."
+                                        />
                                     </div>
+                                )}
+
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                    Motivo técnico detectado: {parityDecisionContext.blockingReason === 'page_parity_mismatch'
+                                        ? 'contagem de páginas divergente'
+                                        : 'contagem de páginas de origem indisponível'}
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Modo de tratamento</label>
-                                <select
-                                    value={selectedParityMode}
-                                    onChange={(e) => setSelectedParityMode(e.target.value as PageParityMode)}
-                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900"
+                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                                <button
+                                    onClick={() => {
+                                        setShowParityDecisionModal(false)
+                                        setParityDecisionContext(null)
+                                    }}
+                                    className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
                                 >
-                                    {parityDecisionContext.suggestedModes.map((mode) => (
-                                        <option key={mode} value={mode}>
-                                            {parityModeLabel[mode]}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-gray-600">{parityModeHint[selectedParityMode]}</p>
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleConfirmParityDecision}
+                                    disabled={isPreviewingKit}
+                                    className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-[#f58220] hover:bg-orange-500 transition-colors disabled:opacity-60"
+                                >
+                                    {isPreviewingKit ? 'Processando...' : 'Aplicar decisão e gerar preview'}
+                                </button>
                             </div>
-
-                            {selectedParityMode === 'content_pages_only' && (
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                                        Quantidade de páginas relevantes
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        step={1}
-                                        value={parityRelevantPageCountInput}
-                                        onChange={(e) => setParityRelevantPageCountInput(e.target.value)}
-                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
-                                        placeholder="Ex.: 2"
-                                    />
-                                </div>
-                            )}
-
-                            {selectedParityMode !== 'strict_all_pages' && (
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                                        Justificativa da decisão
-                                    </label>
-                                    <textarea
-                                        value={parityJustification}
-                                        onChange={(e) => setParityJustification(e.target.value)}
-                                        rows={3}
-                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 resize-y"
-                                        placeholder="Descreva por que esta exceção é válida para este documento."
-                                    />
-                                </div>
-                            )}
-
-                            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                Motivo técnico detectado: {parityDecisionContext.blockingReason === 'page_parity_mismatch'
-                                    ? 'contagem de páginas divergente'
-                                    : 'contagem de páginas de origem indisponível'}
-                            </div>
-                        </div>
-
-                        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
-                            <button
-                                onClick={() => {
-                                    setShowParityDecisionModal(false)
-                                    setParityDecisionContext(null)
-                                }}
-                                className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={handleConfirmParityDecision}
-                                disabled={isPreviewingKit}
-                                className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-[#f58220] hover:bg-orange-500 transition-colors disabled:opacity-60"
-                            >
-                                {isPreviewingKit ? 'Processando...' : 'Aplicar decisão e gerar preview'}
-                            </button>
                         </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
 
             {showDeliveryModal && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-100">
-                        <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2"><Send className="w-5 h-5 text-orange-500" /> Delivery Settings</h2>
-                        <div className="space-y-3 mb-8">
-                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p><p className="text-xs text-gray-500 font-mono mt-0.5">{order.user.email}</p></div></label>
-                            <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">Translator</p></div></label>
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
-                            <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="flex-[2] py-3 text-sm font-bold text-white bg-gray-900 rounded-xl flex items-center justify-center gap-2">Deliver Kits</button>
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                        onClick={() => setShowDeliveryModal(false)}
+                    >
+                        <div
+                            className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-100"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h2 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2"><Send className="w-5 h-5 text-orange-500" /> Delivery Settings</h2>
+                            <div className="space-y-3 mb-8">
+                                <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">{order.user.fullName}</p><p className="text-xs text-gray-500 font-mono mt-0.5">{order.user.email}</p></div></label>
+                                <label className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:border-gray-200 transition-all"><input type="checkbox" checked={sendToTranslator} onChange={(e) => setSendToTranslator(e.target.checked)} className="w-5 h-5 text-orange-500" /><div><p className="text-gray-900 font-bold text-sm">Translator</p></div></label>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+                                <button onClick={confirmAndGenerateKits} disabled={generatingKits} className="flex-[2] py-3 text-sm font-bold text-white bg-gray-900 rounded-xl flex items-center justify-center gap-2">Deliver Kits</button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
             <FinancialAdjustmentModal isOpen={showFinancialModal} orderId={order.id} currentTotal={order.totalAmount} onClose={() => setShowFinancialModal(false)} onConfirm={async () => window.location.reload()} />
         </div>

@@ -4,6 +4,7 @@ import { sanitizeTranslationHtml } from "@/lib/translationHtmlSanitizer";
 import { buildTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
 import { selectTranslationPipeline } from "@/services/translationRouter";
 import { classifyDocument } from "@/services/documentClassifier";
+import { isDocumentTypeInImplementedStructuredFamily } from "@/services/documentFamilyRegistry";
 import {
   isEligibleForStructuredPipeline,
   dispatchStructuredPipeline,
@@ -45,15 +46,73 @@ const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
   fr: "French",
 };
 
+type TranslationModeSelected = "standard" | "faithful_layout" | "external_pdf";
+type TranslationPipelineSelected =
+  | "standard_structured"
+  | "anthropic_blueprint"
+  | "external_pdf";
+
+function normalizeTranslationMode(
+  value: unknown,
+): TranslationModeSelected {
+  if (
+    value === "standard" ||
+    value === "faithful_layout" ||
+    value === "external_pdf"
+  ) {
+    return value;
+  }
+  return "standard";
+}
+
+function normalizeTranslationPipeline(
+  value: unknown,
+): TranslationPipelineSelected {
+  if (
+    value === "standard_structured" ||
+    value === "anthropic_blueprint" ||
+    value === "external_pdf"
+  ) {
+    return value;
+  }
+  return "standard_structured";
+}
+
 export async function POST(req: Request) {
   try {
-    const { fileUrl, documentId, orderId, sourceLanguage = "pt" } = await req.json();
+    const {
+      fileUrl,
+      documentId,
+      orderId,
+      sourceLanguage = "pt",
+      translationMode,
+      translationPipeline,
+      translationSelectionSource,
+    } = await req.json();
+
+    const normalizedTranslationMode = normalizeTranslationMode(translationMode);
+    const normalizedTranslationPipeline = normalizeTranslationPipeline(translationPipeline);
+    const forceBlueprintPipeline =
+      normalizedTranslationMode === "faithful_layout" ||
+      normalizedTranslationPipeline === "anthropic_blueprint";
+    const externalPdfPipelineRequested =
+      normalizedTranslationMode === "external_pdf" ||
+      normalizedTranslationPipeline === "external_pdf";
 
     // Router: always 'legacy' until structured pipeline is implemented
     selectTranslationPipeline({ orderId, documentId });
 
     if (!fileUrl) {
       return NextResponse.json({ error: "fileUrl is required" }, { status: 400 });
+    }
+    if (externalPdfPipelineRequested) {
+      return NextResponse.json(
+        {
+          error:
+            "Use external PDF mode should not call Anthropic translation. Attach an external PDF and continue with external source.",
+        },
+        { status: 400 },
+      );
     }
 
     const sourceLangLabel = SOURCE_LANGUAGE_LABELS[sourceLanguage] ?? sourceLanguage;
@@ -147,18 +206,40 @@ export async function POST(req: Request) {
       `detected document type: ${classification.documentType} (confidence: ${classification.confidence})`
     );
 
-    // ── Structured pipeline (runs in parallel with legacy — output not sent to frontend) ──
+    // ── Structured pipeline (forced by modality when faithful_layout is selected) ──
     const structuredEligible = isEligibleForStructuredPipeline(classification.documentType);
+    const structuredFamilyImplemented = isDocumentTypeInImplementedStructuredFamily(
+      classification.documentType,
+    );
+    const shouldRunStructuredPipeline = forceBlueprintPipeline
+      ? structuredFamilyImplemented
+      : structuredEligible;
+
     console.log(
       `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
-      `structured pipeline eligible: ${structuredEligible ? "yes" : "no"}`
+      `mode=${normalizedTranslationMode} pipeline=${normalizedTranslationPipeline} ` +
+      `selectionSource=${translationSelectionSource ?? "unknown"} ` +
+      `forceBlueprint=${forceBlueprintPipeline ? "yes" : "no"} ` +
+      `eligibleByFlag=${structuredEligible ? "yes" : "no"} ` +
+      `familyImplemented=${structuredFamilyImplemented ? "yes" : "no"}`
     );
-    if (structuredEligible) {
+
+    if (forceBlueprintPipeline && !structuredFamilyImplemented) {
+      return NextResponse.json(
+        {
+          error:
+            "Faithful to the original document is not available for this document family. Choose Standard for this document.",
+        },
+        { status: 422 },
+      );
+    }
+
+    if (shouldRunStructuredPipeline) {
       try {
         console.log(
           `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — structured pipeline executed: yes`
         );
-        await dispatchStructuredPipeline(client, {
+        const structuredResult = await dispatchStructuredPipeline(client, {
           fileBuffer,
           fileUrl,
           contentType,
@@ -166,13 +247,32 @@ export async function POST(req: Request) {
           orderId,
           documentId,
         }, classification.documentType);
-        // Result is logged inside structuredPipeline.ts — not returned to frontend
+
+        if (forceBlueprintPipeline && !structuredResult.success) {
+          return NextResponse.json(
+            {
+              error:
+                structuredResult.error ||
+                "Faithful pipeline failed for this document. Try Standard.",
+            },
+            { status: 502 },
+          );
+        }
       } catch (structuredErr) {
         // Defensive outer catch — dispatchStructuredPipeline already catches internally
         console.error(
           `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
           `unexpected error escaped pipeline: ${structuredErr}`
         );
+        if (forceBlueprintPipeline) {
+          return NextResponse.json(
+            {
+              error:
+                "Faithful pipeline failed unexpectedly. Try Standard or check document compatibility.",
+            },
+            { status: 502 },
+          );
+        }
       }
     } else {
       console.log(
@@ -189,7 +289,15 @@ export async function POST(req: Request) {
       `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction)`
     );
 
-    return NextResponse.json({ translatedText });
+    return NextResponse.json({
+      translatedText,
+      translationMode: normalizedTranslationMode,
+      translationPipeline: forceBlueprintPipeline
+        ? "anthropic_blueprint"
+        : "standard_structured",
+      structuredPipelineExecuted: shouldRunStructuredPipeline,
+      structuredPipelineForced: forceBlueprintPipeline,
+    });
   } catch (error: any) {
     console.error("[/api/translate/claude] Error:", error);
     const anthropicStatus = error?.status ?? 0;

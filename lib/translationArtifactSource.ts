@@ -36,6 +36,32 @@ export interface DocumentDeliveryStatusRecord {
   deliveryPdfUrl: string | null;
 }
 
+export type TranslationModeSelected =
+  | 'standard'
+  | 'faithful_layout'
+  | 'external_pdf';
+
+export type TranslationPipelineKey =
+  | 'standard_structured'
+  | 'anthropic_blueprint'
+  | 'external_pdf';
+
+export type TranslationSelectionSource =
+  | 'ia_promobi_modal'
+  | 'legacy_default';
+
+export interface TranslationModeRegistryRecord {
+  translationModeSelected: TranslationModeSelected;
+  translationPipeline: TranslationPipelineKey;
+  translationSelectionSource: TranslationSelectionSource;
+  translationStatus: string;
+  translationTriggeredBy: string | null;
+  translationStartedAt: string | null;
+  translationCompletedAt: string | null;
+  translationError: string | null;
+  updatedAt: string;
+}
+
 export type PageParityMode =
   | 'strict_all_pages'
   | 'content_pages_only'
@@ -65,6 +91,7 @@ type JsonObject = Record<string, unknown>;
 const REGISTRY_KEY = 'translationArtifactRegistryV1';
 const DELIVERY_STATUS_REGISTRY_KEY = 'deliveryDocumentStatusV1';
 const PAGE_PARITY_REGISTRY_KEY = 'pageParityRegistryV1';
+const TRANSLATION_MODE_REGISTRY_KEY = 'translationModeRegistryV1';
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -107,6 +134,40 @@ function normalizeTranslationArtifactSource(
     return value;
   }
   return 'unknown';
+}
+
+function isTranslationModeSelected(
+  value: string | null,
+): value is TranslationModeSelected {
+  return (
+    value === 'standard' ||
+    value === 'faithful_layout' ||
+    value === 'external_pdf'
+  );
+}
+
+function isTranslationPipelineKey(
+  value: string | null,
+): value is TranslationPipelineKey {
+  return (
+    value === 'standard_structured' ||
+    value === 'anthropic_blueprint' ||
+    value === 'external_pdf'
+  );
+}
+
+function isTranslationSelectionSource(
+  value: string | null,
+): value is TranslationSelectionSource {
+  return value === 'ia_promobi_modal' || value === 'legacy_default';
+}
+
+export function resolveTranslationPipelineForMode(
+  mode: TranslationModeSelected,
+): TranslationPipelineKey {
+  if (mode === 'faithful_layout') return 'anthropic_blueprint';
+  if (mode === 'external_pdf') return 'external_pdf';
+  return 'standard_structured';
 }
 
 export function resolveTranslationArtifactSelection(
@@ -343,5 +404,86 @@ export function getPageParityRegistryRecord(
   docId: number,
 ): PageParityRegistryRecord | null {
   const registry = readPageParityRegistry(metadata);
+  return registry[String(docId)] ?? null;
+}
+
+export function readTranslationModeRegistry(
+  metadata: JsonObject,
+): Record<string, TranslationModeRegistryRecord> {
+  const container = metadata[TRANSLATION_MODE_REGISTRY_KEY];
+  if (!container || typeof container !== 'object') return {};
+
+  const out: Record<string, TranslationModeRegistryRecord> = {};
+  for (const [docKey, value] of Object.entries(container as JsonObject)) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonObject;
+
+    const mode = normalizeOptionalString(
+      record.translationModeSelected as string | null | undefined,
+    );
+    const pipeline = normalizeOptionalString(
+      record.translationPipeline as string | null | undefined,
+    );
+    const source = normalizeOptionalString(
+      record.translationSelectionSource as string | null | undefined,
+    );
+    const status = normalizeOptionalString(
+      record.translationStatus as string | null | undefined,
+    );
+    const updatedAt = normalizeOptionalString(
+      record.updatedAt as string | null | undefined,
+    );
+
+    if (
+      !isTranslationModeSelected(mode) ||
+      !isTranslationPipelineKey(pipeline) ||
+      !isTranslationSelectionSource(source) ||
+      !status ||
+      !updatedAt
+    ) {
+      continue;
+    }
+
+    out[docKey] = {
+      translationModeSelected: mode,
+      translationPipeline: pipeline,
+      translationSelectionSource: source,
+      translationStatus: status,
+      translationTriggeredBy: normalizeOptionalString(
+        record.translationTriggeredBy as string | null | undefined,
+      ),
+      translationStartedAt: normalizeOptionalString(
+        record.translationStartedAt as string | null | undefined,
+      ),
+      translationCompletedAt: normalizeOptionalString(
+        record.translationCompletedAt as string | null | undefined,
+      ),
+      translationError: normalizeOptionalString(
+        record.translationError as string | null | undefined,
+      ),
+      updatedAt,
+    };
+  }
+
+  return out;
+}
+
+export function upsertTranslationModeRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+  record: TranslationModeRegistryRecord,
+): JsonObject {
+  const nextMetadata: JsonObject = { ...metadata };
+  const registry = readTranslationModeRegistry(nextMetadata);
+  registry[String(docId)] = record;
+  nextMetadata[TRANSLATION_MODE_REGISTRY_KEY] = registry;
+  return nextMetadata;
+}
+
+export function getTranslationModeRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+): TranslationModeRegistryRecord | null {
+  const registry = readTranslationModeRegistry(metadata);
   return registry[String(docId)] ?? null;
 }

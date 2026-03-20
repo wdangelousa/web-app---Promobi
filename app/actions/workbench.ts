@@ -22,10 +22,15 @@ import {
 import {
   getDeliveryArtifactRegistryRecord,
   getPageParityRegistryRecord,
+  getTranslationModeRegistryRecord,
   parseOrderMetadata,
   readDocumentDeliveryStatusRegistry,
+  resolveTranslationPipelineForMode,
   resolveTranslationArtifactSelection,
+  type TranslationModeRegistryRecord,
+  type TranslationModeSelected,
   upsertDocumentDeliveryStatusRecord,
+  upsertTranslationModeRegistryRecord,
 } from '@/lib/translationArtifactSource'
 import {
   isLikelyImageSource,
@@ -141,6 +146,65 @@ async function resolveSourcePageCountFromUrl(input: {
   }
 }
 
+const IA_PROMOBI_SELECTION_SOURCE = 'ia_promobi_modal' as const
+
+function sanitizeOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function resolveApiBaseUrl(): string {
+  const envBase =
+    process.env.INTERNAL_APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+
+  return (envBase || 'http://localhost:3000').replace(/\/$/, '')
+}
+
+function resolveTriggeredBy(user: Awaited<ReturnType<typeof getCurrentUser>>): string | null {
+  if (!user) return null
+  return (
+    sanitizeOptionalText(user.fullName) ??
+    sanitizeOptionalText(user.email) ??
+    (typeof user.id === 'number' ? String(user.id) : null)
+  )
+}
+
+function buildTranslationModeRecord(params: {
+  mode: TranslationModeSelected
+  translationStatus: string
+  translationTriggeredBy: string | null
+  translationStartedAt: string | null
+  translationCompletedAt: string | null
+  translationError: string | null
+}): TranslationModeRegistryRecord {
+  const now = new Date().toISOString()
+  return {
+    translationModeSelected: params.mode,
+    translationPipeline: resolveTranslationPipelineForMode(params.mode),
+    translationSelectionSource: IA_PROMOBI_SELECTION_SOURCE,
+    translationStatus: params.translationStatus,
+    translationTriggeredBy: params.translationTriggeredBy,
+    translationStartedAt: params.translationStartedAt,
+    translationCompletedAt: params.translationCompletedAt,
+    translationError: params.translationError,
+    updatedAt: now,
+  }
+}
+
+function normalizeTranslationModeInput(value: unknown): TranslationModeSelected | null {
+  if (
+    value === 'standard' ||
+    value === 'faithful_layout' ||
+    value === 'external_pdf'
+  ) {
+    return value
+  }
+  return null
+}
+
 // ─── saveTranslationDraft ─────────────────────────────────────────────────────
 
 export async function saveTranslationDraft(
@@ -231,6 +295,389 @@ export async function approveDocument(
   } catch (err: any) {
     console.error('[approveDocument]', err)
     return { success: false, error: err.message ?? 'Erro ao aprovar documento.' }
+  }
+}
+
+export async function saveIAPromobiTranslationModality(
+  orderId: number,
+  docId: number,
+  mode: TranslationModeSelected,
+): Promise<{
+  success: boolean
+  error?: string
+  selectedMode?: TranslationModeSelected
+  selectedPipeline?: ReturnType<typeof resolveTranslationPipelineForMode>
+}> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return { success: false, error: 'Não autorizado.' }
+
+    const normalizedMode = normalizeTranslationModeInput(mode)
+    if (!normalizedMode) {
+      return { success: false, error: 'Modalidade de tradução inválida.' }
+    }
+
+    const doc = await prisma.document.findFirst({
+      where: { id: docId, orderId },
+      select: {
+        id: true,
+        orderId: true,
+        externalTranslationUrl: true,
+        order: {
+          select: {
+            metadata: true,
+          },
+        },
+      },
+    })
+
+    if (!doc) {
+      return { success: false, error: `Documento #${docId} não encontrado para o pedido #${orderId}.` }
+    }
+
+    const metadata = parseOrderMetadata(doc.order?.metadata as string | null | undefined)
+    const translationPipeline = resolveTranslationPipelineForMode(normalizedMode)
+    const record = buildTranslationModeRecord({
+      mode: normalizedMode,
+      translationStatus: 'modality_saved',
+      translationTriggeredBy: null,
+      translationStartedAt: null,
+      translationCompletedAt: null,
+      translationError: null,
+    })
+    const nextMetadata = upsertTranslationModeRegistryRecord(metadata, docId, record)
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { metadata: JSON.stringify(nextMetadata) },
+    })
+
+    console.log(
+      `[iaPromobiTranslation] ${JSON.stringify({
+        orderId,
+        docId,
+        selectedModality: normalizedMode,
+        selectedPipeline: translationPipeline,
+        selectionSource: IA_PROMOBI_SELECTION_SOURCE,
+        triggerImmediately: false,
+        externalPdfAvailable: Boolean(doc.externalTranslationUrl),
+      })}`,
+    )
+
+    return {
+      success: true,
+      selectedMode: normalizedMode,
+      selectedPipeline: translationPipeline,
+    }
+  } catch (err: any) {
+    console.error('[saveIAPromobiTranslationModality]', err)
+    return { success: false, error: err.message ?? 'Erro ao salvar modalidade de tradução.' }
+  }
+}
+
+export async function saveAndGenerateIAPromobiTranslation(
+  orderId: number,
+  docId: number,
+  mode?: TranslationModeSelected,
+): Promise<{
+  success: boolean
+  error?: string
+  translatedText?: string
+  selectedMode?: TranslationModeSelected
+  selectedPipeline?: ReturnType<typeof resolveTranslationPipelineForMode>
+}> {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) return { success: false, error: 'Não autorizado.' }
+  const loadLatestMetadata = async () => {
+    const latestOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { metadata: true },
+    })
+    return parseOrderMetadata(latestOrder?.metadata as string | null | undefined)
+  }
+
+  const triggeredBy = resolveTriggeredBy(currentUser)
+  let lockAcquired = false
+  let startedAtForError: string | null = null
+  let selectedModeForError: TranslationModeSelected =
+    normalizeTranslationModeInput(mode) ?? 'standard'
+  let selectedPipelineForError = resolveTranslationPipelineForMode(selectedModeForError)
+
+  try {
+    const doc = await prisma.document.findFirst({
+      where: { id: docId, orderId },
+      select: {
+        id: true,
+        orderId: true,
+        originalFileUrl: true,
+        sourceLanguage: true,
+        externalTranslationUrl: true,
+        translation_status: true,
+        order: {
+          select: {
+            metadata: true,
+          },
+        },
+      },
+    })
+
+    if (!doc) {
+      return { success: false, error: `Documento #${docId} não encontrado para o pedido #${orderId}.` }
+    }
+
+    const metadata = await loadLatestMetadata()
+    const persistedRecord = getTranslationModeRegistryRecord(metadata, docId)
+    const requestedMode = normalizeTranslationModeInput(mode)
+    const selectedMode: TranslationModeSelected =
+      requestedMode ??
+      persistedRecord?.translationModeSelected ??
+      'standard'
+    const selectedPipeline = resolveTranslationPipelineForMode(selectedMode)
+    selectedModeForError = selectedMode
+    selectedPipelineForError = selectedPipeline
+    const externalPdfAvailable = Boolean(sanitizeOptionalText(doc.externalTranslationUrl))
+
+    console.log(
+      `[iaPromobiTranslation] ${JSON.stringify({
+        orderId,
+        docId,
+        selectedModality: selectedMode,
+        selectedPipeline,
+        selectionSource: IA_PROMOBI_SELECTION_SOURCE,
+        triggerImmediately: true,
+        externalPdfAvailable,
+      })}`,
+    )
+
+    if (selectedMode === 'external_pdf') {
+      if (!externalPdfAvailable) {
+        const latestMetadata = await loadLatestMetadata()
+        const blockedRecord = buildTranslationModeRecord({
+          mode: selectedMode,
+          translationStatus: 'blocked_external_pdf_missing',
+          translationTriggeredBy: triggeredBy,
+          translationStartedAt: new Date().toISOString(),
+          translationCompletedAt: new Date().toISOString(),
+          translationError: 'External PDF is required for this modality.',
+        })
+        const blockedMetadata = upsertTranslationModeRegistryRecord(latestMetadata, docId, blockedRecord)
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { metadata: JSON.stringify(blockedMetadata) },
+        })
+        return {
+          success: false,
+          error: 'Use external PDF requires an active external PDF for this document.',
+          selectedMode,
+          selectedPipeline,
+        }
+      }
+
+      const latestMetadata = await loadLatestMetadata()
+      const completedRecord = buildTranslationModeRecord({
+        mode: selectedMode,
+        translationStatus: 'generation_completed',
+        translationTriggeredBy: triggeredBy,
+        translationStartedAt: new Date().toISOString(),
+        translationCompletedAt: new Date().toISOString(),
+        translationError: null,
+      })
+      const completedMetadata = upsertTranslationModeRegistryRecord(latestMetadata, docId, completedRecord)
+
+      await prisma.$transaction([
+        prisma.order.update({
+          where: { id: orderId },
+          data: { metadata: JSON.stringify(completedMetadata) },
+        }),
+        prisma.document.update({
+          where: { id: docId },
+          data: { translation_status: 'translated' },
+        }),
+      ])
+
+      return {
+        success: true,
+        selectedMode,
+        selectedPipeline,
+      }
+    }
+
+    if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') {
+      return {
+        success: false,
+        error: 'Documento original indisponível.',
+        selectedMode,
+        selectedPipeline,
+      }
+    }
+
+    const startedAt = new Date().toISOString()
+    startedAtForError = startedAt
+    const startedRecord = buildTranslationModeRecord({
+      mode: selectedMode,
+      translationStatus: 'generation_started',
+      translationTriggeredBy: triggeredBy,
+      translationStartedAt: startedAt,
+      translationCompletedAt: null,
+      translationError: null,
+    })
+    const startedMetadata = upsertTranslationModeRegistryRecord(metadata, docId, startedRecord)
+
+    await prisma.$transaction(async (tx) => {
+      const lock = await tx.document.updateMany({
+        where: {
+          id: docId,
+          orderId,
+          NOT: { translation_status: 'processing' },
+        },
+        data: { translation_status: 'processing' },
+      })
+
+      if (lock.count === 0) {
+        throw new Error('__TRANSLATION_ALREADY_IN_PROGRESS__')
+      }
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { metadata: JSON.stringify(startedMetadata) },
+      })
+    })
+    lockAcquired = true
+
+    const endpoint = `${resolveApiBaseUrl()}/api/translate/claude`
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileUrl: doc.originalFileUrl,
+        documentId: docId,
+        orderId,
+        sourceLanguage: doc.sourceLanguage || 'pt',
+        translationMode: selectedMode,
+        translationPipeline: selectedPipeline,
+        translationSelectionSource: IA_PROMOBI_SELECTION_SOURCE,
+      }),
+    })
+
+    const payload = await response.json().catch(() => ({}))
+    const translatedText =
+      typeof payload?.translatedText === 'string' ? payload.translatedText : ''
+
+    if (!response.ok || translatedText.trim().length === 0) {
+      const latestMetadata = await loadLatestMetadata()
+      const errorMessage =
+        sanitizeOptionalText(payload?.error) ??
+        'Falha ao gerar tradução via IA Promobi.'
+      const failedRecord = buildTranslationModeRecord({
+        mode: selectedMode,
+        translationStatus: 'generation_error',
+        translationTriggeredBy: triggeredBy,
+        translationStartedAt: startedAt,
+        translationCompletedAt: new Date().toISOString(),
+        translationError: errorMessage,
+      })
+      const failedMetadata = upsertTranslationModeRegistryRecord(latestMetadata, docId, failedRecord)
+
+      await prisma.$transaction([
+        prisma.document.update({
+          where: { id: docId },
+          data: { translation_status: 'error' },
+        }),
+        prisma.order.update({
+          where: { id: orderId },
+          data: { metadata: JSON.stringify(failedMetadata) },
+        }),
+      ])
+
+      return {
+        success: false,
+        error: errorMessage,
+        selectedMode,
+        selectedPipeline,
+      }
+    }
+
+    const completedRecord = buildTranslationModeRecord({
+      mode: selectedMode,
+      translationStatus: 'generation_completed',
+      translationTriggeredBy: triggeredBy,
+      translationStartedAt: startedAt,
+      translationCompletedAt: new Date().toISOString(),
+      translationError: null,
+    })
+    const latestMetadata = await loadLatestMetadata()
+    const completedMetadata = upsertTranslationModeRegistryRecord(
+      latestMetadata,
+      docId,
+      completedRecord,
+    )
+
+    await prisma.$transaction([
+      prisma.document.update({
+        where: { id: docId },
+        data: {
+          translatedText,
+          translation_status: 'ai_draft',
+        },
+      }),
+      prisma.order.update({
+        where: { id: orderId },
+        data: { metadata: JSON.stringify(completedMetadata) },
+      }),
+    ])
+
+    return {
+      success: true,
+      translatedText,
+      selectedMode,
+      selectedPipeline,
+    }
+  } catch (err: any) {
+    if (err?.message === '__TRANSLATION_ALREADY_IN_PROGRESS__') {
+      return {
+        success: false,
+        error: 'Translation already in progress for this document.',
+      }
+    }
+
+    if (lockAcquired) {
+      try {
+        const latestMetadata = await loadLatestMetadata()
+        const failedRecord = buildTranslationModeRecord({
+          mode: selectedModeForError,
+          translationStatus: 'generation_error',
+          translationTriggeredBy: triggeredBy,
+          translationStartedAt: startedAtForError,
+          translationCompletedAt: new Date().toISOString(),
+          translationError: err?.message ?? 'Unexpected translation failure.',
+        })
+        const failedMetadata = upsertTranslationModeRegistryRecord(
+          latestMetadata,
+          docId,
+          failedRecord,
+        )
+        await prisma.$transaction([
+          prisma.document.update({
+            where: { id: docId },
+            data: { translation_status: 'error' },
+          }),
+          prisma.order.update({
+            where: { id: orderId },
+            data: { metadata: JSON.stringify(failedMetadata) },
+          }),
+        ])
+      } catch (rollbackErr) {
+        console.error('[saveAndGenerateIAPromobiTranslation] rollback error', rollbackErr)
+      }
+    }
+
+    console.error('[saveAndGenerateIAPromobiTranslation]', err)
+    return {
+      success: false,
+      error: err?.message ?? 'Erro ao gerar tradução pela IA Promobi.',
+      selectedMode: selectedModeForError,
+      selectedPipeline: selectedPipelineForError,
+    }
   }
 }
 

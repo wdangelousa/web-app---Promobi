@@ -6,6 +6,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { BracketNotation } from './extensions/BracketNotation'
 import { TranslatorNote } from './extensions/TranslatorNote'
+import ModalPortal from '@/components/ui/ModalPortal'
+import { UI_Z_INDEX } from '@/lib/uiZIndex'
 
 interface EditorProps {
     content: string
@@ -97,7 +99,10 @@ export default function Editor({
         <div className="flex flex-col h-full bg-gray-100 overflow-hidden font-sans w-full relative">
 
             {/* Toolbar */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-50 shrink-0 w-full min-h-[60px]">
+            <div
+                className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm shrink-0 w-full min-h-[60px]"
+                style={{ zIndex: UI_Z_INDEX.stickyToolbar }}
+            >
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowReference(!showReference)}
@@ -206,37 +211,47 @@ export default function Editor({
 
             {/* Language selection modal for Preview Kit */}
             {showLangModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col items-center text-center">
-                        <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
-                            <span className="text-xl">📄</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">Capa de Certificação</h3>
-                        <p className="text-sm text-gray-500 mb-6">Qual deve ser o idioma da capa oficial para este documento?</p>
-
-                        <div className="flex gap-3 w-full">
-                            <button
-                                onClick={() => confirmPreview('PT_BR')}
-                                className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl border border-blue-200 hover:bg-blue-100 transition-all"
-                            >
-                                PT ➔ EN
-                            </button>
-                            <button
-                                onClick={() => confirmPreview('ES')}
-                                className="flex-1 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-all"
-                            >
-                                ES ➔ EN
-                            </button>
-                        </div>
-
-                        <button
-                            onClick={() => setShowLangModal(false)}
-                            className="mt-6 text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                        onClick={() => setShowLangModal(false)}
+                    >
+                        <div
+                            className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col items-center text-center"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            Cancelar
-                        </button>
+                            <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+                                <span className="text-xl">📄</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">Capa de Certificação</h3>
+                            <p className="text-sm text-gray-500 mb-6">Qual deve ser o idioma da capa oficial para este documento?</p>
+
+                            <div className="flex gap-3 w-full">
+                                <button
+                                    onClick={() => confirmPreview('PT_BR')}
+                                    className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl border border-blue-200 hover:bg-blue-100 transition-all"
+                                >
+                                    PT ➔ EN
+                                </button>
+                                <button
+                                    onClick={() => confirmPreview('ES')}
+                                    className="flex-1 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-all"
+                                >
+                                    ES ➔ EN
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => setShowLangModal(false)}
+                                className="mt-6 text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
         </div>
     )

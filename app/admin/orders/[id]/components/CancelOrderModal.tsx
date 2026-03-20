@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { XCircle, AlertTriangle, Loader2 } from 'lucide-react'
 import { cancelOrder } from '@/app/actions/adminOrders'
+import ModalPortal from '@/components/ui/ModalPortal'
+import { UI_Z_INDEX } from '@/lib/uiZIndex'
 
 interface Props {
     orderId: number
@@ -77,8 +79,15 @@ export default function CancelOrderButton({ orderId, isCancelled }: Props) {
             </button>
 
             {open && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                <ModalPortal>
+                    <div
+                        className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                    >
+                        <div
+                            className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                        >
                         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
                             <div className="flex-shrink-0 w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
                                 <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -161,8 +170,9 @@ export default function CancelOrderButton({ orderId, isCancelled }: Props) {
                                 Confirmar cancelamento
                             </button>
                         </div>
+                        </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
         </>
     )

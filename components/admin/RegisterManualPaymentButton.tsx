@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { DollarSign, Loader2 } from 'lucide-react'
 import { registerManualPayment } from '@/app/actions/manualPaymentBypass'
 import { deriveFinancialStatus, roundMoney, type FinancialStatus } from '@/lib/manualPayment'
+import { UI_Z_INDEX } from '@/lib/uiZIndex'
+import ModalPortal from '@/components/ui/ModalPortal'
 
 interface RegisterManualPaymentButtonProps {
     orderId: number
@@ -163,14 +165,17 @@ export default function RegisterManualPaymentButton({
             </button>
 
             {open && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-                    onClick={closeModal}
-                >
+                <ModalPortal>
                     <div
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl border border-gray-200 overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
+                        className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+                        style={{ zIndex: UI_Z_INDEX.modalOverlay }}
+                        onClick={closeModal}
                     >
+                        <div
+                            className="bg-white rounded-2xl shadow-2xl w-full max-w-xl border border-gray-200 overflow-hidden"
+                            style={{ zIndex: UI_Z_INDEX.modalContent }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
                         <div className="px-6 py-4 border-b border-gray-100">
                             <h2 className="text-lg font-bold text-gray-900">Register manual payment</h2>
                             <p className="text-xs text-gray-600 mt-1">
@@ -312,8 +317,9 @@ export default function RegisterManualPaymentButton({
                                 Confirm payment
                             </button>
                         </div>
+                        </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
         </>
     )
