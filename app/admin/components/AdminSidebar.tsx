@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState, useMemo } from 'react'
 import {
     LayoutDashboard,
     ListTodo,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import { Avatar } from '@/components/admin/Avatar'
+import { SearchBar } from '@/app/admin/components/SearchBar'
 import Image from 'next/image'
 
 type UserProps = {
@@ -23,12 +25,72 @@ type UserProps = {
 
 export default function AdminSidebar({ user }: { user: UserProps }) {
     const pathname = usePathname()
+    const [searchQuery, setSearchQuery] = useState('')
 
     const isActive = (path: string) => {
         return pathname === path || pathname.startsWith(path + '/')
     }
-    const isOrdersBoardActive = isActive('/admin/orders') && !isActive('/admin/orders/cancelados')
-    const isCancelledOrdersActive = isActive('/admin/orders/cancelados')
+
+    const menuItems = useMemo(() => [
+        {
+            id: 'dashboard',
+            title: 'Dashboard',
+            href: '/admin/dashboard',
+            icon: LayoutDashboard,
+            category: 'Geral'
+        },
+        {
+            id: 'orders-board',
+            title: 'Bancada',
+            href: '/admin/orders',
+            icon: ListTodo,
+            category: 'Pedidos',
+            active: isActive('/admin/orders') && !isActive('/admin/orders/cancelados')
+        },
+        {
+            id: 'orders-cancelled',
+            title: 'Cancelados',
+            href: '/admin/orders/cancelados',
+            icon: Ban,
+            category: 'Pedidos',
+            active: isActive('/admin/orders/cancelados'),
+            color: 'active:bg-red-500/10 text-red-300 active-icon:text-red-300 group-hover:text-red-300'
+        },
+        {
+            id: 'finance',
+            title: 'Financeiro',
+            href: '/admin/finance',
+            icon: DollarSign,
+            category: 'Geral',
+            show: user.role !== 'TECHNICAL'
+        },
+        {
+            id: 'concierge',
+            title: 'Novo Orçamento Manual',
+            href: '/admin/concierge',
+            icon: FilePlus,
+            category: 'Geral'
+        },
+        {
+            id: 'settings',
+            title: 'Configurações',
+            href: '/admin/settings',
+            icon: Settings,
+            category: 'Geral'
+        }
+    ], [pathname, user.role])
+
+    const filteredItems = menuItems.filter(item => {
+        if (item.show === false) return false
+        const searchLower = searchQuery.toLowerCase()
+        return (
+            item.title.toLowerCase().includes(searchLower) ||
+            item.category.toLowerCase().includes(searchLower)
+        )
+    })
+
+    const geralsItems = filteredItems.filter(item => item.category === 'Geral')
+    const pedidosItems = filteredItems.filter(item => item.category === 'Pedidos')
 
     return (
         <aside className="w-64 bg-gray-900 text-white flex flex-col fixed h-full shadow-xl z-20 overflow-y-auto">
@@ -53,61 +115,76 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
                 </div>
             </div>
 
+            {/* Search Bar */}
+            <div className="px-4 py-4 border-b border-gray-800">
+                <SearchBar 
+                    placeholder="Buscar no menu..." 
+                    onSearch={setSearchQuery} 
+                />
+            </div>
+
             {/* Navigation Links */}
             <nav className="flex-1 p-4 space-y-2">
-                <Link
-                    href="/admin/dashboard"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/dashboard') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                >
-                    <LayoutDashboard className={`h-5 w-5 ${isActive('/admin/dashboard') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                    <span>Dashboard</span>
-                </Link>
+                {geralsItems.map(item => {
+                    const active = item.active !== undefined ? item.active : isActive(item.href)
+                    if (item.id === 'finance' || item.id === 'concierge' || item.id === 'settings') return null // Handle these later to keep order if needed, but let's just map
+                    
+                    // Simple mapping for now
+                    return (
+                        <Link
+                            key={item.id}
+                            href={item.href}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${active ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                        >
+                            <item.icon className={`h-5 w-5 ${active ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                            <span>{item.title}</span>
+                        </Link>
+                    )
+                })}
 
-                <div className="pt-1">
-                    <p className="px-4 pb-1 text-[10px] uppercase tracking-[0.12em] text-gray-500 font-bold">Pedidos</p>
-                    <div className="space-y-1">
-                        <Link
-                            href="/admin/orders"
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isOrdersBoardActive ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                        >
-                            <ListTodo className={`h-5 w-5 ${isOrdersBoardActive ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                            <span>Bancada</span>
-                        </Link>
-                        <Link
-                            href="/admin/orders/cancelados"
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isCancelledOrdersActive ? 'bg-red-500/10 text-red-300 font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                        >
-                            <Ban className={`h-5 w-5 ${isCancelledOrdersActive ? 'text-red-300' : 'group-hover:text-red-300'} transition-colors`} />
-                            <span>Cancelados</span>
-                        </Link>
+                {pedidosItems.length > 0 && (
+                    <div className="pt-1">
+                        <p className="px-4 pb-1 text-[10px] uppercase tracking-[0.12em] text-gray-500 font-bold">Pedidos</p>
+                        <div className="space-y-1">
+                            {pedidosItems.map(item => {
+                                const active = item.active !== undefined ? item.active : isActive(item.href)
+                                const isCancelled = item.id === 'orders-cancelled'
+                                
+                                return (
+                                    <Link
+                                        key={item.id}
+                                        href={item.href}
+                                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${active ? (isCancelled ? 'bg-red-500/10 text-red-300 font-bold' : 'bg-[#f58220]/10 text-[#f58220] font-bold') : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                                    >
+                                        <item.icon className={`h-5 w-5 ${active ? (isCancelled ? 'text-red-300' : 'text-[#f58220]') : (isCancelled ? 'group-hover:text-red-300' : 'group-hover:text-[#f58220]')} transition-colors`} />
+                                        <span>{item.title}</span>
+                                    </Link>
+                                )
+                            })}
+                        </div>
                     </div>
-                </div>
-
-                {user.role !== 'TECHNICAL' && (
-                    <Link
-                        href="/admin/finance"
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/finance') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                    >
-                        <DollarSign className={`h-5 w-5 ${isActive('/admin/finance') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                        <span>Financeiro</span>
-                    </Link>
                 )}
 
-                <Link
-                    href="/admin/concierge"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/concierge') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                >
-                    <FilePlus className={`h-5 w-5 ${isActive('/admin/concierge') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                    <span>Novo Orçamento Manual</span>
-                </Link>
+                {/* Remaining Geral items (Financeiro, Concierge, Settings) if they were skipped or just map them correctly */}
+                {geralsItems.filter(item => item.id !== 'dashboard').map(item => {
+                    const active = item.active !== undefined ? item.active : isActive(item.href)
+                    return (
+                        <Link
+                            key={item.id}
+                            href={item.href}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${active ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
+                        >
+                            <item.icon className={`h-5 w-5 ${active ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
+                            <span>{item.title}</span>
+                        </Link>
+                    )
+                })}
 
-                <Link
-                    href="/admin/settings"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${isActive('/admin/settings') ? 'bg-[#f58220]/10 text-[#f58220] font-bold' : 'text-gray-400 hover:bg-gray-800 hover:text-white font-medium'}`}
-                >
-                    <Settings className={`h-5 w-5 ${isActive('/admin/settings') ? 'text-[#f58220]' : 'group-hover:text-[#f58220]'} transition-colors`} />
-                    <span>Configurações</span>
-                </Link>
+                {filteredItems.length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                        <p className="text-gray-500 text-sm">Nenhum item encontrado</p>
+                    </div>
+                )}
             </nav>
 
             <div className="p-4 border-t border-gray-800">

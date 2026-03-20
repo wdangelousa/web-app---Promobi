@@ -233,6 +233,21 @@ function inferPageModelKey(page: EditorialNewsStructuredPage): EditorialNewsMode
     (page.LAYOUT_ZONES ?? []).map((zone) => normalizeZoneBindingId(zone.zone_id)),
   );
 
+  // Salary/compensation/data pages — check before print_news_clipping to avoid
+  // false-positive on generic "multi-column" hints that may appear in data pages.
+  if (
+    hintSignal.includes('web_structured_data_page') ||
+    zoneSignals.has('z_compensation_summary') ||
+    zoneSignals.has('z_role_listing') ||
+    zoneSignals.has('z_company_listing') ||
+    zoneSignals.has('z_tab_row') ||
+    zoneSignals.has('z_filter_row') ||
+    zoneSignals.has('z_data_table') ||
+    zoneSignals.has('z_faq_section') ||
+    zoneSignals.has('z_page_title')
+  ) {
+    return 'web_structured_data_page';
+  }
   if (
     hintSignal.includes('print_news_clipping') ||
     hintSignal.includes('multi_column') ||
@@ -292,6 +307,97 @@ function renderListBlock(title: string, lines: string[], className: string): str
 </section>`;
 }
 
+function renderSalaryDataPage(
+  page: EditorialNewsStructuredPage,
+  contentByZoneId: Map<string, string>,
+  index: number,
+  compactOnePage: boolean,
+): string {
+  const metadata = page.PAGE_METADATA;
+  const hints = page.RENDERING_HINTS;
+  const lineHeight = parseLineHeight(hints?.recommended_line_height, compactOnePage);
+
+  const styleVars = [
+    `--news-line-height:${lineHeight}`,
+    `--news-page-min-height:${compactOnePage ? '7.84in' : '8.05in'}`,
+  ].join(';');
+
+  const get = (id: string) => nonEmpty(contentByZoneId.get(id));
+
+  const siteHeader = get('z_site_header');
+  const pageTitle = get('z_page_title');
+  const pageSubtitle = get('z_page_subtitle');
+  const tabRow = get('z_tab_row');
+  const filterRow = get('z_filter_row');
+  const compensationSummary = get('z_compensation_summary');
+  const dataTable = get('z_data_table');
+  const roleListing = get('z_role_listing');
+  const companyListing = get('z_company_listing');
+  const faqSection = get('z_faq_section');
+  const sourceAttribution = get('z_source_attribution');
+  const urlTimestamp = get('z_url_timestamp');
+  const siteNavigation = get('z_site_navigation');
+  const footerLinks = get('z_footer_links');
+
+  const consumed = new Set<string>([
+    'z_site_header', 'z_page_title', 'z_page_subtitle', 'z_tab_row', 'z_filter_row',
+    'z_compensation_summary', 'z_data_table', 'z_role_listing', 'z_company_listing',
+    'z_faq_section', 'z_source_attribution', 'z_url_timestamp', 'z_site_navigation', 'z_footer_links',
+  ]);
+
+  const remainingBlocks = collectRemainingTextZones(page, contentByZoneId, consumed, { includeFurniture: false });
+  const furnitureBlocks = collectRemainingTextZones(page, contentByZoneId, consumed, { includeFurniture: true });
+
+  const displayTitle = pageTitle ?? 'SALARY / COMPENSATION RESEARCH PAGE';
+
+  const tabHtml = tabRow
+    ? `<div class="salary-tab-row"><span class="salary-tab-label">TABS</span><span class="salary-tab-content">${escapeHtml(tabRow)}</span></div>`
+    : '';
+  const filterHtml = filterRow
+    ? `<div class="salary-filter-row"><span class="salary-tab-label">FILTERS</span><span class="salary-tab-content">${escapeHtml(filterRow)}</span></div>`
+    : '';
+  const summaryHtml = compensationSummary
+    ? `<section class="salary-summary-block"><h2 class="section-label">COMPENSATION SUMMARY</h2><div class="salary-summary-body">${escapeHtml(compensationSummary)}</div></section>`
+    : '';
+  const tableHtml = dataTable
+    ? `<section class="salary-data-block"><h2 class="section-label">SALARY DATA TABLE</h2><div class="salary-data-body">${escapeHtml(dataTable)}</div></section>`
+    : '';
+  const roleListHtml = roleListing
+    ? `<section class="salary-data-block"><h2 class="section-label">RELATED ROLES</h2><div class="salary-data-body">${escapeHtml(roleListing)}</div></section>`
+    : '';
+  const companyListHtml = companyListing
+    ? `<section class="salary-data-block"><h2 class="section-label">COMPANIES</h2><div class="salary-data-body">${escapeHtml(companyListing)}</div></section>`
+    : '';
+  const faqHtml = faqSection
+    ? `<section class="salary-data-block"><h2 class="section-label">FREQUENTLY ASKED QUESTIONS</h2><div class="salary-data-body">${escapeHtml(faqSection)}</div></section>`
+    : '';
+  const remainingHtml = remainingBlocks.length > 0
+    ? `<section class="salary-data-block"><h2 class="section-label">ADDITIONAL CONTENT</h2><div class="salary-data-body">${remainingBlocks.map((b) => `<p>${escapeHtml(b)}</p>`).join('')}</div></section>`
+    : '';
+
+  const furnitureRows = [urlTimestamp, siteNavigation, footerLinks, ...furnitureBlocks]
+    .filter((v): v is string => Boolean(v));
+
+  return `<section class="news-page salary-data-page${compactOnePage ? ' compact' : ''}" data-page-number="${metadata.page_number ?? index + 1}" data-model-key="web_structured_data_page" style="${styleVars}">
+  <header class="salary-page-header">
+    ${siteHeader ? `<div class="salary-site-header">${escapeHtml(siteHeader)}</div>` : ''}
+    <h1 class="salary-page-title">${escapeHtml(displayTitle)}</h1>
+    ${pageSubtitle ? `<p class="salary-page-subtitle">${escapeHtml(pageSubtitle)}</p>` : ''}
+  </header>
+  ${tabHtml}
+  ${filterHtml}
+  ${summaryHtml}
+  ${tableHtml}
+  ${roleListHtml}
+  ${companyListHtml}
+  ${faqHtml}
+  ${remainingHtml}
+  ${sourceAttribution ? `<div class="salary-source">${escapeHtml(sourceAttribution)}</div>` : ''}
+  ${renderListBlock('WEB FURNITURE', furnitureRows, 'furniture-block')}
+  ${renderListBlock('NON-TEXTUAL ELEMENTS PRESERVED', page.NON_TEXTUAL_ELEMENTS ?? [], 'non-text-block')}
+</section>`;
+}
+
 function renderPage(
   page: EditorialNewsStructuredPage,
   index: number,
@@ -301,6 +407,13 @@ function renderPage(
   },
 ): string {
   const contentByZoneId = buildResolvedContentByZoneId(page);
+
+  // Salary / structured data pages have a dedicated render path.
+  const inferredKey = inferPageModelKey(page);
+  if (inferredKey === 'web_structured_data_page') {
+    return renderSalaryDataPage(page, contentByZoneId, index, options.compactOnePage);
+  }
+
   const consumed = new Set<string>();
 
   const publicationHeader = findContentByPreferredIds(contentByZoneId, ['z_publication_header']);
@@ -343,7 +456,6 @@ function renderPage(
     includeFurniture: true,
   });
 
-  const inferredKey = inferPageModelKey(page);
   const hints = page.RENDERING_HINTS;
   const metadata = page.PAGE_METADATA;
   const fonts = metadata.suggested_font_size_by_section ?? {};
@@ -582,6 +694,94 @@ li {
 .news-page.compact .photo-placeholder {
   min-height: 1.04in;
   max-height: 1.3in;
+}
+/* ── Salary / structured data page ───────────────────────────── */
+.salary-data-page {
+  font-family: Arial, "Helvetica Neue", sans-serif;
+}
+.salary-page-header {
+  border-bottom: 1.5px solid #2563eb;
+  padding-bottom: 0.07in;
+  margin-bottom: 0.08in;
+}
+.salary-site-header {
+  font-size: 8.2pt;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #2563eb;
+  margin-bottom: 0.025in;
+}
+.salary-page-title {
+  margin: 0;
+  font-size: 13pt;
+  font-weight: 700;
+  line-height: 1.18;
+  color: #111827;
+}
+.salary-page-subtitle {
+  margin: 0.025in 0 0;
+  font-size: 9.5pt;
+  color: #374151;
+}
+.salary-tab-row, .salary-filter-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.08in;
+  padding: 0.03in 0.05in;
+  border: 0.8px solid #e2e8f0;
+  border-radius: 4px;
+  margin-bottom: 0.04in;
+  background: #f8fafc;
+  font-size: 8.4pt;
+}
+.salary-tab-label {
+  font-weight: 700;
+  font-size: 7.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #64748b;
+  min-width: 0.45in;
+}
+.salary-tab-content {
+  color: #1e40af;
+}
+.salary-summary-block {
+  border: 1.2px solid #2563eb;
+  border-radius: 5px;
+  padding: 0.08in 0.1in;
+  background: #eff6ff;
+  margin-bottom: 0.06in;
+}
+.salary-summary-body {
+  font-size: 11pt;
+  font-weight: 600;
+  line-height: var(--news-line-height, 1.4);
+  color: #1e3a8a;
+  white-space: pre-wrap;
+}
+.salary-data-block {
+  border: 0.8px solid #dce4f0;
+  border-radius: 4px;
+  padding: 0.06in 0.08in;
+  background: #fafcff;
+  margin-bottom: 0.05in;
+}
+.salary-data-body {
+  font-size: 9.2pt;
+  line-height: var(--news-line-height, 1.4);
+  white-space: pre-wrap;
+  color: #1f2937;
+}
+.salary-data-body p {
+  margin: 0 0 0.03in;
+}
+.salary-source {
+  font-size: 7.8pt;
+  color: #6b7280;
+  border-top: 0.8px solid #e5e7eb;
+  padding-top: 0.035in;
+  margin-top: 0.04in;
 }
 .page-break {
   break-before: page;

@@ -13,7 +13,7 @@ export function buildEditorialNewsPagesSystemPrompt(): string {
   return `You are a precision document extraction and layout-fidelity specialist for Promobidocs.
 
 TASK:
-Extract editorial/news evidence pages into a strict structured JSON model for client-facing translated rendering.
+Extract editorial/news/structured-web evidence pages into a strict structured JSON model for client-facing translated rendering.
 
 SCOPE (FLEXIBLE):
 - scanned newspaper clippings
@@ -21,6 +21,10 @@ SCOPE (FLEXIBLE):
 - web print captures with site UI/furniture
 - editorial/article metadata pages
 - journal/magazine cover or article landing pages
+- salary research pages (Glassdoor, PayScale, Levels.fyi, LinkedIn Salaries, etc.)
+- compensation data/survey pages
+- job listing pages with salary data
+- structured web data pages (comparison tables, market rate summaries, etc.)
 
 MANDATORY INVARIANTS:
 - Preserve exact page parity.
@@ -28,6 +32,7 @@ MANDATORY INVARIANTS:
 - Preserve title/byline/date/article-body relationships.
 - Preserve image/figure placement signals and captions.
 - Preserve visible web furniture text if present (menus, cookie text, footer links, URL/timestamp).
+- Preserve structural blocks on data pages: compensation summaries, tab rows, filter rows, role/company listings, FAQ sections.
 - Do not summarize.
 - Do not omit visible text.
 - Do not invent values.
@@ -35,14 +40,39 @@ MANDATORY INVARIANTS:
 
 TRANSLATION LANGUAGE RULE:
 - Translate visible translatable text to English.
-- Preserve proper names, acronyms, DOI, ISSN/ISBN, URLs exactly.
+- Preserve proper names, acronyms, DOI, ISSN/ISBN, URLs, monetary amounts, and role titles exactly.
 
 SUBTYPE MODEL KEY (LIGHTWEIGHT):
 - print_news_clipping
 - web_news_article
 - web_news_printview
 - editorial_article_cover_or_metadata
+- web_structured_data_page  ← USE THIS for salary research pages, compensation tables, job listing pages with salary data
 - editorial_news_generic_structured (fallback when subtype confidence is weak)
+
+SALARY / COMPENSATION PAGE RECOGNITION:
+Use model_key = "web_structured_data_page" when the page shows ANY of:
+- salary ranges, median compensation, total compensation values
+- pay scales (by role, location, company, experience level)
+- job listing summaries with compensation data
+- wage/benefits comparison tables
+- market rate data from platforms like Glassdoor, PayScale, LinkedIn Salaries, Levels.fyi, Comparably
+
+ZONE TYPES FOR SALARY / DATA PAGES (use these zone_ids for web_structured_data_page):
+- z_site_header        → site name / platform logo text (e.g., "Glassdoor", "LinkedIn")
+- z_page_title         → the main page heading (e.g., "Software Engineer Salaries in New York")
+- z_page_subtitle      → secondary descriptor below the title
+- z_tab_row            → horizontal tab navigation (e.g., "By Role | By Location | By Company")
+- z_filter_row         → filter / dropdown controls row (e.g., "Job Type: Full-time | Experience: 5+ years")
+- z_compensation_summary → primary salary summary block (median, range, total comp figures)
+- z_data_table         → a tabular listing of salary data rows
+- z_role_listing       → list of related roles with salary ranges
+- z_company_listing    → list of companies with associated salary ranges
+- z_faq_section        → FAQ or Q&A section about the salary data
+- z_source_attribution → data source credit (e.g., "Source: Glassdoor estimates, 2024")
+- z_url_timestamp      → (furniture) URL and capture timestamp
+- z_site_navigation    → (furniture) site-level navigation links
+- z_footer_links       → (furniture) footer / legal disclaimer text
 
 REQUIRED PAGE MODEL:
 {
@@ -113,9 +143,10 @@ export function buildEditorialNewsPagesUserMessage(
       : 'Source page count unavailable.';
 
   return [
-    'Extract this editorial/news evidence document into the JSON schema.',
+    'Extract this editorial/news/structured-web evidence document into the JSON schema.',
     pageHint,
-    'Keep headline hierarchy, article body order, optional image/caption relationships, and web-furniture text when visible.',
+    'If this is a salary research, compensation data, or job listing page: use model_key="web_structured_data_page" and map each visible block (page title, tab row, filter row, compensation summary, data table, role/company listings, FAQ sections) to the appropriate salary zone IDs.',
+    'Otherwise: keep headline hierarchy, article body order, optional image/caption relationships, and web-furniture text when visible.',
     'Return only JSON.',
   ].join(' ');
 }

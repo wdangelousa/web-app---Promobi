@@ -11,7 +11,7 @@
  * -----------------------------------------------------------------------------
  */
 
-export type EditorialNewsOrientation = 'portrait' | 'landscape' | 'unknown';
+export type EditorialNewsOrientation = 'portrait' | 'landscape' | 'mixed' | 'unknown';
 export type EditorialNewsDensity = 'low' | 'medium' | 'high';
 export type EditorialNewsSpacingProfile = 'compact' | 'normal';
 export type EditorialNewsCompactionPriority = 'high' | 'medium' | 'low';
@@ -21,7 +21,11 @@ export type EditorialNewsModelKey =
   | 'web_news_article'
   | 'web_news_printview'
   | 'editorial_article_cover_or_metadata'
-  | 'editorial_news_generic_structured';
+  | 'web_structured_data_page'
+  | 'editorial_news_generic_structured'
+  | 'magazine_feature'
+  | 'academic_journal_article'
+  | 'newsletter_clipping';
 
 export interface EditorialNewsPageMetadata {
   page_number: number;
@@ -32,6 +36,16 @@ export interface EditorialNewsPageMetadata {
   estimated_density: EditorialNewsDensity;
   suggested_font_style: string;
   suggested_font_size_by_section: Record<string, string>;
+  is_scanned_clipping: boolean;
+  has_graphic_elements: boolean;
+}
+
+export interface EditorialNewsPageStructure {
+  columns_count: number;
+  has_main_headline: boolean;
+  has_subheadlines: boolean;
+  has_byline: boolean;
+  has_dateline: boolean;
 }
 
 export interface EditorialNewsLayoutZone {

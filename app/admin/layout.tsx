@@ -1,3 +1,4 @@
+// Optimized by LEAN_EXECUTION_v1.1 - 2026-03-20
 import type { Metadata } from 'next'
 export const dynamic = 'force-dynamic'
 import { Suspense } from 'react'
@@ -56,7 +57,7 @@ export default async function AdminLayout({
                                 className="w-full text-gray-500 hover:text-red-500 text-xs transition-colors"
                             >
                                 Sair desta conta
-                            </button>
+                              </button>
                         </form>
                     </div>
                 </div>
@@ -85,3 +86,4 @@ export default async function AdminLayout({
         </div>
     )
 }
+
