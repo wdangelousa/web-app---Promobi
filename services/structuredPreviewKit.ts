@@ -1703,6 +1703,31 @@ export async function buildStructuredKitBuffer(
       } catch (err) {
         log(`source page extraction failed: ${err}`);
       }
+    } else if (
+      ['image/jpeg', 'image/jpg', 'image/png'].includes(input.originalContentType ?? '') &&
+      input.originalFileBuffer.byteLength > 0
+    ) {
+      try {
+        const imgDoc = await PDFDocument.create();
+        const imgBytes = new Uint8Array(input.originalFileBuffer);
+        const embeddedImage =
+          input.originalContentType === 'image/png'
+            ? await imgDoc.embedPng(imgBytes)
+            : await imgDoc.embedJpg(imgBytes);
+        const page = imgDoc.addPage([embeddedImage.width, embeddedImage.height]);
+        page.drawImage(embeddedImage, {
+          x: 0,
+          y: 0,
+          width: embeddedImage.width,
+          height: embeddedImage.height,
+        });
+        const imgPdfBytes = await imgDoc.save();
+        originalPdfDocForAssembly = await PDFDocument.load(imgPdfBytes);
+        extractedPdfPageCount = 1;
+        log(`image original converted to single-page PDF for assembly`);
+      } catch (err) {
+        log(`image-to-pdf conversion failed: ${err}`);
+      }
     }
 
     const sourcePageResolution = await resolveSourcePageCount({
@@ -2013,7 +2038,10 @@ export async function assembleStructuredPreviewKit(
         input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
         input.externalTranslatedPdfBuffer.byteLength > 0
       );
-    result.originalAppended = input.isOriginalPdf && input.originalFileBuffer.byteLength > 0;
+    result.originalAppended =
+      (input.isOriginalPdf ||
+        ['image/jpeg', 'image/jpg', 'image/png'].includes(input.originalContentType ?? '')) &&
+      input.originalFileBuffer.byteLength > 0;
 
     // ── Persist: Supabase Storage with local fallback ─────────────────────────
     const timestamp = Date.now();
