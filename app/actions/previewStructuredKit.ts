@@ -42,7 +42,11 @@ import {
   formatStructuredRenderingFailureMessage,
   type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
+  StructuredRenderingRequiredError,
 } from '@/services/structuredDocumentRenderer';
+import { doesDocumentTypeSupportFaithfulFallback } from '@/services/documentFamilyRegistry';
+import { sanitizeTranslationHtmlFaithful } from '@/lib/translationHtmlSanitizer';
+import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
   getPageParityRegistryRecord,
   parseOrderMetadata,
@@ -474,7 +478,7 @@ export async function previewStructuredKit(
 
     // ── Step 4: Resolve preview HTML under strict structured invariant ──────
 
-    let structuredHtml: string;
+    let structuredHtml = '';  // assigned by structured rendering or faithful-light fallback
     // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
     // May differ from detectedOrientation depending on per-family override logic.
     let orientationForKit: DocumentOrientation = detectedOrientation;
@@ -544,10 +548,37 @@ export async function previewStructuredKit(
         `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`,
       );
     } catch (err) {
-      return {
-        success: false,
-        error: formatStructuredRenderingFailureMessage(classification.documentType, err),
-      };
+      // ── Faithful-light fallback ────────────────────────────────────────────
+      // When the structured renderer fails (bad JSON / schema mismatch) and the
+      // document type opts into faithful fallback, use the already-translated
+      // HTML from effectiveTranslatedText rather than blocking the kit entirely.
+      // The kit assembler's language gate (detectSourceLanguageLeakageFromHtml)
+      // still runs and will block if significant source-language leakage remains.
+      const faithfulText = effectiveTranslatedText?.trim() ?? null;
+      if (
+        err instanceof StructuredRenderingRequiredError &&
+        doesDocumentTypeSupportFaithfulFallback(classification.documentType) &&
+        faithfulText !== null &&
+        faithfulText.length > 50
+      ) {
+        console.log(
+          `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
+          `for "${classification.documentType}" (reason: ${err.message.slice(0, 120)})`,
+        );
+        structuredHtml = buildTranslatedPageHtml({
+          translatedHtml: sanitizeTranslationHtmlFaithful(faithfulText),
+          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+        });
+        resolvedFamilyForKit = classification.documentType;
+        resolvedRendererForKit = 'faithful_light_fallback';
+        // orientationForKit and resolvedLanguageIntegrityForKit keep their defaults
+      } else {
+        return {
+          success: false,
+          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
+        };
+      }
     }
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────

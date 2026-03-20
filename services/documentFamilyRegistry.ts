@@ -920,3 +920,24 @@ export function detectDocumentFamily(
 
   return detectFamilyByHeuristics(input);
 }
+
+// ── Faithful-light fallback eligibility ───────────────────────────────────────
+//
+// Document types listed here may fall back to the faithful translated HTML
+// (doc.translatedText) when the structured renderer fails due to JSON/schema
+// issues — rather than blocking the kit entirely.
+//
+// Only add a type here when:
+//   1. The family's translated output is typically clean enough for delivery.
+//   2. The structured renderer is fragile due to variable Anthropic JSON output.
+//   3. There is no correctness risk in using a linear faithful layout for this
+//      document type (e.g. editorial/news articles, not legal certificates).
+const FAITHFUL_FALLBACK_ELIGIBLE_TYPES = new Set<string>([
+  'editorial_news_pages',
+]);
+
+export function doesDocumentTypeSupportFaithfulFallback(
+  documentType: string,
+): boolean {
+  return FAITHFUL_FALLBACK_ELIGIBLE_TYPES.has(documentType);
+}

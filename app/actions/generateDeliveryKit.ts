@@ -14,7 +14,11 @@ import {
   formatStructuredRenderingFailureMessage,
   type StructuredRenderLanguageIntegrity,
   renderStructuredFamilyDocument,
+  StructuredRenderingRequiredError,
 } from "@/services/structuredDocumentRenderer";
+import { doesDocumentTypeSupportFaithfulFallback } from "@/services/documentFamilyRegistry";
+import { sanitizeTranslationHtmlFaithful } from "@/lib/translationHtmlSanitizer";
+import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
   getPageParityRegistryRecord,
   parseOrderMetadata,
@@ -259,43 +263,99 @@ export async function generateDeliveryKit(
           `${logPrefix} — external translation override applied for ${preview ? "preview kit" : "delivery kit"}`,
         );
       } else {
-        const renderAssertion = assertStructuredClientFacingRender({
-          documentType: classification.documentType,
-          documentLabel: documentLabelHint,
-          fileUrl: doc.originalFileUrl,
-          translatedText: doc.translatedText,
-          detectedOrientation,
-          surface: "delivery-kit",
-          logPrefix,
-        });
+        // ── Structured rendering with faithful-light fallback ────────────────
+        // Attempt structured rendering first. If it throws StructuredRenderingRequiredError
+        // (e.g. invalid JSON from Anthropic, schema mismatch) and the document type
+        // opts into faithful fallback, wrap doc.translatedText in the standard
+        // letterhead template and continue with kit assembly unchanged.
+        // The kit assembler's language gate still runs to block source-language leakage.
+        let htmlForKit = '';
+        let orientationForKit = detectedOrientation;
+        let familyForKit: string = classification.documentType;
+        let rendererNameForKit = 'unknown';
+        let languageIntegrityForKit: StructuredRenderLanguageIntegrity =
+          buildExternalOverrideLanguageIntegrity(doc.sourceLanguage ?? null);
 
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const resolved = await renderStructuredFamilyDocument({
-          client,
-          family: renderAssertion.family,
-          documentType: renderAssertion.documentType,
-          originalFileBuffer,
-          originalFileUrl: doc.originalFileUrl,
-          contentType,
-          sourcePageCount,
-          detectedOrientation,
-          orderId,
-          documentId,
-          sourceLanguage: doc.sourceLanguage ?? null,
-          targetLanguage: 'EN',
-          logPrefix,
-        });
+        try {
+          const renderAssertion = assertStructuredClientFacingRender({
+            documentType: classification.documentType,
+            documentLabel: documentLabelHint,
+            fileUrl: doc.originalFileUrl,
+            translatedText: doc.translatedText,
+            detectedOrientation,
+            surface: "delivery-kit",
+            logPrefix,
+          });
 
-        const orientationForKit = resolved.orientationForKit;
+          const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+          const resolved = await renderStructuredFamilyDocument({
+            client,
+            family: renderAssertion.family,
+            documentType: renderAssertion.documentType,
+            originalFileBuffer,
+            originalFileUrl: doc.originalFileUrl,
+            contentType,
+            sourcePageCount,
+            detectedOrientation,
+            orderId,
+            documentId,
+            sourceLanguage: doc.sourceLanguage ?? null,
+            targetLanguage: 'EN',
+            logPrefix,
+          });
+
+          htmlForKit = resolved.structuredHtml;
+          orientationForKit = resolved.orientationForKit;
+          familyForKit = renderAssertion.family;
+          rendererNameForKit = resolved.rendererName;
+          languageIntegrityForKit = resolved.languageIntegrity;
+
+          console.log(
+            `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
+              `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
+              `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
+              `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
+              `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
+              `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
+              `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
+              `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
+              `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
+              `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
+              `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
+              `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
+          );
+        } catch (renderErr) {
+          const faithfulText = doc.translatedText?.trim() ?? null;
+          if (
+            renderErr instanceof StructuredRenderingRequiredError &&
+            doesDocumentTypeSupportFaithfulFallback(classification.documentType) &&
+            faithfulText !== null &&
+            faithfulText.length > 50
+          ) {
+            console.log(
+              `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
+              `for "${classification.documentType}" (reason: ${renderErr.message.slice(0, 120)})`,
+            );
+            htmlForKit = buildTranslatedPageHtml({
+              translatedHtml: sanitizeTranslationHtmlFaithful(faithfulText),
+              documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+              orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+            });
+            rendererNameForKit = 'faithful_light_fallback';
+            // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
+          } else {
+            throw renderErr;  // re-thrown → caught by outer catch → formatStructuredRenderingFailureMessage
+          }
+        }
 
         const buildResult = await buildStructuredKitBuffer({
-          structuredHtml: resolved.structuredHtml,
+          structuredHtml: htmlForKit,
           originalFileBuffer,
           isOriginalPdf,
           orderId,
           documentId,
           sourceLanguage: doc.sourceLanguage ?? undefined,
-          targetLanguage: resolved.languageIntegrity.targetLanguage,
+          targetLanguage: languageIntegrityForKit.targetLanguage,
           coverVariant,
           orientation: orientationForKit === "landscape" ? "landscape" : undefined,
           documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
@@ -305,11 +365,11 @@ export async function generateDeliveryKit(
           groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
           originalFileUrl: doc.originalFileUrl,
           originalContentType: contentType,
-          documentFamily: renderAssertion.family,
-          rendererName: resolved.rendererName,
+          documentFamily: familyForKit,
+          rendererName: rendererNameForKit,
           surface: preview ? "preview-kit" : "delivery-kit",
           compactionAttempted: false,
-          languageIntegrity: resolved.languageIntegrity,
+          languageIntegrity: languageIntegrityForKit,
           pageParityDecision: storedPageParityDecision,
         });
 
@@ -337,20 +397,6 @@ export async function generateDeliveryKit(
         }
 
         finalPdfBuffer = buildResult.kitBuffer;
-        console.log(
-          `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
-            `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
-            `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
-            `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
-            `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
-            `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
-            `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
-            `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
-            `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
-            `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
-            `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
-            `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
-        );
       }
     } catch (err) {
       return {
