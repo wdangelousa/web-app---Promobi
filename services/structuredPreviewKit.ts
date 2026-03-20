@@ -1470,6 +1470,24 @@ export async function buildStructuredKitBuffer(
       }
 
       translatedPageCount = translatedPdfDoc.getPageCount();
+
+      if (letterheadBuffer) {
+        const overlayBuffer = await applyLetterheadOverlayToPdf(
+          translatedPdfBuffer,
+          letterheadBuffer,
+          logPrefix,
+        );
+        if (overlayBuffer) {
+          translatedPdfBuffer = overlayBuffer;
+          translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
+          log(`letterhead overlay applied: yes (external PDF)`);
+        } else {
+          log(`letterhead overlay applied: no (overlay failed, external PDF)`);
+        }
+      } else {
+        log(`letterhead overlay applied: no (file not found, external PDF)`);
+      }
+
       logLanguageIntegrityDiagnostics(logPrefix, {
         orderId: input.orderId,
         docId: input.documentId,
@@ -2032,12 +2050,7 @@ export async function assembleStructuredPreviewKit(
     result.coverGenerated = true;
     result.coverMetadataApplied = true;
     result.translatedSectionGenerated = true;
-    result.letterheadInjected =
-      result.letterheadDetected &&
-      !(
-        input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
-        input.externalTranslatedPdfBuffer.byteLength > 0
-      );
+    result.letterheadInjected = result.letterheadDetected;
     result.originalAppended =
       (input.isOriginalPdf ||
         ['image/jpeg', 'image/jpg', 'image/png'].includes(input.originalContentType ?? '')) &&
