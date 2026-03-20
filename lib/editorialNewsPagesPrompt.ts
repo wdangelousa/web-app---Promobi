@@ -79,6 +79,8 @@ REQUIRED PAGE MODEL:
   "document_type": "editorial_news_pages",
   "family": "editorial_news_pages | publications_media | unknown",
   "model_key": "print_news_clipping | web_news_article | web_news_printview | editorial_article_cover_or_metadata | editorial_news_generic_structured | unknown",
+  "AnalysisCategory": "string",
+  "BrandImpact": "string",
   "PAGES": [
     {
       "PAGE_METADATA": {
