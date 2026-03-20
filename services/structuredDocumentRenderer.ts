@@ -513,6 +513,133 @@ function stripMarkdownFences(raw: string): string {
     .trim();
 }
 
+type JsonParseAttempt<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
+
+function getJsonParseAttemptError<T>(attempt: JsonParseAttempt<T>): string {
+  if ('error' in attempt && typeof attempt.error === 'string') {
+    return attempt.error;
+  }
+  return 'unknown_parse_error';
+}
+
+const STRICT_JSON_RETRY_INSTRUCTION = `
+Return STRICT JSON ONLY.
+Do not write any introductory sentence.
+Do not explain anything.
+Do not use markdown.
+Do not wrap JSON in code fences.
+Do not write text before or after the JSON object.
+If you cannot comply, return exactly: {"error":"invalid_output"}
+`.trim();
+
+function withStrictJsonRetryInstruction(basePrompt: string): string {
+  return `${basePrompt}\n\n${STRICT_JSON_RETRY_INSTRUCTION}`;
+}
+
+function tryParseStrictJsonObject<T>(raw: string): JsonParseAttempt<T> {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+    return {
+      ok: false,
+      error:
+        'Output is not a pure JSON object (missing opening/closing object delimiters at boundaries).',
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: 'Output parsed but top-level value is not a JSON object.',
+      };
+    }
+    return { ok: true, value: parsed as T };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function extractFirstJsonObjectCandidate(raw: string): string | null {
+  const start = raw.indexOf('{');
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1).trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function tryRepairStructuredJsonObject<T>(raw: string): JsonParseAttempt<T> {
+  const candidates = [
+    stripMarkdownFences(raw),
+    extractFirstJsonObjectCandidate(raw),
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  for (const candidate of uniqueCandidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        continue;
+      }
+      return { ok: true, value: parsed as T };
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    ok: false,
+    error:
+      'JSON repair could not recover a valid top-level JSON object from model output.',
+  };
+}
+
 async function callClaudeForJson(
   client: Anthropic,
   systemPrompt: string,
@@ -681,6 +808,11 @@ function parseStructuredJson<T>(
       ),
     );
   }
+}
+
+function isInvalidOutputSentinel(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  return value.error === 'invalid_output';
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -3838,21 +3970,79 @@ export async function renderSupportedStructuredDocument(
     }
 
     case 'academic_transcript': {
-      const rawJson = ensureExtractionJson(
+      const transcriptSystemPrompt = buildAcademicTranscriptSystemPrompt();
+      const transcriptUserMessage = buildAcademicTranscriptUserMessage();
+      const transcriptLogPrefix = `${input.logPrefix} [academic-transcript]`;
+
+      const initialRawJson = ensureExtractionJson(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          buildAcademicTranscriptSystemPrompt(),
-          messageContentFor(buildAcademicTranscriptUserMessage()),
+          transcriptSystemPrompt,
+          messageContentFor(transcriptUserMessage),
           8192,
-          `${input.logPrefix} [academic-transcript]`,
+          transcriptLogPrefix,
         ),
       );
 
-      const parsed = parseStructuredJson<AcademicTranscript>(
-        input.documentType,
-        rawJson,
-      );
+      let strictParse = tryParseStrictJsonObject<AcademicTranscript>(initialRawJson);
+      let rawForRepair = initialRawJson;
+
+      if (!strictParse.ok) {
+        const firstAttemptError = getJsonParseAttemptError(strictParse);
+        console.warn(
+          `${transcriptLogPrefix} strict JSON parse failed on first attempt: ${firstAttemptError}. Retrying once with strict JSON-only enforcement.`,
+        );
+
+        const retryRawJson = ensureExtractionJson(
+          input.documentType,
+          await callClaudeForJson(
+            input.client,
+            withStrictJsonRetryInstruction(transcriptSystemPrompt),
+            messageContentFor(withStrictJsonRetryInstruction(transcriptUserMessage)),
+            8192,
+            `${transcriptLogPrefix} [json-retry]`,
+          ),
+        );
+
+        strictParse = tryParseStrictJsonObject<AcademicTranscript>(retryRawJson);
+        rawForRepair = retryRawJson;
+      }
+
+      let parsed: AcademicTranscript;
+      if (strictParse.ok) {
+        parsed = strictParse.value;
+      } else {
+        const repaired = tryRepairStructuredJsonObject<AcademicTranscript>(rawForRepair);
+        if (repaired.ok) {
+          console.warn(
+            `${transcriptLogPrefix} strict JSON contract still violated after retry; repaired JSON object from wrapped output.`,
+          );
+          parsed = repaired.value;
+        } else {
+          const primaryParseError = getJsonParseAttemptError(strictParse);
+          const repairError = getJsonParseAttemptError(repaired);
+          throw new StructuredRenderingRequiredError(
+            input.documentType,
+            buildStructuredFailureMessage(
+              input.documentType,
+              `Claude returned invalid structured JSON after strict retry. Primary parse error: ${primaryParseError}. Repair error: ${repairError}`,
+            ),
+          );
+        }
+      }
+
+      if (isInvalidOutputSentinel(parsed)) {
+        throw new StructuredRenderingRequiredError(
+          input.documentType,
+          buildStructuredFailureMessage(
+            input.documentType,
+            'Claude returned {"error":"invalid_output"} for strict JSON contract.',
+          ),
+        );
+      }
+
+      assertExpectedDocumentTypeTag('academic_transcript', parsed);
       const languageIntegrity: StructuredRenderLanguageIntegrity = {
         ...defaultLanguageIntegrity,
         translatedPayloadFound: true,

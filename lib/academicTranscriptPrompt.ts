@@ -120,9 +120,17 @@ REQUIRED JSON SCHEMA
 ═══════════════════════════════════════════════════
 
 Return ONLY the following JSON structure, filled with extracted values.
-Do NOT output any text before or after the JSON.
-Do NOT wrap in markdown code fences.
-Do NOT add commentary or explanation.
+ABSOLUTE OUTPUT CONTRACT (mandatory):
+- Return STRICT JSON ONLY.
+- Do NOT output any introductory sentence.
+- Do NOT explain anything.
+- Do NOT use markdown.
+- Do NOT wrap the JSON in code fences.
+- Do NOT output text before or after the JSON object.
+- Do NOT add commentary or trailing notes.
+
+If you cannot comply with strict JSON output, return exactly:
+{"error":"invalid_output"}
 
 {
   "document_type": "academic_transcript",
@@ -177,5 +185,15 @@ Do NOT add commentary or explanation.
  * Kept brief — all instructions are in the system prompt.
  */
 export function buildAcademicTranscriptUserMessage(): string {
-  return 'Extract all fields from this academic transcript or school record into the JSON schema. Extract EVERY subject row without exception. Return ONLY the JSON object. No text before or after.';
+  return `Extract all fields from this academic transcript or school record into the JSON schema.
+
+Return STRICT JSON ONLY.
+Do not write any introductory sentence.
+Do not explain anything.
+Do not use markdown.
+Do not wrap JSON in code fences.
+Do not write text before or after the JSON object.
+
+If you cannot comply, return exactly:
+{"error":"invalid_output"}`;
 }
