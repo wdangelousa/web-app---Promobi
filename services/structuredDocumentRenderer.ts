@@ -2137,6 +2137,25 @@ function isEditorialNewsTextBearingZone(zone: EditorialNewsLayoutZone): boolean 
   return true;
 }
 
+function isEditorialBodyContinuationZoneCandidate(zone: {
+  normalizedId: string;
+  zoneType: string;
+  visualStyle: string;
+}): boolean {
+  const idSignal = normalizeZoneBindingId(zone.normalizedId);
+  const zoneTypeSignal = normalizeZoneBindingId(zone.zoneType);
+  const styleSignal = normalizeZoneBindingId(zone.visualStyle);
+
+  const idLooksLikeColumnBody =
+    /^z?_?col(?:umn)?_?\d+_body$/.test(idSignal) ||
+    (idSignal.includes('col') && idSignal.includes('body'));
+  const paragraphLike = zoneTypeSignal.includes('paragraph');
+  const multiColumnLike =
+    styleSignal.includes('multi_column') || styleSignal.includes('column');
+
+  return idLooksLikeColumnBody && paragraphLike && multiColumnLike;
+}
+
 interface EditorialNewsZoneBindingResolution {
   requiredZones: string[];
   translatedZonesFound: string[];
@@ -2169,6 +2188,8 @@ function resolveEditorialNewsZoneBindings(
           normalizedId,
           label: `page_${pageNumber}:${originalId}`,
           textBearing: isEditorialNewsTextBearingZone(zone),
+          zoneType: normalizeWhitespace(zone.zone_type),
+          visualStyle: normalizeWhitespace(zone.visual_style),
         };
       })
       .filter((zone): zone is {
@@ -2177,6 +2198,8 @@ function resolveEditorialNewsZoneBindings(
         normalizedId: string;
         label: string;
         textBearing: boolean;
+        zoneType: string;
+        visualStyle: string;
       } => zone !== null);
 
     const translatedEntries = (page.TRANSLATED_CONTENT_BY_ZONE ?? [])
@@ -2269,6 +2292,54 @@ function resolveEditorialNewsZoneBindings(
       const zone = unmatchedLayout[i];
       const entry = unmatchedGenericTranslated[i];
       assign(zone.index, entry.index, entry.originalId);
+    }
+
+    const unresolvedTextBearingZones = layoutZones.filter(
+      (zone) => zone.textBearing && !consumedLayoutIndexes.has(zone.index),
+    );
+    const unresolvedBodyContinuationZones = unresolvedTextBearingZones.filter(
+      (zone) => isEditorialBodyContinuationZoneCandidate(zone),
+    );
+    const translatedBodyContinuationZones = layoutZones.filter(
+      (zone) =>
+        zone.textBearing &&
+        consumedLayoutIndexes.has(zone.index) &&
+        isEditorialBodyContinuationZoneCandidate(zone),
+    );
+    const remainingTranslatedEntries = translatedEntries.filter(
+      (entry) => !consumedTranslatedIndexes.has(entry.index),
+    );
+
+    const allowBodyContinuationCarryover =
+      (payload.model_key === 'print_news_clipping' ||
+        payload.model_key === 'web_news_printview') &&
+      unresolvedTextBearingZones.length > 0 &&
+      unresolvedTextBearingZones.length === unresolvedBodyContinuationZones.length &&
+      unresolvedBodyContinuationZones.length <= 1 &&
+      translatedBodyContinuationZones.length >= 2 &&
+      remainingTranslatedEntries.length === 0;
+
+    if (allowBodyContinuationCarryover) {
+      for (const missingZone of unresolvedBodyContinuationZones) {
+        const nearestTranslatedZone = translatedBodyContinuationZones
+          .slice()
+          .sort(
+            (a, b) =>
+              Math.abs(a.index - missingZone.index) -
+              Math.abs(b.index - missingZone.index),
+          )[0];
+        if (!nearestTranslatedZone) continue;
+
+        const sourceContent = resolvedZoneContents.get(nearestTranslatedZone.label);
+        if (!sourceContent) continue;
+
+        consumedLayoutIndexes.add(missingZone.index);
+        translatedZonesFound.push(missingZone.label);
+        resolvedZoneContents.set(missingZone.label, sourceContent);
+        mappedGenericZones.push(
+          `page_${pageNumber}:body_continuation_carryover:${nearestTranslatedZone.originalId}->${missingZone.originalId}`,
+        );
+      }
     }
 
     for (const zone of layoutZones) {
