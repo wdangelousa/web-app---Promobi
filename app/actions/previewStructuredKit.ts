@@ -45,7 +45,7 @@ import {
   StructuredRenderingRequiredError,
 } from '@/services/structuredDocumentRenderer';
 import { doesDocumentTypeSupportFaithfulFallback } from '@/services/documentFamilyRegistry';
-import { sanitizeTranslationHtmlFaithful } from '@/lib/translationHtmlSanitizer';
+import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
   getPageParityRegistryRecord,
@@ -577,7 +577,7 @@ export async function previewStructuredKit(
           `for "${classification.documentType}" (reason: ${err.message.slice(0, 120)})`,
         );
         structuredHtml = buildTranslatedPageHtml({
-          translatedHtml: sanitizeTranslationHtmlFaithful(faithfulText),
+          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
         });
@@ -629,7 +629,7 @@ export async function previewStructuredKit(
           parityDecisionRequired: true,
           parityDecision: {
             ...kit.parityDecisionContext,
-            translationArtifactSource: artifactSelection.source,
+            translationArtifactSource: resolvedRendererForKit === 'faithful_light_fallback' ? 'faithful_light_internal' : artifactSelection.source,
           },
           error:
             'Diferença de páginas detectada. Revise as contagens e escolha um modo de paridade para continuar.',
@@ -679,7 +679,7 @@ export async function previewStructuredKit(
           approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
           sourceArtifactType: sourceArtifactType ?? null,
           sourcePageCountStrategy: sourcePageCountStrategy ?? null,
-          translationArtifactSource: artifactSelection.source,
+          translationArtifactSource: resolvedRendererForKit === 'faithful_light_fallback' ? 'faithful_light_internal' : artifactSelection.source,
         },
       );
       await prisma.order.update({

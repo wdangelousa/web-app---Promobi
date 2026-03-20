@@ -17,7 +17,7 @@ import {
   StructuredRenderingRequiredError,
 } from "@/services/structuredDocumentRenderer";
 import { doesDocumentTypeSupportFaithfulFallback } from "@/services/documentFamilyRegistry";
-import { sanitizeTranslationHtmlFaithful } from "@/lib/translationHtmlSanitizer";
+import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
   getPageParityRegistryRecord,
@@ -348,7 +348,7 @@ export async function generateDeliveryKit(
               `for "${classification.documentType}" (reason: ${renderErr.message.slice(0, 120)})`,
             );
             htmlForKit = buildTranslatedPageHtml({
-              translatedHtml: sanitizeTranslationHtmlFaithful(faithfulText),
+              translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
             });

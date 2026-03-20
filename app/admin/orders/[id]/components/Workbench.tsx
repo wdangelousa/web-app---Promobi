@@ -64,7 +64,7 @@ type PreviewParityDecisionPayload = {
     translatedPageCount: number | null
     suggestedModes: PageParityMode[]
     blockingReason: 'page_parity_mismatch' | 'page_parity_unverifiable_source_page_count'
-    translationArtifactSource: 'external_pdf' | 'structured_internal' | 'legacy_internal' | 'unknown'
+    translationArtifactSource: 'external_pdf' | 'structured_internal' | 'faithful_light_internal' | 'legacy_internal' | 'unknown'
 }
 
 type TranslationModeOption = {
@@ -266,6 +266,7 @@ export default function Workbench({ order }: { order: Order }) {
     const artifactSourceLabel: Record<PreviewParityDecisionPayload['translationArtifactSource'], string> = {
         external_pdf: 'PDF externo',
         structured_internal: 'IA estruturada',
+        faithful_light_internal: 'IA fiel (texto)',
         legacy_internal: 'Interno legado',
         unknown: 'Desconhecido',
     }

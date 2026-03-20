@@ -255,7 +255,7 @@ export async function POST(req: Request) {
       `routerDecision=${pipeline} familyImplemented=${structuredFamilyImplemented ? "yes" : "no"}`
     );
 
-    if (forceBlueprintPipeline && !structuredFamilyImplemented) {
+    if (forceBlueprintPipeline && !structuredFamilyImplemented && !preClassifiedAsContinuousText) {
       return NextResponse.json(
         {
           error:

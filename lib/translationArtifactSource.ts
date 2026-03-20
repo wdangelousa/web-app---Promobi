@@ -1,6 +1,7 @@
 export type TranslationArtifactSource =
   | 'external_pdf'
   | 'structured_internal'
+  | 'faithful_light_internal'
   | 'legacy_internal';
 
 export interface TranslationArtifactSelectionInput {
@@ -129,6 +130,7 @@ function normalizeTranslationArtifactSource(
   if (
     value === 'external_pdf' ||
     value === 'structured_internal' ||
+    value === 'faithful_light_internal' ||
     value === 'legacy_internal'
   ) {
     return value;
