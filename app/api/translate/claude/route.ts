@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful } from "@/lib/translationHtmlSanitizer";
-import { buildTranslationPrompt, buildFaithfulTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
+import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
+import { buildTranslationPrompt, buildFaithfulTranslationPrompt, buildContinuousTextTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
 import { selectTranslationPipeline } from "@/services/translationRouter";
 import { classifyDocument } from "@/services/documentClassifier";
 import { isDocumentTypeInImplementedStructuredFamily } from "@/services/documentFamilyRegistry";
@@ -42,6 +42,13 @@ const SOURCE_LANGUAGE_LABELS: Record<string, string> = {
   FR: "French",
   fr: "French",
 };
+
+// Document types whose source is continuous prose rather than structured forms.
+// These use a flowing-paragraph prompt and standard (flattening) sanitizer to
+// prevent table injection and per-sentence paragraph splitting.
+const CONTINUOUS_TEXT_DOCUMENT_TYPES = new Set([
+  'editorial_news_pages',
+]);
 
 type TranslationModeSelected = "standard" | "faithful_layout" | "external_pdf";
 type TranslationPipelineSelected =
@@ -85,6 +92,7 @@ export async function POST(req: Request) {
       translationMode,
       translationPipeline,
       translationSelectionSource,
+      pageCount,
     } = await req.json();
 
     const normalizedTranslationMode = normalizeTranslationMode(translationMode);
@@ -146,13 +154,19 @@ export async function POST(req: Request) {
     );
 
     // ── Layer 1: Translation prompt ──
-    // Faithful path: operator forced blueprint OR pre-classified as structured family.
-    // Standard path: all other cases (plain-text output rules — unchanged).
-    const useFaithfulPrompt = forceBlueprintPipeline || preClassifiedAsStructured;
-    const systemPrompt = useFaithfulPrompt
-      ? buildFaithfulTranslationPrompt(sourceLanguage as TranslationLanguage)
-      : buildTranslationPrompt(sourceLanguage as TranslationLanguage);
-    const userMessage = buildUserMessage(sourceLangLabel, isPdf);
+    // Continuous-text path: pre-classified as a flowing-prose family (news, editorial, etc.).
+    //   Uses flowing-paragraph output rules — prevents table injection and sentence splitting.
+    // Faithful path: operator forced blueprint OR pre-classified as structured civil-registry family.
+    // Standard path: all other cases.
+    const preClassifiedAsContinuousText = CONTINUOUS_TEXT_DOCUMENT_TYPES.has(preClassification.documentType);
+    const useFaithfulPrompt = !preClassifiedAsContinuousText && (forceBlueprintPipeline || preClassifiedAsStructured);
+    const systemPrompt = preClassifiedAsContinuousText
+      ? buildContinuousTextTranslationPrompt(sourceLanguage as TranslationLanguage)
+      : useFaithfulPrompt
+        ? buildFaithfulTranslationPrompt(sourceLanguage as TranslationLanguage)
+        : buildTranslationPrompt(sourceLanguage as TranslationLanguage);
+    // pageCount from request body powers the density hint in the user message.
+    const userMessage = buildUserMessage(sourceLangLabel, isPdf, pageCount ?? undefined);
 
     // ── Build message content based on file type ──
     let messageContent: Anthropic.MessageParam["content"];
@@ -306,27 +320,48 @@ export async function POST(req: Request) {
     }
 
     // ── Layer 3: Sanitize for Gotenberg ──
-    // Structured path: faithful sanitizer — preserves tables, skips table flattening.
-    // Standard path: standard sanitizer — compacts layout for single-page density.
+    // Continuous-text path: standard sanitizer (flattens spurious tables, compacts layout).
+    //   Faithful sanitizer is intentionally NOT used here — it preserves tables, which
+    //   inflates page count for flowing prose documents.
+    // Faithful path: faithful sanitizer — preserves table structure for civil-registry forms.
+    // Standard path: standard sanitizer.
     const isFaithfulPath = pipeline === 'structured';
-    const translatedText = isFaithfulPath
+    const isContinuousTextPath = CONTINUOUS_TEXT_DOCUMENT_TYPES.has(classification.documentType);
+    let translatedText = isFaithfulPath && !isContinuousTextPath
       ? sanitizeTranslationHtmlFaithful(rawTranslation)
       : sanitizeTranslationHtml(rawTranslation);
 
-    // ── Page divergence signal ──
-    // Counts structural elements (<p> + <tr>) in the sanitized output.
-    // High counts indicate the translation may span more pages than the source.
+    // ── Early density guard ──
+    // For continuous-text families, merge adjacent over-split paragraphs before
+    // saving to the database. This prevents layout inflation from reaching the
+    // final parity check at kit generation.
+    // Heuristic: ~20 structural elements per page; compact if >2× expected count.
     const structuralElementCount =
       (translatedText.match(/<p[\s>]/gi) ?? []).length +
       (translatedText.match(/<tr[\s>]/gi) ?? []).length;
-    // Rough heuristic: ~20 elements per page. Flag if output looks like >5 pages.
     const pageDivergenceFlag = structuralElementCount > 100;
+
+    if (isContinuousTextPath && pageDivergenceFlag) {
+      const expectedElements = (pageCount ?? 1) * 20;
+      if (structuralElementCount > expectedElements * 2) {
+        translatedText = compactParagraphsForContinuousText(translatedText);
+        const compactedCount =
+          (translatedText.match(/<p[\s>]/gi) ?? []).length +
+          (translatedText.match(/<tr[\s>]/gi) ?? []).length;
+        console.log(
+          `[densityGuard] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+          `paragraph compaction applied: ${structuralElementCount} → ${compactedCount} structural elements ` +
+          `(expected ~${expectedElements} for ${pageCount ?? 1} page(s))`
+        );
+      }
+    }
 
     console.log(
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
       `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction) ` +
-      `faithfulPath=${isFaithfulPath} structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
+      `faithfulPath=${isFaithfulPath} continuousTextPath=${isContinuousTextPath} ` +
+      `structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
     );
 
     return NextResponse.json({
@@ -339,6 +374,7 @@ export async function POST(req: Request) {
       structuredPipelineForced: forceBlueprintPipeline,
       structuredPipelineFailed,
       faithfulPathUsed: isFaithfulPath,
+      continuousTextPathUsed: isContinuousTextPath,
       structuralElementCount,
       pageDivergenceFlag,
     });

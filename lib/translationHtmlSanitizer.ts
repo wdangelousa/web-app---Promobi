@@ -269,6 +269,48 @@ function collapseWhitespace(html: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DENSITY GUARD — paragraph compaction for continuous-text documents
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Merges adjacent over-split <p> elements for continuous-text translations
+ * (news, editorials, regulations, decrees). Runs up to 3 passes so sequences
+ * of 3–4 short paragraphs collapse into one denser paragraph.
+ *
+ * Rules:
+ * - Only merges when BOTH adjacent paragraphs have stripped text ≤ 150 chars.
+ * - Never merges heading paragraphs (<p><strong>ALL CAPS</strong></p>).
+ * - Merges stop when the combined stripped length would exceed 300 chars.
+ */
+export function compactParagraphsForContinuousText(html: string): string {
+  const MERGE_THRESHOLD = 150; // chars — both paragraphs must be ≤ this
+  const MERGE_CEILING = 300;   // chars — don't merge if combined would exceed this
+
+  let result = html;
+  for (let pass = 0; pass < 3; pass++) {
+    result = result.replace(
+      /<p>([\s\S]*?)<\/p>(\s*)<p>([\s\S]*?)<\/p>/g,
+      (_match, a: string, ws: string, b: string) => {
+        const aStripped = a.replace(/<[^>]+>/g, '').trim();
+        const bStripped = b.replace(/<[^>]+>/g, '').trim();
+        const aIsHeading = /^<strong>[^<]+<\/strong>$/i.test(a.trim());
+        const bIsHeading = /^<strong>[^<]+<\/strong>$/i.test(b.trim());
+        if (
+          !aIsHeading && !bIsHeading &&
+          aStripped.length <= MERGE_THRESHOLD &&
+          bStripped.length <= MERGE_THRESHOLD &&
+          aStripped.length + bStripped.length <= MERGE_CEILING
+        ) {
+          return `<p>${a.trim()} ${b.trim()}</p>`;
+        }
+        return `<p>${a}</p>${ws}<p>${b}</p>`;
+      },
+    );
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 

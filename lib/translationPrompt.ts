@@ -372,6 +372,72 @@ Do NOT include HTML tags — output plain text only.
 Output ONLY the translated content.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CONTINUOUS TEXT — HTML output rules for flowing documents (news, editorials,
+// regulations, decrees, declarations). Replaces OUTPUT_RULES for these families.
+// Prevents analytical sectioning, table injection, and per-sentence splitting.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CONTINUOUS_TEXT_OUTPUT_RULES = `OUTPUT FORMAT — CONTINUOUS TEXT LAYOUT:
+
+Output the translation as valid HTML, preserving the original document's flowing paragraph structure. This document is continuous prose (news article, editorial, regulation, decree, or similar) — NOT a structured form with label-value fields.
+
+BODY TEXT — preserve as flowing paragraphs:
+  <p>Paragraph text goes here. Multiple sentences may appear in one paragraph.</p>
+  Keep related sentences within the same <p>. Do NOT split individual sentences or clauses into separate <p> elements.
+  Match the source document's paragraph density as closely as possible.
+
+HEADINGS — reproduce only headings that visibly appear in the source:
+  <p><strong>ARTICLE HEADLINE OR SECTION HEADING</strong></p>
+  Do NOT add analytical headings, summary labels, or section titles that do not appear in the original.
+  Do NOT wrap every paragraph in a heading.
+
+NO TABLES for body content:
+  Do not convert continuous prose into label-value tables or grids.
+  Only use <table> if the original document contains a visible data table or structured grid.
+
+BYLINES, DATES, CAPTIONS — each on its own <p>:
+  <p>By Author Name — Publication, Month DD, YYYY</p>
+  <p>[Photo caption text here]</p>
+
+CRITICAL — DO NOT:
+- Split flowing prose into per-sentence <p> elements
+- Add explanatory section headings not present in the original
+- Add glossary blocks, summary boxes, or analytical wrappers
+- Convert quoted speech or dense text into bullet lists or tables
+- Expand the content beyond what is written in the source
+- Reorder or restructure article sections
+
+Output valid HTML only — no markdown, no code fences, no commentary.`;
+
+/**
+ * Continuous-text prompt variant — for flowing prose documents such as news
+ * articles, editorials, regulations, decrees, and simple declarations.
+ * Uses all the same translation fidelity rules but instructs Claude to output
+ * flowing HTML paragraphs instead of table-centric or field-block layout.
+ */
+export function buildContinuousTextTranslationPrompt(sourceLanguage: TranslationLanguage): string {
+  const isPtBr = sourceLanguage === 'PT_BR' || sourceLanguage === 'pt';
+  const sourceLangLabel = isPtBr ? 'Brazilian Portuguese' : 'Spanish';
+  const domainExpertise = isPtBr ? PT_BR_EXPERTISE : ES_EXPERTISE;
+
+  return `You are Promobidocs' certified translation specialist. You translate from ${sourceLangLabel} to English (United States) for USCIS immigration filings, academic credential evaluations, and official legal proceedings.
+
+${CORE_STANDARDS}
+
+${DOCUMENTARY_FIDELITY}
+
+${BRACKET_NOTATION}
+
+${NON_TEXTUAL_ELEMENTS}
+
+${TAX_CONFIDENTIALITY_POLICY}
+
+${domainExpertise}
+
+${CONTINUOUS_TEXT_OUTPUT_RULES}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FAITHFUL LAYOUT — HTML output rules (replaces OUTPUT_RULES for faithful path)
 // Used by buildFaithfulTranslationPrompt. All translation fidelity rules above
 // still apply; only the output format changes.
