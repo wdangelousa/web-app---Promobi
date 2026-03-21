@@ -182,6 +182,33 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       print-color-adjust: exact;
     }
 
+    /* Paragraph margin reset ────────────────────────────────────────────────────
+       Browser/Chromium print default is margin: 1em 0 which at body font-size
+       10px = 20px (≈ 0.21in) of extra spacing per paragraph.  Without this reset
+       a 10-paragraph certificate adds ~2in of whitespace — enough to push the
+       translated output onto a second page.
+       Certificate layout overrides this with .cert-layout .conteudo-principal p
+       (higher specificity, centred margin).  Header paragraphs (.header-titulos p)
+       override via their own rule defined below. */
+    p {
+      margin: 2pt 0;
+    }
+
+    /* Translator-note blocks: compact, muted — preserve the note but do not
+       let it consume meaningful layout space on a tight single page. */
+    .translator-note-block {
+      font-size: 7.5px;
+      color: #555;
+      line-height: 1.2;
+      font-style: italic;
+    }
+
+    span.translator-note {
+      font-size: 0.75em;
+      color: #555;
+      font-style: italic;
+    }
+
     ${isCertLayout ? buildCertificateLayoutCss(isLandscape) : ''}
 
     .header-timbrado {

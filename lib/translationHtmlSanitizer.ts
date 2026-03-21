@@ -311,6 +311,41 @@ export function compactParagraphsForContinuousText(html: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TRANSLATOR-NOTE COMPACTION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Detects <p> elements whose text content begins with a translator-note bracket
+ * (e.g. "[TRANSLATOR'S NOTE: …]", "[Nota do Tradutor: …]") and adds the CSS
+ * class "translator-note-block" so the faithful-light template can render them
+ * at a compact 7.5px italic font instead of the standard body size.
+ *
+ * Preserves the note content — does not strip it.
+ * Must be called after sanitizeTranslationHtml so content is already in <p>s.
+ */
+export function compactTranslatorNoteParagraphs(html: string): string {
+  const NOTE_START_PATTERNS = [
+    /^\[translator['']?s?\s+note/i,
+    /^\[nota do tradutor/i,
+    /^\[translation note/i,
+    /^\[note:/i,
+    /^\[obs(?:erva[cç][aã]o)?:/i,
+  ];
+
+  return html.replace(/<p(?:\s[^>]*)?>[\s\S]*?<\/p>/gi, (match) => {
+    if (/class="[^"]*translator-note-block/.test(match)) return match;
+    const text = match.replace(/<[^>]+>/g, '').trim();
+    if (!NOTE_START_PATTERNS.some((p) => p.test(text))) return match;
+    return match.replace(/^<p(\s[^>]*)?>/, (_tag, attrs) => {
+      if (!attrs) return '<p class="translator-note-block">';
+      if (/class="/.test(attrs))
+        return `<p${attrs.replace(/class="([^"]*)"/, 'class="$1 translator-note-block"')}>`;
+      return `<p${attrs} class="translator-note-block">`;
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 

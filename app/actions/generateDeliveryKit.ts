@@ -19,7 +19,7 @@ import {
 import { resolveDocumentTypeModality } from "@/services/documentFamilyRegistry";
 import { buildPageLayoutBudget, buildPreRenderLayoutHints } from "@/lib/parityRecovery";
 import { resolveSinglePageRouting, isCertificateGenreDocumentType } from "@/lib/singlePageSafeguard";
-import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
+import { sanitizeTranslationHtml, compactParagraphsForContinuousText, compactTranslatorNoteParagraphs } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
   getPageParityRegistryRecord,
@@ -295,6 +295,10 @@ export async function generateDeliveryKit(
         let faithfulLightHtml: string | null = null;
 
         const modality = resolveDocumentTypeModality(classification.documentType);
+        // kitModality tracks the effective modality for the kit buffer call.
+        // When the faithful-light path is used (safeguard, fallback, or retry),
+        // this is overridden to 'faithful' so parity recovery activates.
+        let kitModality: 'standard' | 'faithful' | 'external_pdf' = modality;
         // Phase 2 prep: pre-render layout hints passed to the renderer so it
         // can eventually pre-optimise layout before the first Gotenberg pass.
         const layoutHints =
@@ -325,13 +329,14 @@ export async function generateDeliveryKit(
           const faithfulText = doc.translatedText?.trim() ?? null;
           if (faithfulText !== null && faithfulText.length > 50) {
             htmlForKit = buildTranslatedPageHtml({
-              translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+              translatedHtml: compactTranslatorNoteParagraphs(compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText))),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
               layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
             });
             rendererNameForKit = 'faithful_light_safeguard';
             faithfulLightHtml = htmlForKit;
+            kitModality = 'faithful';
           } else {
             return {
               success: false,
@@ -411,13 +416,14 @@ export async function generateDeliveryKit(
                 `for "${classification.documentType}" (modality: ${modality}, reason: ${renderErr.message.slice(0, 120)})`,
               );
               htmlForKit = buildTranslatedPageHtml({
-                translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+                translatedHtml: compactTranslatorNoteParagraphs(compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText))),
                 documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
                 orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
                 layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
               });
               rendererNameForKit = 'faithful_light_fallback';
               faithfulLightHtml = htmlForKit;
+              kitModality = 'faithful';
               // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
             } else {
               throw renderErr;  // re-thrown → caught by outer catch → formatStructuredRenderingFailureMessage
@@ -444,7 +450,7 @@ export async function generateDeliveryKit(
           originalContentType: contentType,
           documentFamily: familyForKit,
           rendererName: rendererNameForKit,
-          modality: resolveDocumentTypeModality(classification.documentType),
+          modality: kitModality,
           surface: preview ? "preview-kit" : "delivery-kit",
           compactionAttempted: false,
           languageIntegrity: languageIntegrityForKit,
@@ -468,7 +474,7 @@ export async function generateDeliveryKit(
               `for "${classification.documentType}", retrying with faithful-light`,
             );
             const retryHtml = buildTranslatedPageHtml({
-              translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+              translatedHtml: compactTranslatorNoteParagraphs(compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText))),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
               layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
@@ -493,7 +499,7 @@ export async function generateDeliveryKit(
               originalContentType: contentType,
               documentFamily: classification.documentType,
               rendererName: 'faithful_light_expansion_retry',
-              modality: resolveDocumentTypeModality(classification.documentType),
+              modality: 'faithful',
               surface: preview ? "preview-kit" : "delivery-kit",
               compactionAttempted: false,
               languageIntegrity: languageIntegrityForKit,
