@@ -306,6 +306,8 @@ export interface StructuredPreviewKitResult {
   blockingReason?: string;
   certificationGenerationBlocked?: boolean;
   releaseBlocked?: boolean;
+  /** True when source had exactly 1 page and the translated render produced 2+ pages. */
+  singlePageExpansionDetected?: boolean;
 }
 
 export interface PageParityDiagnostic {
@@ -364,6 +366,12 @@ export interface StructuredKitBuildResult {
   parityDecisionRequired?: boolean;
   parityDecisionContext?: PageParityDecisionContext;
   diagnostics?: PageParityDiagnostic;
+  /**
+   * True when source had exactly 1 page and the translated render produced 2+
+   * pages. Callers should retry with faithful-light before surfacing the
+   * parity decision modal.
+   */
+  singlePageExpansionDetected?: boolean;
 }
 
 // ── Local fallback helper ─────────────────────────────────────────────────────
@@ -1920,6 +1928,18 @@ export async function buildStructuredKitBuffer(
 
     log(`translated pages: ${translatedPageCount}`);
 
+    const singlePageExpansionDetected =
+      typeof input.sourcePageCount === 'number' &&
+      input.sourcePageCount === 1 &&
+      translatedPageCount > 1;
+
+    if (singlePageExpansionDetected) {
+      log(
+        `single_page_expansion_detected: source=1 translated=${translatedPageCount} ` +
+        `overflow=${translatedPageCount - 1} renderer=${input.rendererName ?? 'unknown'}`,
+      );
+    }
+
     let originalPdfDocForAssembly: PDFDocument | null = null;
     let extractedPdfPageCount: number | null = null;
 
@@ -2026,6 +2046,7 @@ export async function buildStructuredKitBuffer(
         pageParityMode: parityEvaluation.mode,
         parityDecisionRequired: true,
         parityDecisionContext: parityEvaluation.decisionContext,
+        singlePageExpansionDetected,
         diagnostics,
       };
     }
@@ -2048,6 +2069,7 @@ export async function buildStructuredKitBuffer(
         translatedPageCount,
         parityStatus: 'fail',
         pageParityMode: parityEvaluation.mode,
+        singlePageExpansionDetected,
         diagnostics,
       };
     }
@@ -2251,6 +2273,7 @@ export async function assembleStructuredPreviewKit(
     result.certificationGenerationBlocked =
       buildResult.diagnostics?.certification_generation_blocked ?? false;
     result.releaseBlocked = buildResult.diagnostics?.release_blocked ?? false;
+    result.singlePageExpansionDetected = buildResult.singlePageExpansionDetected ?? false;
 
     if (!buildResult.success || !buildResult.kitBuffer) {
       log(`kit assembly failed`);

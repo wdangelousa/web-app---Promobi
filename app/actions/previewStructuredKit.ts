@@ -46,6 +46,7 @@ import {
 } from '@/services/structuredDocumentRenderer';
 import { resolveDocumentTypeModality } from '@/services/documentFamilyRegistry';
 import { buildPageLayoutBudget, buildPreRenderLayoutHints } from '@/lib/parityRecovery';
+import { resolveSinglePageRouting } from '@/lib/singlePageSafeguard';
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
@@ -527,6 +528,49 @@ export async function previewStructuredKit(
           )
         : undefined;
 
+    // ── Single-page routing safeguard ─────────────────────────────────────────
+    // For sourcePageCount === 1, structured AI is blocked by default because it
+    // frequently expands 1-page docs to 2+ pages, forcing parity conflicts.
+    // Only whitelisted document types (field-heavy forms, dedicated cert renderers)
+    // are allowed to use structured AI for single-page sources.
+    const singlePageRouting = resolveSinglePageRouting(
+      classification.documentType,
+      sourcePageCount,
+    );
+    const singlePageSafeguardApplied = singlePageRouting === 'safeguard_blocked';
+
+    if (singlePageSafeguardApplied) {
+      console.log(
+        `${logPrefix} — single_page_routing: source_page_count=1 ` +
+        `structured_ai_blocked=true renderer_chosen=faithful_light_safeguard ` +
+        `document_type=${classification.documentType}`,
+      );
+      const faithfulText = effectiveTranslatedText?.trim() ?? null;
+      if (faithfulText !== null && faithfulText.length > 50) {
+        structuredHtml = buildTranslatedPageHtml({
+          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+        });
+        resolvedFamilyForKit = classification.documentType;
+        resolvedRendererForKit = 'faithful_light_safeguard';
+        // orientationForKit and resolvedLanguageIntegrityForKit keep their defaults
+      } else {
+        return {
+          success: false,
+          error:
+            `Single-page safeguard blocked structured AI for "${classification.documentType}" ` +
+            `but no translated text is available for faithful-light rendering.`,
+        };
+      }
+    } else {
+      if (singlePageRouting === 'structured_ai_allowed') {
+        console.log(
+          `${logPrefix} — single_page_routing: source_page_count=1 ` +
+          `structured_ai_blocked=false (whitelisted) document_type=${classification.documentType}`,
+        );
+      }
+
     try {
       const renderAssertion = assertStructuredClientFacingRender({
         documentType: classification.documentType,
@@ -611,6 +655,7 @@ export async function previewStructuredKit(
         };
       }
     }
+    } // end: else (not singlePageSafeguardApplied)
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
 
@@ -643,14 +688,125 @@ export async function previewStructuredKit(
       pageParityDecision: effectivePageParityDecision,
     });
 
-    if (!kit.assembled) {
-      if (kit.parityDecisionRequired && kit.parityDecisionContext) {
+    // ── Single-page expansion retry ──────────────────────────────────────────
+    // If the initial render (structured AI or its fallback) expanded a 1-page
+    // source doc to 2+ translated pages, automatically retry with faithful-light
+    // before surfacing the parity decision modal. The modal is a last resort.
+    let activeKit = kit;
+    if (
+      !activeKit.assembled &&
+      sourcePageCount === 1 &&
+      !singlePageSafeguardApplied &&
+      (activeKit.singlePageExpansionDetected || (activeKit.translatedPageCount ?? 0) > 1)
+    ) {
+      const faithfulText = effectiveTranslatedText?.trim() ?? null;
+      if (faithfulText !== null && faithfulText.length > 50) {
+        console.log(
+          `${logPrefix} — single_page_expansion_retry: structured AI expanded 1→${activeKit.translatedPageCount ?? '?'} pages ` +
+          `for "${classification.documentType}", retrying with faithful-light`,
+        );
+        const retryHtml = buildTranslatedPageHtml({
+          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+        });
+        const retryKit = await assembleStructuredPreviewKit({
+          structuredHtml: retryHtml,
+          originalFileBuffer,
+          isOriginalPdf,
+          orderId,
+          documentId,
+          sourceLanguage: doc.sourceLanguage ?? 'pt',
+          targetLanguage: resolvedLanguageIntegrityForKit.targetLanguage,
+          coverVariant,
+          documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
+          sourcePageCount,
+          sourceArtifactType,
+          sourcePageCountStrategy,
+          groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
+          originalFileUrl: doc.originalFileUrl,
+          originalContentType: contentType,
+          orientation: detectedOrientation === 'landscape' ? 'landscape' : undefined,
+          documentFamily: classification.documentType,
+          rendererName: 'faithful_light_expansion_retry',
+          modality: resolveDocumentTypeModality(classification.documentType),
+          surface: 'preview-kit',
+          compactionAttempted: false,
+          languageIntegrity: resolvedLanguageIntegrityForKit,
+          pageParityDecision: effectivePageParityDecision,
+        });
+
+        const retryStayedSinglePage = (retryKit.translatedPageCount ?? 0) <= 1;
+        console.log(
+          `${logPrefix} — single_page_routing: source_page_count=1 ` +
+          `structured_ai_blocked=false rerouted=true ` +
+          `final_output_single_page=${retryStayedSinglePage} ` +
+          `document_type=${classification.documentType}`,
+        );
+
+        if (retryKit.assembled) {
+          if (requestedParityDecision) {
+            const nextMetadata = upsertPageParityRegistryRecord(
+              parsedOrderMetadata,
+              doc.id,
+              {
+                mode: requestedParityDecision.mode,
+                sourcePhysicalPageCount:
+                  retryKit.sourcePhysicalPageCount ?? retryKit.sourcePageCount ?? sourcePageCount ?? null,
+                sourceRelevantPageCount:
+                  retryKit.sourceRelevantPageCount ??
+                  requestedParityDecision.sourceRelevantPageCount ??
+                  (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
+                translatedPageCount: retryKit.translatedPageCount ?? null,
+                status:
+                  requestedParityDecision.mode === 'strict_all_pages'
+                    ? 'strict_enforced'
+                    : 'approved_by_user',
+                justification: requestedParityDecision.justification ?? null,
+                approvedByUserId:
+                  explicitParityDecision?.approvedByUserId ?? currentUser?.email ?? null,
+                approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
+                sourceArtifactType: sourceArtifactType ?? null,
+                sourcePageCountStrategy: sourcePageCountStrategy ?? null,
+                translationArtifactSource: 'faithful_light_internal',
+              },
+            );
+            await prisma.order.update({
+              where: { id: orderId },
+              data: { metadata: JSON.stringify(nextMetadata) },
+            });
+          }
+          return {
+            success: true,
+            previewUrl: retryKit.kitUrl ?? retryKit.kitLocalPath ?? undefined,
+            resolvedPageParity: {
+              mode: retryKit.pageParityMode ?? 'strict_all_pages',
+              sourcePhysicalPageCount:
+                retryKit.sourcePhysicalPageCount ?? retryKit.sourcePageCount ?? null,
+              sourceRelevantPageCount: retryKit.sourceRelevantPageCount ?? null,
+              translatedPageCount: retryKit.translatedPageCount ?? null,
+            },
+          };
+        }
+
+        // Retry also failed — fall through to parity modal as last resort.
+        activeKit = retryKit;
+      }
+    }
+
+    if (!activeKit.assembled) {
+      if (activeKit.parityDecisionRequired && activeKit.parityDecisionContext) {
         return {
           success: false,
           parityDecisionRequired: true,
           parityDecision: {
-            ...kit.parityDecisionContext,
-            translationArtifactSource: resolvedRendererForKit === 'faithful_light_fallback' ? 'faithful_light_internal' : artifactSelection.source,
+            ...activeKit.parityDecisionContext,
+            translationArtifactSource:
+              resolvedRendererForKit === 'faithful_light_fallback' ||
+              resolvedRendererForKit === 'faithful_light_safeguard' ||
+              resolvedRendererForKit === 'faithful_light_expansion_retry'
+                ? 'faithful_light_internal'
+                : artifactSelection.source,
           },
           error:
             'Diferença de páginas detectada. Revise as contagens e escolha um modo de paridade para continuar.',
@@ -658,13 +814,13 @@ export async function previewStructuredKit(
       }
 
       const parityDetail =
-        kit.blockingReason === 'page_parity_mismatch'
-          ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
-          : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
+        activeKit.blockingReason === 'page_parity_mismatch'
+          ? ` Page parity failed: source=${activeKit.sourcePageCount ?? 'unknown'}, translated=${activeKit.translatedPageCount ?? 'unknown'}.`
+          : activeKit.blockingReason === 'page_parity_unverifiable_source_page_count'
             ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
-            : kit.blockingReason === 'page_parity_manual_override_requires_justification'
+            : activeKit.blockingReason === 'page_parity_manual_override_requires_justification'
               ? ' Page parity failed: manual override requires a textual justification.'
-            : kit.blockingReason === 'translated_zone_content_missing_or_source_language_detected'
+            : activeKit.blockingReason === 'translated_zone_content_missing_or_source_language_detected'
               ? ' Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.'
             : '';
       return {
@@ -684,12 +840,12 @@ export async function previewStructuredKit(
         {
           mode: requestedParityDecision.mode,
           sourcePhysicalPageCount:
-            kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? sourcePageCount ?? null,
+            activeKit.sourcePhysicalPageCount ?? activeKit.sourcePageCount ?? sourcePageCount ?? null,
           sourceRelevantPageCount:
-            kit.sourceRelevantPageCount ??
+            activeKit.sourceRelevantPageCount ??
             requestedParityDecision.sourceRelevantPageCount ??
             (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
-          translatedPageCount: kit.translatedPageCount ?? null,
+          translatedPageCount: activeKit.translatedPageCount ?? null,
           status:
             requestedParityDecision.mode === 'strict_all_pages'
               ? 'strict_enforced'
@@ -700,7 +856,12 @@ export async function previewStructuredKit(
           approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
           sourceArtifactType: sourceArtifactType ?? null,
           sourcePageCountStrategy: sourcePageCountStrategy ?? null,
-          translationArtifactSource: resolvedRendererForKit === 'faithful_light_fallback' ? 'faithful_light_internal' : artifactSelection.source,
+          translationArtifactSource:
+            resolvedRendererForKit === 'faithful_light_fallback' ||
+            resolvedRendererForKit === 'faithful_light_safeguard' ||
+            resolvedRendererForKit === 'faithful_light_expansion_retry'
+              ? 'faithful_light_internal'
+              : artifactSelection.source,
         },
       );
       await prisma.order.update({
@@ -709,15 +870,26 @@ export async function previewStructuredKit(
       });
     }
 
+    const finalOutputSinglePage = sourcePageCount === 1 && (activeKit.translatedPageCount ?? 0) <= 1;
+    if (sourcePageCount === 1) {
+      console.log(
+        `${logPrefix} — single_page_routing: source_page_count=1 ` +
+        `structured_ai_blocked=${singlePageSafeguardApplied} ` +
+        `rerouted=${!singlePageSafeguardApplied && resolvedRendererForKit === 'faithful_light_expansion_retry'} ` +
+        `final_output_single_page=${finalOutputSinglePage} ` +
+        `renderer=${resolvedRendererForKit} document_type=${classification.documentType}`,
+      );
+    }
+
     return {
       success: true,
-      previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+      previewUrl: activeKit.kitUrl ?? activeKit.kitLocalPath ?? undefined,
       resolvedPageParity: {
-        mode: kit.pageParityMode ?? 'strict_all_pages',
+        mode: activeKit.pageParityMode ?? 'strict_all_pages',
         sourcePhysicalPageCount:
-          kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
-        sourceRelevantPageCount: kit.sourceRelevantPageCount ?? null,
-        translatedPageCount: kit.translatedPageCount ?? null,
+          activeKit.sourcePhysicalPageCount ?? activeKit.sourcePageCount ?? null,
+        sourceRelevantPageCount: activeKit.sourceRelevantPageCount ?? null,
+        translatedPageCount: activeKit.translatedPageCount ?? null,
       },
     };
   } catch (err: any) {

@@ -18,6 +18,7 @@ import {
 } from "@/services/structuredDocumentRenderer";
 import { resolveDocumentTypeModality } from "@/services/documentFamilyRegistry";
 import { buildPageLayoutBudget, buildPreRenderLayoutHints } from "@/lib/parityRecovery";
+import { resolveSinglePageRouting } from "@/lib/singlePageSafeguard";
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
@@ -304,79 +305,117 @@ export async function generateDeliveryKit(
               )
             : undefined;
 
-        try {
-          const renderAssertion = assertStructuredClientFacingRender({
-            documentType: classification.documentType,
-            documentLabel: documentLabelHint,
-            fileUrl: doc.originalFileUrl,
-            translatedText: doc.translatedText,
-            detectedOrientation,
-            surface: "delivery-kit",
-            logPrefix,
-          });
+        // ── Single-page routing safeguard ──────────────────────────────────
+        const singlePageRouting = resolveSinglePageRouting(
+          classification.documentType,
+          sourcePageCount,
+        );
+        const singlePageSafeguardApplied = singlePageRouting === 'safeguard_blocked';
 
-          const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-          const resolved = await renderStructuredFamilyDocument({
-            client,
-            family: renderAssertion.family,
-            documentType: renderAssertion.documentType,
-            originalFileBuffer,
-            originalFileUrl: doc.originalFileUrl,
-            contentType,
-            sourcePageCount,
-            detectedOrientation,
-            orderId,
-            documentId,
-            sourceLanguage: doc.sourceLanguage ?? null,
-            targetLanguage: 'EN',
-            logPrefix,
-            layoutHints,
-            documentTypeLabel: documentLabelHint,
-          });
-
-          htmlForKit = resolved.structuredHtml;
-          orientationForKit = resolved.orientationForKit;
-          familyForKit = renderAssertion.family;
-          rendererNameForKit = resolved.rendererName;
-          languageIntegrityForKit = resolved.languageIntegrity;
-
+        if (singlePageSafeguardApplied) {
           console.log(
-            `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
-              `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
-              `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
-              `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
-              `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
-              `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
-              `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
-              `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
-              `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
-              `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
-              `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
-              `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
+            `${logPrefix} — single_page_routing: source_page_count=1 ` +
+            `structured_ai_blocked=true renderer_chosen=faithful_light_safeguard ` +
+            `document_type=${classification.documentType}`,
           );
-        } catch (renderErr) {
           const faithfulText = doc.translatedText?.trim() ?? null;
-          if (
-            renderErr instanceof StructuredRenderingRequiredError &&
-            (modality === 'standard' || modality === 'faithful') &&
-            faithfulText !== null &&
-            faithfulText.length > 50
-          ) {
-            console.log(
-              `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
-              `for "${classification.documentType}" (modality: ${modality}, reason: ${renderErr.message.slice(0, 120)})`,
-            );
+          if (faithfulText !== null && faithfulText.length > 50) {
             htmlForKit = buildTranslatedPageHtml({
               translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
             });
-            rendererNameForKit = 'faithful_light_fallback';
-            // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
+            rendererNameForKit = 'faithful_light_safeguard';
           } else {
-            throw renderErr;  // re-thrown → caught by outer catch → formatStructuredRenderingFailureMessage
+            return {
+              success: false,
+              error:
+                `Single-page safeguard blocked structured AI for "${classification.documentType}" ` +
+                `but no translated text is available for faithful-light rendering.`,
+            };
           }
-        }
+        } else {
+          if (singlePageRouting === 'structured_ai_allowed') {
+            console.log(
+              `${logPrefix} — single_page_routing: source_page_count=1 ` +
+              `structured_ai_blocked=false (whitelisted) document_type=${classification.documentType}`,
+            );
+          }
+
+          try {
+            const renderAssertion = assertStructuredClientFacingRender({
+              documentType: classification.documentType,
+              documentLabel: documentLabelHint,
+              fileUrl: doc.originalFileUrl,
+              translatedText: doc.translatedText,
+              detectedOrientation,
+              surface: "delivery-kit",
+              logPrefix,
+            });
+
+            const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+            const resolved = await renderStructuredFamilyDocument({
+              client,
+              family: renderAssertion.family,
+              documentType: renderAssertion.documentType,
+              originalFileBuffer,
+              originalFileUrl: doc.originalFileUrl,
+              contentType,
+              sourcePageCount,
+              detectedOrientation,
+              orderId,
+              documentId,
+              sourceLanguage: doc.sourceLanguage ?? null,
+              targetLanguage: 'EN',
+              logPrefix,
+              layoutHints,
+              documentTypeLabel: documentLabelHint,
+            });
+
+            htmlForKit = resolved.structuredHtml;
+            orientationForKit = resolved.orientationForKit;
+            familyForKit = renderAssertion.family;
+            rendererNameForKit = resolved.rendererName;
+            languageIntegrityForKit = resolved.languageIntegrity;
+
+            console.log(
+              `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
+                `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? "n/a"} | ` +
+                `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
+                `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
+                `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
+                `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
+                `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
+                `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
+                `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
+                `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
+                `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
+                `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`
+            );
+          } catch (renderErr) {
+            const faithfulText = doc.translatedText?.trim() ?? null;
+            if (
+              renderErr instanceof StructuredRenderingRequiredError &&
+              (modality === 'standard' || modality === 'faithful') &&
+              faithfulText !== null &&
+              faithfulText.length > 50
+            ) {
+              console.log(
+                `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
+                `for "${classification.documentType}" (modality: ${modality}, reason: ${renderErr.message.slice(0, 120)})`,
+              );
+              htmlForKit = buildTranslatedPageHtml({
+                translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+                documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+                orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+              });
+              rendererNameForKit = 'faithful_light_fallback';
+              // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
+            } else {
+              throw renderErr;  // re-thrown → caught by outer catch → formatStructuredRenderingFailureMessage
+            }
+          }
+        } // end: else (not singlePageSafeguardApplied)
 
         const buildResult = await buildStructuredKitBuffer({
           structuredHtml: htmlForKit,
@@ -404,19 +443,86 @@ export async function generateDeliveryKit(
           pageParityDecision: storedPageParityDecision,
         });
 
-        if (!buildResult.success || !buildResult.kitBuffer) {
+        // ── Single-page expansion retry ────────────────────────────────────
+        // If structured AI expanded a 1-page source to 2+ pages, retry with
+        // faithful-light before returning an error. Parity modal is a last resort.
+        let activeBuildResult = buildResult;
+        if (
+          (!activeBuildResult.success || !activeBuildResult.kitBuffer) &&
+          sourcePageCount === 1 &&
+          !singlePageSafeguardApplied &&
+          (activeBuildResult.singlePageExpansionDetected || (activeBuildResult.translatedPageCount ?? 0) > 1)
+        ) {
+          const faithfulText = doc.translatedText?.trim() ?? null;
+          if (faithfulText !== null && faithfulText.length > 50) {
+            console.log(
+              `${logPrefix} — single_page_expansion_retry: structured AI expanded 1→${activeBuildResult.translatedPageCount ?? '?'} pages ` +
+              `for "${classification.documentType}", retrying with faithful-light`,
+            );
+            const retryHtml = buildTranslatedPageHtml({
+              translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+              documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+              orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+            });
+            activeBuildResult = await buildStructuredKitBuffer({
+              structuredHtml: retryHtml,
+              originalFileBuffer,
+              isOriginalPdf,
+              orderId,
+              documentId,
+              sourceLanguage: doc.sourceLanguage ?? undefined,
+              targetLanguage: languageIntegrityForKit.targetLanguage,
+              coverVariant,
+              orientation: detectedOrientation === "landscape" ? "landscape" : undefined,
+              documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? "Document",
+              sourcePageCount,
+              sourceArtifactType,
+              sourcePageCountStrategy,
+              groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
+              originalFileUrl: doc.originalFileUrl,
+              originalContentType: contentType,
+              documentFamily: classification.documentType,
+              rendererName: 'faithful_light_expansion_retry',
+              modality: resolveDocumentTypeModality(classification.documentType),
+              surface: preview ? "preview-kit" : "delivery-kit",
+              compactionAttempted: false,
+              languageIntegrity: languageIntegrityForKit,
+              pageParityDecision: storedPageParityDecision,
+            });
+
+            const retryStayedSinglePage = (activeBuildResult.translatedPageCount ?? 0) <= 1;
+            console.log(
+              `${logPrefix} — single_page_routing: source_page_count=1 ` +
+              `structured_ai_blocked=false rerouted=true ` +
+              `final_output_single_page=${retryStayedSinglePage} ` +
+              `document_type=${classification.documentType}`,
+            );
+          }
+        }
+
+        if (!activeBuildResult.success || !activeBuildResult.kitBuffer) {
           const parityDetail =
-            buildResult.blockingReason === "page_parity_mismatch"
-              ? ` Page parity failed: source=${buildResult.sourcePageCount ?? "unknown"}, translated=${buildResult.translatedPageCount ?? "unknown"}.`
-              : buildResult.blockingReason === "page_parity_unverifiable_source_page_count"
+            activeBuildResult.blockingReason === "page_parity_mismatch"
+              ? ` Page parity failed: source=${activeBuildResult.sourcePageCount ?? "unknown"}, translated=${activeBuildResult.translatedPageCount ?? "unknown"}.`
+              : activeBuildResult.blockingReason === "page_parity_unverifiable_source_page_count"
                 ? " Page parity failed: source page count is unavailable, so parity cannot be verified."
-                : buildResult.blockingReason === "page_parity_decision_required"
+                : activeBuildResult.blockingReason === "page_parity_decision_required"
                   ? " Page parity requires explicit decision. Open Preview Kit, choose the parity mode, and retry."
-                  : buildResult.blockingReason === "page_parity_manual_override_requires_justification"
+                  : activeBuildResult.blockingReason === "page_parity_manual_override_requires_justification"
                     ? " Page parity failed: manual override requires a textual justification."
-                : buildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
+                : activeBuildResult.blockingReason === "translated_zone_content_missing_or_source_language_detected"
                   ? " Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface."
                 : "";
+
+          if (sourcePageCount === 1) {
+            console.log(
+              `${logPrefix} — single_page_routing: source_page_count=1 ` +
+              `structured_ai_blocked=${singlePageSafeguardApplied} ` +
+              `rerouted=false final_output_single_page=false ` +
+              `document_type=${classification.documentType}`,
+            );
+          }
+
           return {
             success: false,
             error:
@@ -427,7 +533,18 @@ export async function generateDeliveryKit(
           };
         }
 
-        finalPdfBuffer = buildResult.kitBuffer;
+        if (sourcePageCount === 1) {
+          const finalOutputSinglePage = (activeBuildResult.translatedPageCount ?? 0) <= 1;
+          console.log(
+            `${logPrefix} — single_page_routing: source_page_count=1 ` +
+            `structured_ai_blocked=${singlePageSafeguardApplied} ` +
+            `rerouted=${!singlePageSafeguardApplied && rendererNameForKit === 'faithful_light_expansion_retry'} ` +
+            `final_output_single_page=${finalOutputSinglePage} ` +
+            `document_type=${classification.documentType}`,
+          );
+        }
+
+        finalPdfBuffer = activeBuildResult.kitBuffer;
       }
     } catch (err) {
       return {
