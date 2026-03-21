@@ -17,6 +17,7 @@ import {
   StructuredRenderingRequiredError,
 } from "@/services/structuredDocumentRenderer";
 import { resolveDocumentTypeModality } from "@/services/documentFamilyRegistry";
+import { buildPageLayoutBudget, buildPreRenderLayoutHints } from "@/lib/parityRecovery";
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
@@ -288,6 +289,21 @@ export async function generateDeliveryKit(
         let languageIntegrityForKit: StructuredRenderLanguageIntegrity =
           buildExternalOverrideLanguageIntegrity(doc.sourceLanguage ?? null);
 
+        const modality = resolveDocumentTypeModality(classification.documentType);
+        // Phase 2 prep: pre-render layout hints passed to the renderer so it
+        // can eventually pre-optimise layout before the first Gotenberg pass.
+        const layoutHints =
+          modality === 'faithful' &&
+          sourcePageCount != null &&
+          sourcePageCount > 0
+            ? buildPreRenderLayoutHints(
+                buildPageLayoutBudget(
+                  sourcePageCount,
+                  detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+                ),
+              )
+            : undefined;
+
         try {
           const renderAssertion = assertStructuredClientFacingRender({
             documentType: classification.documentType,
@@ -314,6 +330,7 @@ export async function generateDeliveryKit(
             sourceLanguage: doc.sourceLanguage ?? null,
             targetLanguage: 'EN',
             logPrefix,
+            layoutHints,
           });
 
           htmlForKit = resolved.structuredHtml;
@@ -338,7 +355,6 @@ export async function generateDeliveryKit(
           );
         } catch (renderErr) {
           const faithfulText = doc.translatedText?.trim() ?? null;
-          const modality = resolveDocumentTypeModality(classification.documentType);
           if (
             renderErr instanceof StructuredRenderingRequiredError &&
             (modality === 'standard' || modality === 'faithful') &&

@@ -921,23 +921,37 @@ export function detectDocumentFamily(
   return detectFamilyByHeuristics(input);
 }
 
-// ── Faithful-light fallback eligibility ───────────────────────────────────────
+// ── Translation modality ──────────────────────────────────────────────────────
 //
-// Document types listed here may fall back to the faithful translated HTML
-// (doc.translatedText) when the structured renderer fails due to JSON/schema
-// issues — rather than blocking the kit entirely.
+// Modality governs fallback policy when the specialized family renderer fails.
 //
-// Only add a type here when:
-//   1. The family's translated output is typically clean enough for delivery.
-//   2. The structured renderer is fragile due to variable Anthropic JSON output.
-//   3. There is no correctness risk in using a linear faithful layout for this
-//      document type (e.g. editorial/news articles, not legal certificates).
-const FAITHFUL_FALLBACK_ELIGIBLE_TYPES = new Set<string>([
+//   'standard'     — family renderer is preferred; faithful-light is acceptable
+//                    as fallback (content may be simplified).
+//   'faithful'     — family renderer is preferred; faithful-light MUST be used
+//                    as fallback to preserve layout (e.g. editorial/news pages
+//                    where visual structure matters more than semantic tagging).
+//   'external_pdf' — caller-supplied translated PDF; this path bypasses
+//                    family rendering entirely and is handled upstream.
+//
+// Both 'standard' and 'faithful' are eligible for faithful-light fallback.
+// Terminal failure happens only when translated text is absent or empty.
+export type TranslationModality = 'standard' | 'faithful' | 'external_pdf';
+
+const FAITHFUL_MODALITY_FAMILIES = new Set<DocumentFamily>([
   'editorial_news_pages',
+  'publications_media',
 ]);
 
+export function resolveDocumentTypeModality(documentType: string): TranslationModality {
+  const family = DOCUMENT_TYPE_TO_FAMILY[documentType as KnownDocumentType] ?? null;
+  if (family && FAITHFUL_MODALITY_FAMILIES.has(family)) return 'faithful';
+  return 'standard';
+}
+
+// kept for compatibility — prefer resolveDocumentTypeModality at call sites
 export function doesDocumentTypeSupportFaithfulFallback(
   documentType: string,
 ): boolean {
-  return FAITHFUL_FALLBACK_ELIGIBLE_TYPES.has(documentType);
+  const modality = resolveDocumentTypeModality(documentType);
+  return modality === 'standard' || modality === 'faithful';
 }

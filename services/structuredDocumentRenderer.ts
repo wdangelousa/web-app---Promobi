@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { FAITHFUL_PARITY_PROMPT_NOTE } from '@/lib/parityRecovery';
+import { FAITHFUL_PARITY_PROMPT_NOTE, type PreRenderLayoutHints } from '@/lib/parityRecovery';
 import {
   buildStructuredMarriageCertSystemPrompt,
   buildStructuredUserMessage,
@@ -97,6 +97,7 @@ import {
   getDocumentFamilyForType,
   getFamilyLayoutProfile,
   getFamilyRenderCapabilities,
+  resolveDocumentTypeModality,
   type DocumentFamilyImplementationMatrixRow,
   type FamilyClientFacingCapabilityMap,
   type FamilyLayoutProfile,
@@ -234,6 +235,12 @@ export interface StructuredRenderInput {
   documentId?: string | number;
   sourceLanguage?: string | null;
   targetLanguage?: string | null;
+  /**
+   * Phase 2 pre-render layout hints. Consumed by `buildStructuredKitBuffer`
+   * to select and apply an initial render profile (balanced / compact / dense)
+   * before the first Gotenberg pass. Reduces reliance on the recovery ladder.
+   */
+  layoutHints?: PreRenderLayoutHints;
 }
 
 export interface StructuredRenderLanguageIntegrity {
@@ -271,6 +278,21 @@ export function getStructuredRendererName(
   documentType: SupportedStructuredDocumentType,
 ): string {
   return STRUCTURED_RENDERER_BY_DOCUMENT_TYPE[documentType];
+}
+
+/**
+ * Appends FAITHFUL_PARITY_PROMPT_NOTE to a system prompt when the document
+ * type maps to the 'faithful' translation modality.
+ *
+ * Centralising the note here ensures all faithful-modality rendering paths
+ * receive it automatically, including any new families added in the future,
+ * without requiring per-case changes in the renderer switch statement.
+ */
+function buildSystemPromptWithParityNote(basePrompt: string, documentType: string): string {
+  if (resolveDocumentTypeModality(documentType) === 'faithful') {
+    return `${basePrompt}\n\n${FAITHFUL_PARITY_PROMPT_NOTE}`;
+  }
+  return basePrompt;
 }
 
 function buildMissingStructuredRendererMessage(
@@ -4265,7 +4287,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          `${buildEditorialNewsPagesSystemPrompt()}\n\n${FAITHFUL_PARITY_PROMPT_NOTE}`,
+          buildSystemPromptWithParityNote(buildEditorialNewsPagesSystemPrompt(), input.documentType),
           messageContentFor(
             buildEditorialNewsPagesUserMessage({
               sourcePageCount: input.sourcePageCount ?? null,
@@ -4365,7 +4387,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          `${buildPublicationMediaRecordSystemPrompt()}\n\n${FAITHFUL_PARITY_PROMPT_NOTE}`,
+          buildSystemPromptWithParityNote(buildPublicationMediaRecordSystemPrompt(), input.documentType),
           messageContentFor(buildPublicationMediaRecordUserMessage()),
           12288,
           `${input.logPrefix} [publication-media]`,

@@ -71,11 +71,20 @@ import {
 } from '@/lib/sourcePageCountResolver';
 import type { PageParityMode } from '@/lib/translationArtifactSource';
 import {
+  applyInitialRenderProfile,
   applyRecoveryToHtml,
+  buildInitialRenderProfile,
   buildPageLayoutBudget,
+  buildPreRenderLayoutHints,
+  computeRenderQualityTier,
   isParityRecoveryNeeded,
+  isParityUnderflow,
+  resolveParityLabel,
   PARITY_MAX_RECOVERY_LEVEL,
+  type InitialRenderProfile,
   type ParityRecoveryLevel,
+  type PreRenderLayoutHints,
+  type RenderQualityTier,
 } from '@/lib/parityRecovery';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -221,6 +230,13 @@ export interface StructuredPreviewKitInput {
    *   'external_pdf' → handled upstream; recovery is never invoked.
    */
   modality?: 'standard' | 'faithful' | 'external_pdf';
+  /**
+   * Phase 2 pre-render layout hints. When present for faithful-modality
+   * documents, `buildStructuredKitBuffer` selects a density-derived initial
+   * render profile (balanced / compact / dense) and applies it before the
+   * first Gotenberg pass, reducing reliance on the recovery ladder.
+   */
+  layoutHints?: PreRenderLayoutHints;
   surface?: 'preview-kit' | 'delivery-kit' | 'unknown';
   compactionAttempted?: boolean;
   languageIntegrity?: StructuredLanguageIntegritySignal;
@@ -1665,8 +1681,28 @@ export async function buildStructuredKitBuffer(
         };
       }
 
+      // ── Phase 2: Apply initial render profile before first Gotenberg pass ──────
+      // For faithful-modality documents with layout hints, select a density-
+      // derived render profile and apply it to the HTML before the first render.
+      // This pre-optimises font size, line height, cell padding, and (for dense
+      // pages) annotation verbosity, reducing reliance on the recovery ladder.
+      let firstRenderHtml = safeAreaStructuredHtml;
+      let firstRenderProfile: InitialRenderProfile | null = null;
+      if (input.modality === 'faithful' && input.layoutHints) {
+        firstRenderProfile = buildInitialRenderProfile(input.layoutHints);
+        firstRenderHtml = applyInitialRenderProfile(safeAreaStructuredHtml, firstRenderProfile);
+        log(
+          `first-render profile: ${firstRenderProfile.name} ` +
+          `font=${firstRenderProfile.fontSizePx}px ` +
+          `lineHeight=${firstRenderProfile.lineHeight} ` +
+          `cellPad=${firstRenderProfile.cellPaddingPx}px ` +
+          `paraMargin=${firstRenderProfile.paraMarginBottomEm}em ` +
+          `annotationCompaction=${firstRenderProfile.annotationCompactionMode}`,
+        );
+      }
+
       const translatedPdfBase = await callGotenberg(
-        safeAreaStructuredHtml,
+        firstRenderHtml,
         paperSettings,
         logPrefix,
         'translated-section',
@@ -1717,15 +1753,51 @@ export async function buildStructuredKitBuffer(
           probePageCount = probe.getPageCount();
         } catch { /* leave probePageCount = 0 */ }
 
+        // Log whether the initial render profile achieved parity or recovery is needed.
+        if (firstRenderProfile) {
+          const recoveryNeeded = isParityRecoveryNeeded(
+            probePageCount,
+            input.sourcePageCount,
+            'faithful',
+          );
+          log(
+            `first-render result: profile=${firstRenderProfile.name} ` +
+            `translated=${probePageCount} source=${input.sourcePageCount} ` +
+            `recovery_needed=${recoveryNeeded}`,
+          );
+        }
+
+        // Detect underflow (translated renders fewer pages than source).
+        // Not remediated in Phase 1 — detected and logged for diagnostics only.
+        if (isParityUnderflow(probePageCount, input.sourcePageCount, 'faithful')) {
+          log(
+            `parity underflow: translated=${probePageCount} source=${input.sourcePageCount} ` +
+            `delta=${input.sourcePageCount - probePageCount} — underflow is not remediated in Phase 1`,
+          );
+        }
+
+        // Track recovery outcome for telemetry and quality tier.
+        let recoveryWasNeeded = false;
+        let resolvedAtLevel: ParityRecoveryLevel | null = null;
+        let parityResolved = true; // true if first render or recovery achieved parity
+
         if (isParityRecoveryNeeded(probePageCount, input.sourcePageCount, 'faithful')) {
+          recoveryWasNeeded = true;
+
           const budget = buildPageLayoutBudget(
             input.sourcePageCount,
             isLandscape ? 'landscape' : 'portrait',
           );
+          // Compute pre-render hints for the start-of-recovery log.
+          // The profile may have already applied these hints in the first render;
+          // recovery builds on firstRenderHtml (which includes any profile CSS)
+          // and adds !important overrides at each successive level.
+          const preRenderHints = buildPreRenderLayoutHints(budget);
           log(
             `parity recovery: start — translated=${probePageCount} source=${input.sourcePageCount} ` +
             `overflow=${probePageCount - input.sourcePageCount} page(s) ` +
-            `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in`,
+            `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in ` +
+            `hints=font:${preRenderHints.suggestedFontSizePx}px/lh:${preRenderHints.suggestedLineHeight}/pad:${preRenderHints.suggestedCellPaddingPx}px`,
           );
 
           let bestBuffer = translatedPdfBuffer;
@@ -1734,7 +1806,11 @@ export async function buildStructuredKitBuffer(
 
           for (let lvl = 1; lvl <= PARITY_MAX_RECOVERY_LEVEL && !recoveryResolved; lvl++) {
             const level = lvl as ParityRecoveryLevel;
-            const recoveredHtml = applyRecoveryToHtml(safeAreaStructuredHtml, level);
+            // Recovery builds on firstRenderHtml (which may already include
+            // initial-profile CSS). Recovery CSS uses !important and overrides
+            // the profile baseline where needed.
+            const recoveredHtml = applyRecoveryToHtml(firstRenderHtml, level);
+            const htmlChanged = recoveredHtml.length !== firstRenderHtml.length;
             const recoveredResult = await callGotenberg(
               recoveredHtml,
               paperSettings,
@@ -1756,6 +1832,8 @@ export async function buildStructuredKitBuffer(
               log(
                 `parity recovery level ${level}: translated_pages=${recoveredPageCount} ` +
                 `source_pages=${input.sourcePageCount} ` +
+                `page_delta=${recoveredPageCount - input.sourcePageCount} ` +
+                `html_changed=${htmlChanged} ` +
                 `resolved=${recoveredPageCount <= input.sourcePageCount}`,
               );
 
@@ -1763,7 +1841,9 @@ export async function buildStructuredKitBuffer(
                 bestBuffer = recoveredResult.buffer;
                 bestPageCount = recoveredPageCount;
                 recoveryResolved = true;
+                resolvedAtLevel = level;
                 log(`parity recovery: resolved at level ${level}`);
+                log(`parity recovery outcome: ${resolveParityLabel(level)}`);
               } else if (recoveredPageCount < bestPageCount) {
                 // Partial improvement — keep as best candidate so far.
                 bestBuffer = recoveredResult.buffer;
@@ -1775,14 +1855,46 @@ export async function buildStructuredKitBuffer(
           }
 
           if (!recoveryResolved) {
+            parityResolved = false;
             log(
               `parity recovery: exhausted all levels — ` +
               `final_translated=${bestPageCount} source=${input.sourcePageCount}`,
             );
+            log(`parity recovery outcome: ${resolveParityLabel(null)}`);
           }
 
           translatedPdfBuffer = bestBuffer;
         }
+
+        // ── Profile effectiveness telemetry and render quality tier ────────────
+        // Emit a structured log line grouping profile selection, recovery outcome,
+        // and document context so operational dashboards can track:
+        //   - how often each profile resolves parity on first render
+        //   - how often each profile still requires L1/L2/L3/L4 recovery
+        //   - render quality distribution by document type, family, orientation,
+        //     and fallback vs. non-fallback path
+        const isFallbackRenderer = (input.rendererName ?? '').includes('fallback');
+        const qualityTier: RenderQualityTier = computeRenderQualityTier(
+          firstRenderProfile,
+          resolvedAtLevel,
+          parityResolved,
+          isFallbackRenderer,
+          input.documentFamily,
+        );
+        log(
+          `profile_telemetry: ` +
+          `profile=${firstRenderProfile?.name ?? 'none'} ` +
+          `first_render_resolved_parity=${!recoveryWasNeeded} ` +
+          `recovery_was_needed=${recoveryWasNeeded} ` +
+          `resolved_at_level=${resolvedAtLevel ?? 'none'} ` +
+          `parity_resolved=${parityResolved} ` +
+          `render_quality_tier=${qualityTier} ` +
+          `document_type=${input.documentTypeLabel ?? 'unknown'} ` +
+          `document_family=${input.documentFamily ?? 'unknown'} ` +
+          `modality=${input.modality ?? 'unknown'} ` +
+          `orientation=${isLandscape ? 'landscape' : 'portrait'} ` +
+          `is_fallback_renderer=${isFallbackRenderer}`,
+        );
       }
 
       if (letterheadBuffer) {
