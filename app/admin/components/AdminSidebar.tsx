@@ -7,6 +7,7 @@ import {
     LayoutDashboard,
     ListTodo,
     Ban,
+    CheckCircle,
     Settings,
     LogOut,
     DollarSign,
@@ -46,6 +47,14 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
             icon: ListTodo,
             category: 'Pedidos',
             active: isActive('/admin/orders') && !isActive('/admin/orders/cancelados')
+        },
+        {
+            id: 'orders-completed',
+            title: 'Concluídos',
+            href: '/admin/orders/concluidos',
+            icon: CheckCircle,
+            category: 'Pedidos',
+            active: isActive('/admin/orders/concluidos'),
         },
         {
             id: 'orders-cancelled',

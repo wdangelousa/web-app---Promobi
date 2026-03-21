@@ -68,12 +68,19 @@ export default async function AdminOrdersPage({
     redirect(next);
   }
 
+  if (activeStatus === 'COMPLETED') {
+    const next = searchQuery
+      ? `/admin/orders/concluidos?q=${encodeURIComponent(searchQuery)}`
+      : '/admin/orders/concluidos';
+    redirect(next);
+  }
+
   let rawOrders: any[] = [];
   try {
     rawOrders = await prisma.order.findMany({
       where:
         activeStatus === 'ALL'
-          ? { status: { not: 'CANCELLED' } }
+          ? { status: { notIn: ['CANCELLED', 'COMPLETED'] } }
           : { status: activeStatus as OrderStatus },
       select: {
         id: true,

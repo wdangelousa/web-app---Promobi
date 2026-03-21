@@ -1,0 +1,198 @@
+import prisma from '@/lib/prisma';
+import Link from 'next/link';
+import { getCurrentUser } from '@/app/actions/auth';
+import { redirect } from 'next/navigation';
+import { Role } from '@prisma/client';
+import { Eye, Search, Calendar, FileText, User } from 'lucide-react';
+import { COMPLETED_STATUS_VISUAL } from '@/lib/adminOrderStatus';
+
+export const dynamic = 'force-dynamic';
+
+const formatDate = (date: unknown) => {
+  if (!date) return 'N/A';
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(date as string | number | Date));
+  } catch {
+    return 'Data inválida';
+  }
+};
+
+const formatCurrency = (amount: number) => {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+      typeof amount === 'number' ? amount : 0,
+    );
+  } catch {
+    return '$0.00';
+  }
+};
+
+export default async function CompletedOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser?.role === Role.FINANCIAL) redirect('/admin/finance');
+  if (currentUser?.role === Role.PARTNER) redirect('/admin/executive');
+
+  const { q: queryRaw } = await searchParams;
+  const searchQuery = typeof queryRaw === 'string' ? queryRaw.trim() : '';
+  const normalizedSearch = searchQuery.toLowerCase();
+
+  let rawOrders: Array<{
+    id: number;
+    createdAt: Date;
+    totalAmount: number;
+    status: string;
+    user: { fullName: string | null; email: string | null } | null;
+    documents: Array<{ id: number }>;
+  }> = [];
+
+  try {
+    rawOrders = await prisma.order.findMany({
+      where: { status: 'COMPLETED' },
+      select: {
+        id: true,
+        createdAt: true,
+        totalAmount: true,
+        status: true,
+        user: { select: { fullName: true, email: true } },
+        documents: { select: { id: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 400,
+    });
+  } catch (error) {
+    console.error('[CompletedOrdersPage] Failed to fetch completed orders', error);
+    rawOrders = [];
+  }
+
+  const rows = rawOrders
+    .filter((order) => {
+      if (!normalizedSearch) return true;
+      return (
+        String(order.id).includes(normalizedSearch) ||
+        (order.user?.fullName ?? '').toLowerCase().includes(normalizedSearch) ||
+        (order.user?.email ?? '').toLowerCase().includes(normalizedSearch)
+      );
+    });
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Pedidos Concluídos</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {rows.length} pedido(s) finalizado(s) e entregue(s)
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <form action="/admin/orders/concluidos" method="get" className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <label className="relative">
+            <span className="sr-only">Buscar concluídos</span>
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Buscar por cliente, pedido ou e-mail"
+              className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f58220]/25 focus:border-[#f58220]"
+            />
+          </label>
+          <button
+            type="submit"
+            className="h-10 px-4 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
+          >
+            Buscar
+          </button>
+        </form>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-medium">Pedido</th>
+                <th className="px-6 py-4 font-medium">Cliente</th>
+                <th className="px-6 py-4 font-medium">Concluído em</th>
+                <th className="px-6 py-4 font-medium">Total</th>
+                <th className="px-6 py-4 font-medium">Docs</th>
+                <th className="px-6 py-4 font-medium">Status</th>
+                <th className="px-6 py-4 font-medium text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400 text-sm">
+                    Nenhum pedido concluído encontrado para este filtro.
+                  </td>
+                </tr>
+              )}
+              {rows.map((order) => (
+                <tr key={order.id} className="hover:bg-gray-50/70 transition-colors">
+                  <td className="px-6 py-4 font-semibold text-gray-900">#{order.id}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 shrink-0">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900 truncate max-w-[220px]" title={order.user?.fullName ?? undefined}>
+                          {order.user?.fullName || 'N/A'}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate max-w-[220px]" title={order.user?.email ?? undefined}>
+                          {order.user?.email || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      {formatDate(order.createdAt)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 font-bold text-gray-900">
+                    {formatCurrency(order.totalAmount)}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <FileText className="w-4 h-4" />
+                      <span>{order.documents.length}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border ${COMPLETED_STATUS_VISUAL.badgeClass}`}
+                    >
+                      {COMPLETED_STATUS_VISUAL.label}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <Link
+                      href={`/admin/orders/${order.id}`}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Detalhes
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
