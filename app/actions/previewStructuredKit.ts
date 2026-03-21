@@ -46,7 +46,7 @@ import {
 } from '@/services/structuredDocumentRenderer';
 import { resolveDocumentTypeModality } from '@/services/documentFamilyRegistry';
 import { buildPageLayoutBudget, buildPreRenderLayoutHints } from '@/lib/parityRecovery';
-import { resolveSinglePageRouting } from '@/lib/singlePageSafeguard';
+import { resolveSinglePageRouting, isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
@@ -551,6 +551,7 @@ export async function previewStructuredKit(
           translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
         });
         resolvedFamilyForKit = classification.documentType;
         resolvedRendererForKit = 'faithful_light_safeguard';
@@ -644,6 +645,7 @@ export async function previewStructuredKit(
           translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
         });
         resolvedFamilyForKit = classification.documentType;
         resolvedRendererForKit = 'faithful_light_fallback';
@@ -709,6 +711,7 @@ export async function previewStructuredKit(
           translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
         });
         const retryKit = await assembleStructuredPreviewKit({
           structuredHtml: retryHtml,

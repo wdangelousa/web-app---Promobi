@@ -18,7 +18,7 @@ import {
 } from "@/services/structuredDocumentRenderer";
 import { resolveDocumentTypeModality } from "@/services/documentFamilyRegistry";
 import { buildPageLayoutBudget, buildPreRenderLayoutHints } from "@/lib/parityRecovery";
-import { resolveSinglePageRouting } from "@/lib/singlePageSafeguard";
+import { resolveSinglePageRouting, isCertificateGenreDocumentType } from "@/lib/singlePageSafeguard";
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
@@ -324,6 +324,7 @@ export async function generateDeliveryKit(
               translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+              layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
             });
             rendererNameForKit = 'faithful_light_safeguard';
           } else {
@@ -408,6 +409,7 @@ export async function generateDeliveryKit(
                 translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
                 documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
                 orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+                layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
               });
               rendererNameForKit = 'faithful_light_fallback';
               // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
@@ -463,6 +465,7 @@ export async function generateDeliveryKit(
               translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
               documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+              layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
             });
             activeBuildResult = await buildStructuredKitBuffer({
               structuredHtml: retryHtml,

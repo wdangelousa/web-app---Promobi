@@ -28,6 +28,33 @@ export type SinglePageRoutingOutcome =
   | 'not_single_page';
 
 /**
+ * Document types whose visual genre is certificate / diploma / award.
+ *
+ * When any of these types falls back to the faithful-light HTML renderer
+ * (safeguard blocked, structured rendering failed, or expansion retry),
+ * the renderer applies a centered certificate-style layout instead of the
+ * default left-aligned prose transcription layout.
+ *
+ * This set is intentionally separate from SINGLE_PAGE_STRUCTURED_AI_WHITELIST:
+ * whitelisting controls whether structured AI runs; genre detection controls
+ * how the faithful-light HTML looks if structured AI is bypassed or fails.
+ */
+export const CERTIFICATE_GENRE_DOCUMENT_TYPES = new Set<string>([
+  'course_certificate_landscape',
+  'academic_diploma_certificate',
+  'marriage_certificate_brazil',
+  'birth_certificate_brazil',
+]);
+
+/**
+ * Returns true if the document type belongs to the certificate / diploma / award
+ * visual genre and should use a certificate-style layout in the faithful-light renderer.
+ */
+export function isCertificateGenreDocumentType(documentType: string): boolean {
+  return CERTIFICATE_GENRE_DOCUMENT_TYPES.has(documentType);
+}
+
+/**
  * Document types that are allowed to use structured AI for single-page sources.
  *
  * Criteria:

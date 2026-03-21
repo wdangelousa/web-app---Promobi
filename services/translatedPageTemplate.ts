@@ -51,6 +51,79 @@ export interface TranslatedPageTemplateOptions {
    * Optional page orientation for the global translated safe-area policy.
    */
   orientation?: 'portrait' | 'landscape';
+  /**
+   * Layout hint for the content area.
+   *
+   * 'standard'    — default left-aligned prose layout (current behavior)
+   * 'certificate' — centered, balanced certificate/diploma/award layout:
+   *                 - all text centered
+   *                 - strong-only paragraphs (titles/headings) enlarged
+   *                 - first heading paragraph treated as document title
+   *                 - proportionally smaller sizes in landscape orientation
+   *                 Use this when the source document is a certificate, diploma,
+   *                 award, or any ceremonial document that must not be rendered
+   *                 as a left-aligned transcription sheet.
+   */
+  layoutHint?: 'standard' | 'certificate';
+}
+
+/**
+ * Certificate-style layout CSS injected into the content area when
+ * layoutHint === 'certificate'.
+ *
+ * Applies a centered, balanced composition to plain-paragraph translated text
+ * so that certificate/diploma/award documents do not render as left-aligned
+ * transcription sheets. Works with the HTML produced by sanitizeTranslationHtml
+ * (headings → <p><strong>CAPS</strong></p>, body → <p>…</p>).
+ *
+ * Uses CSS :has() (Chromium 105+ / Gotenberg) to identify heading paragraphs
+ * without requiring markup changes.
+ */
+function buildCertificateLayoutCss(isLandscape: boolean): string {
+  const titleSize      = isLandscape ? '11pt'   : '13pt';
+  const headingSize    = isLandscape ? '9.5pt'  : '10.5pt';
+  const bodySize       = isLandscape ? '8.5pt'  : '9.5pt';
+  const titleSpacing   = isLandscape ? '0.05em' : '0.08em';
+  const headingSpacing = isLandscape ? '0.03em' : '0.04em';
+  const titleBottom    = isLandscape ? '5pt'    : '7pt';
+  return `
+    /* ── Certificate-style layout override ──────────────────────────────────── */
+    .cert-layout .conteudo-principal {
+      text-align: center;
+    }
+
+    .cert-layout .conteudo-principal p {
+      text-align: center;
+      margin: 2.5pt auto;
+      max-width: 87%;
+      line-height: 1.5;
+      font-size: ${bodySize};
+    }
+
+    /* Heading paragraph: <p><strong>TEXT</strong></p> */
+    .cert-layout .conteudo-principal p:has(> strong:only-child) {
+      font-size: ${headingSize};
+      letter-spacing: ${headingSpacing};
+      margin: 3pt auto 4pt;
+      max-width: 93%;
+    }
+
+    /* Document title: first heading paragraph (or first child) */
+    .cert-layout .conteudo-principal p:first-child,
+    .cert-layout .conteudo-principal p:has(> strong:only-child):first-of-type {
+      font-size: ${titleSize};
+      letter-spacing: ${titleSpacing};
+      margin-bottom: ${titleBottom};
+      max-width: 96%;
+    }
+
+    /* Tables (if any remain after sanitization): centered */
+    .cert-layout .conteudo-principal table {
+      margin: 5pt auto;
+      max-width: 90%;
+      text-align: left;
+    }
+  `;
 }
 
 /**
@@ -65,8 +138,11 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     documentTitle,
     registrationNumber,
     orientation,
+    layoutHint,
   } = options;
   const resolvedOrientation = orientation === 'landscape' ? 'landscape' : 'portrait';
+  const isLandscape = resolvedOrientation === 'landscape';
+  const isCertLayout = layoutHint === 'certificate';
   const safeArea = getTranslatedPageSafeArea(resolvedOrientation);
   const safeAreaPageCss = buildTranslatedSafeAreaPageCss(resolvedOrientation);
 
@@ -105,6 +181,8 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+
+    ${isCertLayout ? buildCertificateLayoutCss(isLandscape) : ''}
 
     .header-timbrado {
       position: fixed;
@@ -184,7 +262,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     }
   </style>
 </head>
-<body>
+<body${isCertLayout ? ' class="cert-layout"' : ''}>
   <div class="moldura-dourada"></div>
 
   <div class="header-timbrado">
