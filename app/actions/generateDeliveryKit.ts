@@ -28,6 +28,7 @@ import {
   upsertDeliveryArtifactRegistryRecord,
 } from "@/lib/translationArtifactSource";
 import { resolveKitSetup } from "@/services/structuredKitSetup";
+import { runFaithfulTextDiagnostics } from "@/lib/faithfulTextRenderDiagnostics";
 
 interface DeliveryKitResult {
   success: boolean;
@@ -289,6 +290,9 @@ export async function generateDeliveryKit(
         let rendererNameForKit = 'unknown';
         let languageIntegrityForKit: StructuredRenderLanguageIntegrity =
           buildExternalOverrideLanguageIntegrity(doc.sourceLanguage ?? null);
+        // Tracks whether htmlForKit was produced by the faithful-light path so
+        // diagnostics can be emitted after the kit build result is available.
+        let faithfulLightHtml: string | null = null;
 
         const modality = resolveDocumentTypeModality(classification.documentType);
         // Phase 2 prep: pre-render layout hints passed to the renderer so it
@@ -327,6 +331,7 @@ export async function generateDeliveryKit(
               layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
             });
             rendererNameForKit = 'faithful_light_safeguard';
+            faithfulLightHtml = htmlForKit;
           } else {
             return {
               success: false,
@@ -412,6 +417,7 @@ export async function generateDeliveryKit(
                 layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
               });
               rendererNameForKit = 'faithful_light_fallback';
+              faithfulLightHtml = htmlForKit;
               // orientationForKit, familyForKit, languageIntegrityForKit keep their defaults
             } else {
               throw renderErr;  // re-thrown → caught by outer catch → formatStructuredRenderingFailureMessage
@@ -467,6 +473,7 @@ export async function generateDeliveryKit(
               orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
               layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
             });
+            faithfulLightHtml = retryHtml;
             activeBuildResult = await buildStructuredKitBuffer({
               structuredHtml: retryHtml,
               originalFileBuffer,
@@ -501,6 +508,27 @@ export async function generateDeliveryKit(
               `document_type=${classification.documentType}`,
             );
           }
+        }
+
+        // ── Faithful-text render diagnostics ──────────────────────────────
+        // Emitted for every faithful-light render attempt, regardless of
+        // outcome. When source=1 and translated>1, saves an HTML snapshot.
+        if (faithfulLightHtml !== null) {
+          const resolvedLayoutHint = isCertificateGenreDocumentType(classification.documentType)
+            ? 'certificate' as const
+            : 'standard' as const;
+          runFaithfulTextDiagnostics(logPrefix, {
+            orderId,
+            documentId,
+            documentType: classification.documentType,
+            modality,
+            sourcePageCount: sourcePageCount ?? null,
+            translatedPageCount: activeBuildResult.translatedPageCount ?? null,
+            htmlForKit: faithfulLightHtml,
+            orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+            layoutHint: resolvedLayoutHint,
+            rendererName: rendererNameForKit,
+          });
         }
 
         if (!activeBuildResult.success || !activeBuildResult.kitBuffer) {
