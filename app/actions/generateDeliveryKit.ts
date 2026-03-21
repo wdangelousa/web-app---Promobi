@@ -331,6 +331,7 @@ export async function generateDeliveryKit(
             targetLanguage: 'EN',
             logPrefix,
             layoutHints,
+            documentTypeLabel: documentLabelHint,
           });
 
           htmlForKit = resolved.structuredHtml;

@@ -241,6 +241,13 @@ export interface StructuredRenderInput {
    * before the first Gotenberg pass. Reduces reliance on the recovery ladder.
    */
   layoutHints?: PreRenderLayoutHints;
+  /**
+   * Human-readable document type label from the source record (e.g. the
+   * exact name on the document, or the doc-type string from the order).
+   * Used for pre-render diploma/certificate signal detection in the
+   * letters_and_statements renderer path.
+   */
+  documentTypeLabel?: string | null;
 }
 
 export interface StructuredRenderLanguageIntegrity {
@@ -2712,6 +2719,127 @@ function normalizeLettersStatementsStructuredPage(
   };
 }
 
+// ── Diploma / certificate candidate detection ─────────────────────────────────
+//
+// A one-page document classified as letters_and_statements may actually be a
+// diploma or certificate that was misrouted.  These helpers detect that case
+// and redirect to the academic_diploma_certificate renderer before the
+// letters/statements layout — which generates tall structured blocks — forces
+// the document onto a second page.
+
+/**
+ * Keywords that strongly indicate a diploma, degree certificate, or graduation
+ * document — in English and in common Portuguese / Spanish equivalents.
+ */
+const DIPLOMA_KEYWORD_RE =
+  /\bdiploma\b|\bcertificate\b|\bdegr[aeo]{1,2}\b|\bgraduat|\bbacharelado\b|\blicenciatura\b|\bmestrado\b|\bdoutorado\b|\bcertificado\b|\btítulo\b|\btitulo\b|\bconclus[ãa]/i;
+
+/**
+ * Returns true when the document type label contains diploma / certificate
+ * keywords strong enough to warrant routing to the diploma renderer before
+ * attempting letters_and_statements extraction.
+ *
+ * Only called for 1-page source documents — multi-page diplomas are rare
+ * enough that a false-positive here carries more risk than reward.
+ */
+function hasDiplomaCandidateLabelSignal(label?: string | null): boolean {
+  if (!label) return false;
+  return DIPLOMA_KEYWORD_RE.test(label);
+}
+
+/**
+ * Returns true when the normalized letters_and_statements payload contains
+ * diploma / certificate signals in the fields Claude populated during
+ * extraction.  Used as a post-extraction gate before rendering.
+ *
+ * Checks (in priority order):
+ *   1. Claude's own `detected_document_type` field for the first page.
+ *   2. Claude's `suggested_family` pointing to 'academic_records'.
+ *   3. The translated zone text of the first page.
+ */
+function hasDiplomaCandidatePayloadSignals(payload: LettersAndStatements): boolean {
+  const firstPage = payload.PAGES[0];
+  if (!firstPage) return false;
+
+  const detectedType = (firstPage.PAGE_METADATA.detected_document_type ?? '').toLowerCase();
+  if (DIPLOMA_KEYWORD_RE.test(detectedType)) return true;
+
+  const suggestedFamily = (firstPage.PAGE_METADATA.suggested_family ?? '').toLowerCase();
+  if (suggestedFamily === 'academic_records') return true;
+
+  const allZoneText = firstPage.TRANSLATED_CONTENT_BY_ZONE.map((z) => z.content).join(' ');
+  if (DIPLOMA_KEYWORD_RE.test(allZoneText)) return true;
+
+  return false;
+}
+
+/**
+ * Re-extracts the document using the academic_diploma_certificate renderer and
+ * returns a diploma-style StructuredRenderOutput.
+ *
+ * Called from the letters_and_statements case when diploma signals are detected
+ * before layout HTML is produced, avoiding the tall structured-block layout that
+ * would otherwise push a one-page diploma onto a second page.
+ *
+ * The returned `rendererName` encodes the reroute reason so callers and logs can
+ * distinguish this path from a normal diploma render.
+ */
+async function extractAndRenderAsDiploma(
+  input: StructuredRenderInput,
+  messageContentFor: (userMessage: string) => Anthropic.MessageParam['content'],
+  defaultLanguageIntegrity: StructuredRenderLanguageIntegrity,
+  rerouteReason: 'label_signal' | 'payload_signal',
+): Promise<StructuredRenderOutput> {
+  console.log(
+    `${input.logPrefix} [letters-and-statements→diploma-reroute] ` +
+    `reason=${rerouteReason} source_page_count=${input.sourcePageCount ?? 'unknown'} — ` +
+    `re-extracting with academic_diploma_certificate renderer`,
+  );
+
+  const rawJson = ensureExtractionJson(
+    'academic_diploma_certificate',
+    await callClaudeForJson(
+      input.client,
+      buildAcademicDiplomaSystemPrompt(),
+      messageContentFor(buildAcademicDiplomaUserMessage()),
+      8192,
+      `${input.logPrefix} [letters-and-statements→diploma-reroute]`,
+    ),
+  );
+
+  const parsed = parseStructuredJson<AcademicDiplomaCertificate>(
+    'academic_diploma_certificate',
+    rawJson,
+  );
+
+  const languageIntegrity: StructuredRenderLanguageIntegrity = {
+    ...defaultLanguageIntegrity,
+    translatedPayloadFound: true,
+  };
+  assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
+
+  // Diplomas are almost always portrait; fall back to portrait if orientation unknown.
+  const effectiveOrientation: DocumentOrientation =
+    input.detectedOrientation === 'unknown' ? 'portrait' : input.detectedOrientation;
+  parsed.orientation = input.detectedOrientation;
+  parsed.page_count = input.sourcePageCount ?? null;
+
+  console.log(
+    `${input.logPrefix} [letters-and-statements→diploma-reroute] ` +
+    `extraction complete — rendering as academic_diploma_certificate`,
+  );
+
+  return {
+    structuredHtml: renderAcademicDiplomaHtml(parsed, {
+      pageCount: input.sourcePageCount,
+      orientation: effectiveOrientation,
+    }),
+    orientationForKit: effectiveOrientation,
+    rendererName: `letters_and_statements_diploma_reroute:${rerouteReason}`,
+    languageIntegrity,
+  };
+}
+
 function normalizeLettersAndStatementsPayload(
   parsed: unknown,
 ): LettersAndStatements {
@@ -4422,6 +4550,23 @@ export async function renderSupportedStructuredDocument(
     }
 
     case 'letters_and_statements': {
+      // ── Pre-render diploma guard (label signal) ───────────────────────────
+      // A 1-page document whose type label contains diploma/certificate keywords
+      // must not be rendered through the letters/statements structured-block layout,
+      // which reliably expands it onto a second page.  Re-route immediately.
+      if (
+        input.sourcePageCount === 1 &&
+        hasDiplomaCandidateLabelSignal(input.documentTypeLabel)
+      ) {
+        console.log(
+          `${input.logPrefix} [letters-and-statements] diploma candidate detected from label ` +
+          `("${input.documentTypeLabel}") — rerouting to academic_diploma_certificate`,
+        );
+        return extractAndRenderAsDiploma(
+          input, messageContentFor, defaultLanguageIntegrity, 'label_signal',
+        );
+      }
+
       const rawJson = ensureExtractionJson(
         input.documentType,
         await callClaudeForJson(
@@ -4442,6 +4587,25 @@ export async function renderSupportedStructuredDocument(
         rawJson,
       );
       const normalizedPayload = normalizeLettersAndStatementsPayload(parsed);
+
+      // ── Post-extraction diploma guard (payload signal) ────────────────────
+      // If Claude's extraction reveals diploma signals (detected_document_type,
+      // suggested_family, or zone text) on a 1-page document, discard the
+      // letters payload and re-extract with the diploma renderer instead.
+      if (
+        input.sourcePageCount === 1 &&
+        hasDiplomaCandidatePayloadSignals(normalizedPayload)
+      ) {
+        console.log(
+          `${input.logPrefix} [letters-and-statements] diploma candidate detected from payload ` +
+          `(detected_type="${normalizedPayload.PAGES[0]?.PAGE_METADATA.detected_document_type ?? ''}" ` +
+          `suggested_family="${normalizedPayload.PAGES[0]?.PAGE_METADATA.suggested_family ?? ''}") ` +
+          `— rerouting to academic_diploma_certificate`,
+        );
+        return extractAndRenderAsDiploma(
+          input, messageContentFor, defaultLanguageIntegrity, 'payload_signal',
+        );
+      }
       const languageIntegrity = buildLettersStatementsLanguageIntegrity(
         input,
         normalizedPayload,

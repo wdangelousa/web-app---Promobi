@@ -554,6 +554,7 @@ export async function previewStructuredKit(
         targetLanguage: 'EN',
         logPrefix,
         layoutHints,
+        documentTypeLabel: documentLabelHint,
       });
 
       structuredHtml = resolved.structuredHtml;
