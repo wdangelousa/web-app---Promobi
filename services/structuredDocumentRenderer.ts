@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAITHFUL_PARITY_PROMPT_NOTE } from '@/lib/parityRecovery';
 import {
   buildStructuredMarriageCertSystemPrompt,
   buildStructuredUserMessage,
@@ -4264,7 +4265,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          buildEditorialNewsPagesSystemPrompt(),
+          `${buildEditorialNewsPagesSystemPrompt()}\n\n${FAITHFUL_PARITY_PROMPT_NOTE}`,
           messageContentFor(
             buildEditorialNewsPagesUserMessage({
               sourcePageCount: input.sourcePageCount ?? null,
@@ -4364,7 +4365,7 @@ export async function renderSupportedStructuredDocument(
         input.documentType,
         await callClaudeForJson(
           input.client,
-          buildPublicationMediaRecordSystemPrompt(),
+          `${buildPublicationMediaRecordSystemPrompt()}\n\n${FAITHFUL_PARITY_PROMPT_NOTE}`,
           messageContentFor(buildPublicationMediaRecordUserMessage()),
           12288,
           `${input.logPrefix} [publication-media]`,

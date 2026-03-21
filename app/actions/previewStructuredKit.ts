@@ -44,7 +44,7 @@ import {
   renderStructuredFamilyDocument,
   StructuredRenderingRequiredError,
 } from '@/services/structuredDocumentRenderer';
-import { doesDocumentTypeSupportFaithfulFallback } from '@/services/documentFamilyRegistry';
+import { resolveDocumentTypeModality } from '@/services/documentFamilyRegistry';
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
@@ -191,6 +191,7 @@ async function generatePreviewFromExternalPdf(params: {
     orientation: params.orientation === 'landscape' ? 'landscape' : undefined,
     documentFamily: 'external_translation',
     rendererName: 'externalPdfOverride',
+    modality: 'external_pdf',
     surface: 'preview-kit',
     compactionAttempted: false,
     languageIntegrity: buildExternalOverrideLanguageIntegrity(params.sourceLanguage),
@@ -560,21 +561,23 @@ export async function previewStructuredKit(
       );
     } catch (err) {
       // ── Faithful-light fallback ────────────────────────────────────────────
-      // When the structured renderer fails (bad JSON / schema mismatch) and the
-      // document type opts into faithful fallback, use the already-translated
-      // HTML from effectiveTranslatedText rather than blocking the kit entirely.
-      // The kit assembler's language gate (detectSourceLanguageLeakageFromHtml)
-      // still runs and will block if significant source-language leakage remains.
+      // When the specialized family renderer fails (bad JSON / schema mismatch /
+      // unimplemented family), downgrade to faithful-light for all modalities
+      // ('standard' and 'faithful') rather than blocking the kit.
+      // 'faithful' families (editorial/news) must use this path to preserve layout.
+      // 'standard' families may simplify — faithful-light is an acceptable wrapper.
+      // The kit assembler's language gate still runs to block source-language leakage.
       const faithfulText = effectiveTranslatedText?.trim() ?? null;
+      const modality = resolveDocumentTypeModality(classification.documentType);
       if (
         err instanceof StructuredRenderingRequiredError &&
-        doesDocumentTypeSupportFaithfulFallback(classification.documentType) &&
+        (modality === 'standard' || modality === 'faithful') &&
         faithfulText !== null &&
         faithfulText.length > 50
       ) {
         console.log(
           `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
-          `for "${classification.documentType}" (reason: ${err.message.slice(0, 120)})`,
+          `for "${classification.documentType}" (modality: ${modality}, reason: ${err.message.slice(0, 120)})`,
         );
         structuredHtml = buildTranslatedPageHtml({
           translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
@@ -616,6 +619,7 @@ export async function previewStructuredKit(
       orientation: orientationForKit === 'landscape' ? 'landscape' : undefined,
       documentFamily: resolvedFamilyForKit,
       rendererName: resolvedRendererForKit,
+      modality: resolveDocumentTypeModality(classification.documentType),
       surface: 'preview-kit',
       compactionAttempted: false,
       languageIntegrity: resolvedLanguageIntegrityForKit,

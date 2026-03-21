@@ -16,7 +16,7 @@ import {
   renderStructuredFamilyDocument,
   StructuredRenderingRequiredError,
 } from "@/services/structuredDocumentRenderer";
-import { doesDocumentTypeSupportFaithfulFallback } from "@/services/documentFamilyRegistry";
+import { resolveDocumentTypeModality } from "@/services/documentFamilyRegistry";
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
@@ -241,6 +241,7 @@ export async function generateDeliveryKit(
           originalContentType: contentType,
           documentFamily: "external_translation",
           rendererName: "externalPdfOverride",
+          modality: "external_pdf",
           surface: preview ? "preview-kit" : "delivery-kit",
           compactionAttempted: false,
           languageIntegrity: buildExternalOverrideLanguageIntegrity(
@@ -337,15 +338,16 @@ export async function generateDeliveryKit(
           );
         } catch (renderErr) {
           const faithfulText = doc.translatedText?.trim() ?? null;
+          const modality = resolveDocumentTypeModality(classification.documentType);
           if (
             renderErr instanceof StructuredRenderingRequiredError &&
-            doesDocumentTypeSupportFaithfulFallback(classification.documentType) &&
+            (modality === 'standard' || modality === 'faithful') &&
             faithfulText !== null &&
             faithfulText.length > 50
           ) {
             console.log(
               `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
-              `for "${classification.documentType}" (reason: ${renderErr.message.slice(0, 120)})`,
+              `for "${classification.documentType}" (modality: ${modality}, reason: ${renderErr.message.slice(0, 120)})`,
             );
             htmlForKit = buildTranslatedPageHtml({
               translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
@@ -378,6 +380,7 @@ export async function generateDeliveryKit(
           originalContentType: contentType,
           documentFamily: familyForKit,
           rendererName: rendererNameForKit,
+          modality: resolveDocumentTypeModality(classification.documentType),
           surface: preview ? "preview-kit" : "delivery-kit",
           compactionAttempted: false,
           languageIntegrity: languageIntegrityForKit,

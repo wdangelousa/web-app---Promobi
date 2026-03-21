@@ -70,6 +70,13 @@ import {
   type SourcePageCountStrategy,
 } from '@/lib/sourcePageCountResolver';
 import type { PageParityMode } from '@/lib/translationArtifactSource';
+import {
+  applyRecoveryToHtml,
+  buildPageLayoutBudget,
+  isParityRecoveryNeeded,
+  PARITY_MAX_RECOVERY_LEVEL,
+  type ParityRecoveryLevel,
+} from '@/lib/parityRecovery';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -206,6 +213,14 @@ export interface StructuredPreviewKitInput {
   documentDate?: string;
   documentFamily?: string;
   rendererName?: string;
+  /**
+   * Translation modality — governs parity-recovery policy.
+   *   'faithful'     → parity recovery ladder is activated when translated page
+   *                    count exceeds source page count.
+   *   'standard'     → parity is not enforced during rendering (default).
+   *   'external_pdf' → handled upstream; recovery is never invoked.
+   */
+  modality?: 'standard' | 'faithful' | 'external_pdf';
   surface?: 'preview-kit' | 'delivery-kit' | 'unknown';
   compactionAttempted?: boolean;
   languageIntegrity?: StructuredLanguageIntegritySignal;
@@ -1686,9 +1701,93 @@ export async function buildStructuredKitBuffer(
 
       translatedPdfBuffer = translatedPdfBase.buffer;
 
+      // ── Parity recovery loop (faithful modality only) ──────────────────────
+      // For faithful-modality documents, if the initial render produces more
+      // pages than the source, apply successive CSS/HTML compression levels
+      // and re-render until parity is achieved or all levels are exhausted.
+      // Standard and external_pdf modalities skip this block entirely.
+      if (
+        input.modality === 'faithful' &&
+        typeof input.sourcePageCount === 'number' &&
+        input.sourcePageCount > 0
+      ) {
+        let probePageCount = 0;
+        try {
+          const probe = await PDFDocument.load(translatedPdfBuffer, { ignoreEncryption: true });
+          probePageCount = probe.getPageCount();
+        } catch { /* leave probePageCount = 0 */ }
+
+        if (isParityRecoveryNeeded(probePageCount, input.sourcePageCount, 'faithful')) {
+          const budget = buildPageLayoutBudget(
+            input.sourcePageCount,
+            isLandscape ? 'landscape' : 'portrait',
+          );
+          log(
+            `parity recovery: start — translated=${probePageCount} source=${input.sourcePageCount} ` +
+            `overflow=${probePageCount - input.sourcePageCount} page(s) ` +
+            `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in`,
+          );
+
+          let bestBuffer = translatedPdfBuffer;
+          let bestPageCount = probePageCount;
+          let recoveryResolved = false;
+
+          for (let lvl = 1; lvl <= PARITY_MAX_RECOVERY_LEVEL && !recoveryResolved; lvl++) {
+            const level = lvl as ParityRecoveryLevel;
+            const recoveredHtml = applyRecoveryToHtml(safeAreaStructuredHtml, level);
+            const recoveredResult = await callGotenberg(
+              recoveredHtml,
+              paperSettings,
+              logPrefix,
+              `parity-recovery-l${level}`,
+              [],
+            );
+
+            if (recoveredResult.buffer) {
+              let recoveredPageCount = 0;
+              try {
+                const recoveredDoc = await PDFDocument.load(
+                  recoveredResult.buffer,
+                  { ignoreEncryption: true },
+                );
+                recoveredPageCount = recoveredDoc.getPageCount();
+              } catch { /* leave recoveredPageCount = 0 */ }
+
+              log(
+                `parity recovery level ${level}: translated_pages=${recoveredPageCount} ` +
+                `source_pages=${input.sourcePageCount} ` +
+                `resolved=${recoveredPageCount <= input.sourcePageCount}`,
+              );
+
+              if (recoveredPageCount <= input.sourcePageCount) {
+                bestBuffer = recoveredResult.buffer;
+                bestPageCount = recoveredPageCount;
+                recoveryResolved = true;
+                log(`parity recovery: resolved at level ${level}`);
+              } else if (recoveredPageCount < bestPageCount) {
+                // Partial improvement — keep as best candidate so far.
+                bestBuffer = recoveredResult.buffer;
+                bestPageCount = recoveredPageCount;
+              }
+            } else {
+              log(`parity recovery level ${level}: Gotenberg failed`);
+            }
+          }
+
+          if (!recoveryResolved) {
+            log(
+              `parity recovery: exhausted all levels — ` +
+              `final_translated=${bestPageCount} source=${input.sourcePageCount}`,
+            );
+          }
+
+          translatedPdfBuffer = bestBuffer;
+        }
+      }
+
       if (letterheadBuffer) {
         const overlayBuffer = await applyLetterheadOverlayToPdf(
-          translatedPdfBase.buffer,
+          translatedPdfBuffer,
           letterheadBuffer,
           logPrefix,
         );
