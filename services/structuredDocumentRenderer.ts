@@ -1519,6 +1519,275 @@ function collectStringSegments(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
+// ── Diploma payload language integrity ───────────────────────────────────────
+//
+// Diploma documents, by USCIS certified-translation policy, preserve proper
+// nouns in their source language: institution names, person names, location
+// names, registration number values. These fields are EXCLUDED from leakage
+// detection entirely.
+//
+// Only "body text" fields that must be translated to English are scanned:
+// conferral statement, degree title, program/course, supplementary notes,
+// document label, registration number labels, signatory roles, and visual
+// element descriptions.
+//
+// Within scanned body text, leakage caused by embedded institution name
+// references or proper-noun diacritics inside an otherwise-English conferral
+// statement is suppressed when at least one clear English conferral cue is
+// present in the suspicious segment. Fatal leakage (e.g. untranslated main
+// body clauses using civil-record vocabulary) always throws.
+
+/** Body text fields of AcademicDiplomaCertificate that must be in English. */
+const DIPLOMA_BODY_FIELD_KEYS: ReadonlyArray<keyof AcademicDiplomaCertificate> = [
+  'conferral_statement',
+  'degree_title',
+  'program_or_course',
+  'supplementary_notes',
+  'document_label',
+  'diploma_title',
+];
+
+/**
+ * English words/phrases that prove a body segment was intentionally translated.
+ * At least one must be present in a suspicious segment for leakage suppression
+ * to apply (demonstrating the field IS in English with retained proper nouns).
+ */
+const DIPLOMA_ENGLISH_CONFERRAL_CUES = [
+  'confers upon',
+  'hereby grants',
+  'the degree of',
+  'academic degree',
+  'bachelor',
+  'master',
+  'doctorate',
+  'technologist',
+  'rector',
+  'dean',
+  'having taken',
+  'pursuant to',
+  'in the exercise',
+  'in the use of',
+  'by law',
+  'law no',
+  'hereby conferred',
+  'fulfillment of',
+  'diploma number',
+] as const;
+
+/**
+ * Source-language markers that are always fatal for diploma body text — these
+ * indicate structurally untranslated content using civil-registry or civil-
+ * record vocabulary that must never appear in a properly translated diploma.
+ * Strong institutional phrases (e.g. "republica federativa do brasil") are NOT
+ * listed here because they can legitimately appear in translated authority
+ * references; they are handled by the English-cue suppression check instead.
+ */
+const DIPLOMA_FATAL_BODY_MARKERS = new Set([
+  'certidao de nascimento',
+  'certidao de casamento',
+  'registro civil das pessoas naturais',
+  'acta de nacimiento',
+  'oficial del registro civil',
+  'certidao',
+  'nascimento',
+  'casamento',
+  'cartorio',
+  'averbacao',
+  'declarante',
+  'naturalidade',
+  'filiacao',
+  'assento',
+  'registrado sob',
+  'nome do registrado',
+  'emitida em',
+  'oficial de registro',
+  'acta',
+  'inscrito',
+  'nacimiento',
+  'matrimonio',
+  'expedida',
+  'numero de acta',
+]);
+
+/**
+ * Collects labelled body segments from a diploma payload — only fields that
+ * must be in English. Proper noun fields (institution name, person name,
+ * location, dates, registration values, stamp text) are excluded from the
+ * returned set so they never contribute to leakage detection.
+ */
+function collectDiplomaBodySegments(
+  parsed: AcademicDiplomaCertificate,
+): Array<{ field: string; value: string }> {
+  const out: Array<{ field: string; value: string }> = [];
+
+  for (const key of DIPLOMA_BODY_FIELD_KEYS) {
+    const val = parsed[key];
+    if (typeof val === 'string' && val.trim()) {
+      out.push({ field: key as string, value: val.trim() });
+    }
+  }
+
+  // registration_numbers: label must be English; value is a numeric code → excluded
+  for (const rn of parsed.registration_numbers ?? []) {
+    if (typeof rn.label === 'string' && rn.label.trim()) {
+      out.push({ field: 'registration_numbers.label', value: rn.label.trim() });
+    }
+  }
+
+  // signatories: role must be English; name and institution are proper nouns → excluded
+  for (const sig of parsed.signatories ?? []) {
+    if (typeof sig.role === 'string' && sig.role.trim()) {
+      out.push({ field: 'signatories.role', value: sig.role.trim() });
+    }
+  }
+
+  // visual_elements: description must be English; text inside stamp/seal may
+  // be source-language text (official marks are preserved by policy) → text excluded
+  for (const el of parsed.visual_elements ?? []) {
+    if (typeof el.description === 'string' && el.description.trim()) {
+      out.push({ field: 'visual_elements.description', value: el.description.trim() });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Returns true when leakage detected in a diploma body field should be treated
+ * as acceptable retained content (embedded institution name / proper noun in an
+ * otherwise-English translated text) rather than a fatal translation failure.
+ *
+ * Suppression requires:
+ *   1. No diploma-fatal civil-record marker is present.
+ *   2. Every suspicious segment contains at least one English conferral cue
+ *      proving the field IS translated.
+ *
+ * degree_title and program_or_course are never suppressed — the degree name and
+ * program must always be rendered in English.
+ */
+function shouldSuppressDiplomaBodyLeakage(
+  leakage: SourceLanguageLeakageResult,
+  fieldName: string,
+): boolean {
+  if (fieldName === 'degree_title' || fieldName === 'program_or_course') {
+    return false;
+  }
+
+  const normalizedMatched = leakage.matchedMarkers.map((m) => normalizeAsciiToken(m));
+  const hasFatalMarker = normalizedMatched.some((m) => DIPLOMA_FATAL_BODY_MARKERS.has(m));
+  if (hasFatalMarker) return false;
+
+  for (const seg of leakage.suspiciousSegments) {
+    const lower = normalizeAsciiToken(seg);
+    const hasCue = DIPLOMA_ENGLISH_CONFERRAL_CUES.some((cue) => lower.includes(cue));
+    if (!hasCue) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Diploma-specific payload language integrity check.
+ *
+ * Replaces the generic assertPayloadLanguageIntegrity for academic_diploma_certificate.
+ * Key differences from the generic check:
+ *   - Only body text fields are scanned (DIPLOMA_BODY_FIELD_KEYS + sub-labels).
+ *   - Proper noun fields (issuing_institution, institution_subheading, recipient_name,
+ *     location, dates, registration values, signatories.name/institution, stamp text)
+ *     are excluded from scanning per USCIS policy.
+ *   - Suppression applies when leakage traces to embedded proper nouns inside an
+ *     otherwise-English conferral statement (institution name reference).
+ *   - Fatal leakage (genuinely untranslated body text with civil-record vocabulary)
+ *     still throws immediately.
+ *   - Per-field diagnostics are logged for observability.
+ */
+function assertDiplomaPayloadLanguageIntegrity(
+  input: StructuredRenderInput,
+  parsed: AcademicDiplomaCertificate,
+  diagnostics: StructuredRenderLanguageIntegrity,
+): void {
+  const targetLanguage = resolveTargetLanguage(input);
+  if (normalizeLanguageCode(targetLanguage) !== 'EN') return;
+
+  const sourceLanguage = resolveSourceLanguage(input);
+  const labelledSegments = collectDiplomaBodySegments(parsed);
+
+  const properNounSample = [
+    parsed.issuing_institution,
+    parsed.recipient_name,
+    parsed.location,
+  ].filter((v): v is string => typeof v === 'string' && v.trim().length > 0).slice(0, 3);
+
+  console.log(
+    `${input.logPrefix} [diploma-integrity] scanning body fields: ` +
+    `body_fields=${labelledSegments.length} ` +
+    `proper_noun_fields_excluded=[${properNounSample.map((v) => `"${v.slice(0, 28)}"`).join('; ')}] ` +
+    `source_lang=${sourceLanguage}`,
+  );
+
+  const allFatalMarkers = new Set<string>();
+  const suppressedFields: string[] = [];
+  const fatalFields: string[] = [];
+
+  for (const { field, value } of labelledSegments) {
+    const leakage = detectSourceLanguageLeakageFromSegments([value], {
+      sourceLanguage,
+      targetLanguage,
+    });
+
+    if (!leakage.detected) continue;
+
+    if (shouldSuppressDiplomaBodyLeakage(leakage, field)) {
+      suppressedFields.push(`${field}:${leakage.matchedMarkers.join(',')}`);
+      console.log(
+        `${input.logPrefix} [diploma-integrity] suppressed leakage in "${field}": ` +
+        `markers=[${leakage.matchedMarkers.join(', ')}] — ` +
+        `treated as retained proper noun / institutional name reference`,
+      );
+      continue;
+    }
+
+    fatalFields.push(field);
+    leakage.matchedMarkers.forEach((m) => allFatalMarkers.add(m));
+    console.warn(
+      `${input.logPrefix} [diploma-integrity] fatal leakage in "${field}": ` +
+      `markers=[${leakage.matchedMarkers.join(', ')}] ` +
+      `suspicious_segments=${leakage.suspiciousSegments.length}`,
+    );
+  }
+
+  diagnostics.sourceLanguageMarkers = [
+    ...Array.from(allFatalMarkers),
+    ...suppressedFields.map((f) => `[suppressed]${f}`),
+  ];
+  diagnostics.sourceContentAttempted =
+    fatalFields.length > 0 || suppressedFields.length > 0;
+
+  if (fatalFields.length > 0) {
+    diagnostics.sourceLanguageContaminatedZones = fatalFields;
+    diagnostics.languageIssueType = 'source_language_mismatch';
+    throw new StructuredRenderingRequiredError(
+      input.documentType,
+      buildStructuredFailureMessage(
+        input.documentType,
+        `Structured translated diploma blocked: untranslated body text detected in ` +
+        `[${fatalFields.join(', ')}]. Conferral statement, degree title, program name, ` +
+        `and supplementary notes must be in English. ` +
+        `Proper nouns (institution name, recipient name, location) are excluded from validation.`,
+      ),
+    );
+  }
+
+  diagnostics.sourceLanguageContaminatedZones = [];
+  diagnostics.languageIssueType = 'none';
+
+  console.log(
+    `${input.logPrefix} [diploma-integrity] passed — ` +
+    `body_fields_clean=${labelledSegments.length - suppressedFields.length} ` +
+    `suppressed_proper_noun_leakage=${suppressedFields.length}`,
+  );
+}
+
 function assertPayloadLanguageIntegrity(
   input: StructuredRenderInput,
   payload: unknown,
@@ -2816,7 +3085,7 @@ async function extractAndRenderAsDiploma(
     ...defaultLanguageIntegrity,
     translatedPayloadFound: true,
   };
-  assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
+  assertDiplomaPayloadLanguageIntegrity(input, parsed, languageIntegrity);
 
   // Diplomas are almost always portrait; fall back to portrait if orientation unknown.
   const effectiveOrientation: DocumentOrientation =
@@ -4174,7 +4443,7 @@ export async function renderSupportedStructuredDocument(
         ...defaultLanguageIntegrity,
         translatedPayloadFound: true,
       };
-      assertPayloadLanguageIntegrity(input, parsed, languageIntegrity, 'preview');
+      assertDiplomaPayloadLanguageIntegrity(input, parsed, languageIntegrity);
 
       const effectiveOrientation: DocumentOrientation =
         input.detectedOrientation === 'unknown' ? 'landscape' : input.detectedOrientation;
