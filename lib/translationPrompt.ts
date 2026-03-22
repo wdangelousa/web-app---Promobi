@@ -45,7 +45,7 @@ export function buildUserMessage(
   // not sufficient — without the explicit count Claude may compress a 2-page
   // source into a single section, causing parity underflow.
   const pageHint = pageCount
-    ? ` The original has ${pageCount} page(s). Output exactly ${pageCount} <section class="page"> container(s) — one per source page in document order. Do NOT collapse multiple source pages into fewer sections. Preserve every page's content separately.`
+    ? ` The original has ${pageCount} page(s). Output exactly ${pageCount} <section class="page"> container(s) — one per source page in document order. Do NOT collapse multiple source pages into fewer sections. Keep all content from source page N strictly within translated section N — do NOT move content from source page N+1 into section N even if section N appears to have remaining space. Source page boundaries are absolute.`
     : '';
 
   return `Translate this ${sourceLangLabel} ${mediaType} to English following all rules above.${pageHint} Output the translation only, no commentary.`;
@@ -231,6 +231,49 @@ For each page:
 
 Do not let text expansion on one page create cascading drift across later pages.
 
+PAGE CONTENT ISOLATION — ABSOLUTE RULE
+Each translated <section class="page"> must contain ONLY the translated content from its corresponding source page.
+
+Source page 1 → section 1 ONLY.
+Source page 2 → section 2 ONLY.
+Source page N → section N ONLY.
+
+NEVER move content from source page N+1 into section N because section N appears to have remaining space.
+NEVER redistribute content based on available visual space in the translated layout.
+Source page boundaries are absolute walls — not soft suggestions.
+
+To identify page boundaries in the source: look for the physical page turn. Everything before the first page turn belongs to page 1. Everything between the first and second page turn belongs to page 2. Etc.
+
+Common multi-page patterns — preserve these separations exactly:
+- Diploma/Certificate front (page 1): title, institution name, degree recipient, degree text, ceremonial prose, institutional signatures, institutional seal
+  Apostille/Authentication back (page 2): authentication form fields, authority name, date, notary signature, notary stamp, validation number
+- Certificate front (page 1): main certificate content, primary signatures
+  Registry back (page 2): registry details, authentication notice, validation codes, electronic signature block
+- Document front (page 1): identification header, main body fields
+  Administrative back (page 2): annotations, endorsements, official stamps, observer/registrar block
+
+Do NOT place apostille content (source page 2) into section 1 because section 1 appears to have remaining space.
+Do NOT place registry/validation blocks (source page 2) into section 1.
+Do NOT move any back-page content forward to fill perceived white space.
+
+BLOCK HIERARCHY WITHIN EACH SECTION
+Within each <section class="page">, group content into semantic block divs that mirror the original page's visual composition.
+
+Use these block-level wrapper divs inside each section:
+  <div class="block-title"> — document title, degree name, certificate heading (usually centered)
+  <div class="block-institution"> — issuing institution name, authority identifier (usually centered)
+  <div class="block-recipient"> — person's name, degree recipient, subject of the document (usually centered)
+  <div class="block-content"> — main fields, body content, form grid, data rows
+  <div class="block-signatures"> — signature lines, signatory names and titles, date-of-signing
+  <div class="block-stamps"> — bracketed stamp/seal/watermark descriptions [Stamp: ...] [Seal: ...]
+  <div class="block-authentication"> — apostille block, authentication certificate form
+  <div class="block-footer"> — registry footer, validation code, electronic signature block, QR reference
+
+For ceremonial documents (diplomas, awards, degrees): section 1 should contain block-title, block-institution, block-recipient, block-content, block-signatures, block-stamps in that order.
+For administrative/authentication pages: section 2 should contain block-authentication, block-stamps, block-footer in that order.
+
+These block divs preserve the page composition even after content is compacted — they are structural groupings, not decorative wrappers.
+
 HTML OUTPUT REQUIREMENTS
 Return CLEAN, RENDER-READY HTML ONLY.
 
@@ -260,20 +303,36 @@ Return the document using this structure:
 
 <div class="translated-document">
   <section class="page">
-    ...page 1 mirrored structure...
+    <!-- ONLY content from source page 1 — do NOT include source page 2 content here -->
+    <div class="block-title">...document title...</div>
+    <div class="block-institution">...institution name...</div>
+    <div class="block-recipient">...person's name...</div>
+    <div class="block-content">...main fields and body...</div>
+    <div class="block-signatures">...signature lines...</div>
+    <div class="block-stamps">...[Stamp: ...] [Seal: ...]...</div>
   </section>
   <section class="page">
-    ...page 2 mirrored structure...
+    <!-- ONLY content from source page 2 — do NOT include source page 1 content here -->
+    <div class="block-authentication">...apostille / authentication form...</div>
+    <div class="block-stamps">...[Stamp: ...] [Seal: ...]...</div>
+    <div class="block-footer">...registry, validation, electronic signature...</div>
   </section>
 </div>
+
+Omit block divs that have no content for the given page.
+Use only the block divs that correspond to blocks actually present on each source page.
 
 CLASS NAMING RULES
 Use class names that describe layout function, not document family.
 
-Preferred class examples:
-translated-document, page, section-block, section-title, meta-row, field-grid,
-dense-table, compact-table, numeric-col, label, value, note, signature-line,
-watermark-note, long-text, short-label, boxed-group
+Required block-level classes (use these to wrap content groups within each section):
+  block-title, block-institution, block-recipient, block-content,
+  block-signatures, block-stamps, block-authentication, block-footer
+
+Additional inline/structural classes as needed:
+  translated-document, page, section-block, section-title, meta-row, field-grid,
+  dense-table, compact-table, numeric-col, label, value, note, signature-line,
+  watermark-note, long-text, short-label, boxed-group
 
 Do NOT use class names based on genre assumptions.
 

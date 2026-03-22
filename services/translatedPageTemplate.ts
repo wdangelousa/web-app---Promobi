@@ -292,6 +292,67 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       page-break-after: auto;
     }
 
+    /* ── Page-local block hierarchy ──────────────────────────────────────────
+       Semantic block divs emitted by the translator preserve the visual
+       composition of each source page.  These rules give each block type a
+       distinct visual treatment so the translated page reads as a structured
+       document page rather than an undifferentiated prose transcript. */
+
+    /* Title block — document title, degree name, certificate heading */
+    .block-title {
+      text-align: center;
+      margin: 4pt 0 5pt;
+    }
+
+    /* Institution block — issuing authority, university, registry office */
+    .block-institution {
+      text-align: center;
+      margin: 2pt 0 4pt;
+    }
+
+    /* Recipient block — person's name, degree recipient */
+    .block-recipient {
+      text-align: center;
+      margin: 3pt 0;
+    }
+
+    /* Content block — main fields, body text, form data */
+    .block-content {
+      margin: 3pt 0;
+    }
+
+    /* Signatures block — signature lines, signatory names and titles */
+    .block-signatures {
+      margin-top: 5pt;
+      padding-top: 2pt;
+    }
+
+    /* Stamps block — bracketed [Stamp: ...] [Seal: ...] descriptions */
+    .block-stamps {
+      font-size: 8px;
+      color: #555;
+      font-style: italic;
+      margin: 2pt 0;
+      line-height: 1.3;
+    }
+
+    /* Authentication block — apostille form, authentication certificate */
+    .block-authentication {
+      margin-top: 5pt;
+      padding-top: 3pt;
+      border-top: 0.5pt solid #bbb;
+    }
+
+    /* Footer block — registry data, validation codes, electronic signature */
+    .block-footer {
+      font-size: 8px;
+      color: #555;
+      margin-top: 4pt;
+      padding-top: 2pt;
+      border-top: 0.5pt solid #ddd;
+      line-height: 1.3;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;

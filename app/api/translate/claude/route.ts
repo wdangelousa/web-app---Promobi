@@ -307,6 +307,23 @@ export async function POST(req: Request) {
       `stop_reason=${response.stop_reason}`
     );
 
+    // Per-section content distribution — verifies page-local isolation.
+    // Each entry is [sectionIndex, charCount] for diagnosing overloaded/sparse pages.
+    if (sanitizedSectionPageCount > 1) {
+      const sectionMatches = [...translatedText.matchAll(/<section\b[^>]*class="[^"]*\bpage\b[^"]*"[^>]*>([\s\S]*?)(?=<section\b|$)/gi)];
+      const distribution = sectionMatches.map((m, i) => {
+        const content = m[1] ?? '';
+        const chars = content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().length;
+        const blockTitles = (content.match(/class="block-title"/g) ?? []).length;
+        const blockAuth = (content.match(/class="block-authentication"/g) ?? []).length;
+        return `s${i + 1}:chars=${chars},blockTitle=${blockTitles},blockAuth=${blockAuth}`;
+      });
+      console.log(
+        `[pageLocalFidelity] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+        `sectionDistribution=[${distribution.join(' | ')}]`
+      );
+    }
+
     if (pageCount && pageCount > 1) {
       if (response.stop_reason === 'max_tokens') {
         console.error(
