@@ -40,8 +40,12 @@ export function buildUserMessage(
   pageCount?: number
 ): string {
   const mediaType = isPdf ? 'document' : 'document image';
+  // Explicit page-section contract: tell Claude exactly how many
+  // <section class="page"> containers to output.  A density hint alone is
+  // not sufficient — without the explicit count Claude may compress a 2-page
+  // source into a single section, causing parity underflow.
   const pageHint = pageCount
-    ? ` The original has ${pageCount} page(s) — keep the same density so the translation fits the same page count.`
+    ? ` The original has ${pageCount} page(s). Output exactly ${pageCount} <section class="page"> container(s) — one per source page in document order. Do NOT collapse multiple source pages into fewer sections. Preserve every page's content separately.`
     : '';
 
   return `Translate this ${sourceLangLabel} ${mediaType} to English following all rules above.${pageHint} Output the translation only, no commentary.`;

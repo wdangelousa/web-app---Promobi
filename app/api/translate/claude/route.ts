@@ -218,9 +218,12 @@ export async function POST(req: Request) {
     }
 
     // ── Call Claude ──
+    // max_tokens: 16000 — 8192 was insufficient for dense 2-page documents.
+    // A scanned diploma + back-page apostille can exceed 8192 output tokens,
+    // causing the second <section class="page"> to be truncated and lost.
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [{ role: "user", content: messageContent }],
     });
@@ -279,6 +282,14 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── Page count chain diagnostic ──────────────────────────────────────────
+    // Count <section class="page"> elements in raw and sanitized output so we
+    // can trace exactly where a page count drop occurs without guessing.
+    const rawSectionPageCount =
+      (rawTranslation.match(/<section\b[^>]*class="[^"]*\bpage\b/gi) ?? []).length;
+    const sanitizedSectionPageCount =
+      (translatedText.match(/<section\b[^>]*class="[^"]*\bpage\b/gi) ?? []).length;
+
     console.log(
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
@@ -286,6 +297,39 @@ export async function POST(req: Request) {
       `faithfulPromptUsed=${useFaithfulPrompt} continuousTextPath=${isContinuousTextPath} ` +
       `structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
     );
+
+    // Log full page-count chain so underflow is immediately visible in logs.
+    console.log(
+      `[pageCountChain] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `sourcePdfPageCount=${pageCount ?? "unknown"} ` +
+      `anthropicRawSectionCount=${rawSectionPageCount} ` +
+      `sanitizedSectionCount=${sanitizedSectionPageCount} ` +
+      `stop_reason=${response.stop_reason}`
+    );
+
+    if (pageCount && pageCount > 1) {
+      if (response.stop_reason === 'max_tokens') {
+        console.error(
+          `[pageCountGuard] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+          `TRUNCATION: Claude hit max_tokens limit. Output may be incomplete. ` +
+          `sourcePdfPageCount=${pageCount} sanitizedSectionCount=${sanitizedSectionPageCount}`
+        );
+      }
+      if (sanitizedSectionPageCount > 0 && sanitizedSectionPageCount < pageCount) {
+        console.warn(
+          `[pageCountGuard] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+          `UNDERFLOW: source=${pageCount} translatedSections=${sanitizedSectionPageCount} — ` +
+          `page(s) lost in translation output`
+        );
+      }
+      if (sanitizedSectionPageCount === 0) {
+        console.warn(
+          `[pageCountGuard] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+          `NO_SECTIONS: Claude did not emit any <section class="page"> containers. ` +
+          `sourcePdfPageCount=${pageCount}. Content will flow as a single block.`
+        );
+      }
+    }
 
     return NextResponse.json({
       translatedText,

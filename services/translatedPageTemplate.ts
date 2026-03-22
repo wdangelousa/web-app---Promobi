@@ -276,6 +276,22 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       width: 100%;
     }
 
+    /* ── Multi-page section breaks ───────────────────────────────────────────
+       When Claude outputs one <section class="page"> per source page, each
+       section must produce a hard page break in the rendered PDF.
+       Without this rule Gotenberg flows all sections continuously and a
+       2-page source collapses to 1 PDF page when the content is short enough
+       to fit.  The :last-child reset prevents a trailing blank page. */
+    section.page {
+      break-after: page;
+      page-break-after: always;
+    }
+
+    section.page:last-child {
+      break-after: auto;
+      page-break-after: auto;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;

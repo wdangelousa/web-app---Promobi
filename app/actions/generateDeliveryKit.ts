@@ -285,6 +285,21 @@ export async function generateDeliveryKit(
           ? 'certificate' as const
           : 'standard' as const;
 
+        // Page-count chain diagnostic — delivery stage
+        const deliverySectionCount =
+          (faithfulText.match(/<section\b[^>]*class="[^"]*\bpage\b/gi) ?? []).length;
+        console.log(
+          `${logPrefix} [pageCountChain] deliveryInputSectionCount=${deliverySectionCount} ` +
+          `sourcePageCount=${sourcePageCount ?? 'unknown'}`
+        );
+        if (sourcePageCount && sourcePageCount > 1 && deliverySectionCount > 0 && deliverySectionCount < sourcePageCount) {
+          console.warn(
+            `${logPrefix} [pageCountGuard] DELIVERY UNDERFLOW: ` +
+            `storedSections=${deliverySectionCount} source=${sourcePageCount} — ` +
+            `translated artifact is missing page(s)`
+          );
+        }
+
         const htmlForKit = buildTranslatedPageHtml({
           translatedHtml: compactTranslatorNoteParagraphs(
             compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),

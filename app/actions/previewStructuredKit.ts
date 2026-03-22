@@ -498,6 +498,23 @@ export async function previewStructuredKit(
       ? 'certificate' as const
       : 'standard' as const;
 
+    // Page-count chain diagnostic — preview stage
+    const previewSectionCount =
+      (faithfulText.match(/<section\b[^>]*class="[^"]*\bpage\b/gi) ?? []).length;
+    console.log(
+      `[previewKit] Order #${orderId} Doc #${documentId} ` +
+      `[pageCountChain] previewInputSectionCount=${previewSectionCount} ` +
+      `sourcePageCount=${sourcePageCount ?? 'unknown'}`
+    );
+    if (sourcePageCount && sourcePageCount > 1 && previewSectionCount > 0 && previewSectionCount < sourcePageCount) {
+      console.warn(
+        `[previewKit] Order #${orderId} Doc #${documentId} ` +
+        `[pageCountGuard] PREVIEW UNDERFLOW: ` +
+        `storedSections=${previewSectionCount} source=${sourcePageCount} — ` +
+        `translated artifact is missing page(s)`
+      );
+    }
+
     const mirrorHtml = buildTranslatedPageHtml({
       translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
       documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
