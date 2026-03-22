@@ -167,8 +167,15 @@ test('structuredPreviewKit.ts letterhead overlay uses post-recovery buffer', () 
 test('generateDeliveryKit.ts passes modality to both kit calls', () => {
   const src = read('app/actions/generateDeliveryKit.ts')
 
+  // External-PDF path still hard-codes 'external_pdf'
   assert.match(src, /modality: "external_pdf"/)
-  assert.match(src, /modality: resolveDocumentTypeModality\(classification\.documentType\)/)
+  // Internal path: kitModality variable is seeded from resolveDocumentTypeModality
+  // and then overridden to 'faithful' for faithful-light paths so parity recovery activates.
+  // kitModality is seeded via: const modality = resolveDocumentTypeModality(...); let kitModality = modality
+  // then overridden to 'faithful' in each faithful-light path.
+  assert.match(src, /resolveDocumentTypeModality\(classification\.documentType\)/)
+  assert.match(src, /let kitModality/)
+  assert.match(src, /modality: kitModality/)
 })
 
 test('previewStructuredKit.ts passes modality to both kit calls', () => {
@@ -192,8 +199,10 @@ test('faithful_light_fallback flows through the same recovery-aware kit builder'
   assert.match(deliverySrc, /faithful_light_fallback/)
   assert.match(previewSrc, /faithful_light_fallback/)
 
-  // Both files pass modality for the internal branch (not just external_pdf)
-  assert.match(deliverySrc, /modality: resolveDocumentTypeModality/)
+  // generateDeliveryKit uses kitModality (seeded from resolveDocumentTypeModality, overridden
+  // to 'faithful' for all faithful-light paths so parity recovery activates).
+  // previewStructuredKit still passes resolveDocumentTypeModality directly.
+  assert.match(deliverySrc, /modality: kitModality/)
   assert.match(previewSrc, /modality: resolveDocumentTypeModality/)
 })
 
