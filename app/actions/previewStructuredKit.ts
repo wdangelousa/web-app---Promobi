@@ -31,6 +31,7 @@ import {
   type StructuredPageParityDecision,
   type PageParityDecisionContext,
 } from '@/services/structuredPreviewKit';
+import type { DocumentOrientation } from '@/lib/documentOrientationDetector';
 import { classifyDocument } from '@/services/documentClassifier';
 import { type StructuredRenderLanguageIntegrity } from '@/services/structuredDocumentRenderer';
 import { isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
