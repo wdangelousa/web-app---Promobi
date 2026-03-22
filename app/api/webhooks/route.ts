@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import Stripe from 'stripe';
-import { initiateTranslation } from '@/app/actions/translation';
 import { NotificationService } from '@/lib/notification';
 import { sendOrderConfirmationEmail } from '@/lib/mail';
 
@@ -70,29 +69,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: false, message: "Unrecognized webhook source" }, { status: 400 });
 }
 
-async function processPaymentSuccess(orderId: number, provider: string) {
-    console.log(`Processing ${provider} success for Order #${orderId}`);
-
-    try {
-        // 1. Update Order Status in Prisma
-        const order = await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'PAID' },
-            include: { user: true }
-        });
-
-        console.log(`Order #${orderId} marked as PAID.`);
-
-        // 2. Notify Client (Email)
-        await NotificationService.notifyOrderCreated(order);
-
-        // 3. Initiate Automated Translation (Async)
-        if (order.hasTranslation) {
-            initiateTranslation(order.id)
-                .catch(err => console.error("Async translation trigger failed:", err));
-        }
-
-    } catch (error) {
-        console.error(`Error processing payment for Order #${orderId}:`, error);
-    }
-}
+// processPaymentSuccess() removed — was dead code. Payment confirmation is
+// now handled by confirmPayment() in app/actions/confirm-payment.ts which is
+// called directly from the POST handler above.

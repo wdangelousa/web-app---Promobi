@@ -1,3 +1,13 @@
+/**
+ * DEPRECATED — Azure Document Intelligence + Anthropic two-step pipeline.
+ *
+ * This file is no longer part of the production translation flow.
+ * All callers have been updated to use confirmPayment() → translate-order
+ * edge function → /api/translate/claude (single Anthropic mirror HTML pass).
+ *
+ * Do not add new callers. This file can be deleted once existing DB records
+ * that reference its output have been migrated.
+ */
 'use server'
 
 import Anthropic from '@anthropic-ai/sdk'

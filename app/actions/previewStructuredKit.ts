@@ -3,25 +3,22 @@
 /**
  * app/actions/previewStructuredKit.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * On-demand server action: generates a structured preview kit for a document.
+ * On-demand server action: generates a preview kit for a document.
  *
- * Called when the operator clicks "Preview Kit" in the Workbench and selects
- * a cover language variant (PT→EN or ES→EN) from the language modal.
+ * Called when the operator clicks "Preview Kit" in the Workbench.
  *
- * This action:
- *   1. Loads the document's original file URL and metadata from the DB.
- *   2. Fetches the original source file buffer.
- *   3. Classifies the document type from available signals (using
- *      effectiveTranslatedText, not raw doc.translatedText, so editor content
- *      is factored in when the operator hasn't saved yet).
- *   4. Enforces the global client-facing rendering invariant:
- *      translated preview output MUST pass through a structured family renderer.
- *      Missing/unknown family is an explicit blocking error.
- *   5. Never falls back to linear/plain rendering.
- *   6. Calls assembleStructuredPreviewKit with the resolved HTML.
- *   7. Returns the preview kit URL.
+ * Canonical flow:
+ *   1. Load document, resolve artifact (external PDF or translated HTML).
+ *   2. Fetch original source file for Part 3 appending.
+ *   3. Classify document type as a metadata hint (layout hint only).
+ *   4. Build mirror HTML from the stored translatedText artifact.
+ *      CSS and Gotenberg handle typography/density — no family renderer required.
+ *   5. Assemble the 3-part preview kit via assembleStructuredPreviewKit.
+ *   6. Return the preview URL.
  *
  * Guarantees:
+ *   - Document family/type is used only as a layout hint (certificate vs standard).
+ *     It never blocks preview generation.
  *   - Never modifies DB records, delivery_pdf_url, or translation_status.
  *   - Never affects the official delivery flow.
  *   - Never throws — errors are caught and returned as { success: false }.
@@ -29,24 +26,14 @@
  */
 
 import prisma from '@/lib/prisma';
-import Anthropic from '@anthropic-ai/sdk';
 import {
   assembleStructuredPreviewKit,
   type StructuredPageParityDecision,
   type PageParityDecisionContext,
 } from '@/services/structuredPreviewKit';
 import { classifyDocument } from '@/services/documentClassifier';
-import { type DocumentOrientation } from '@/lib/documentOrientationDetector';
-import {
-  assertStructuredClientFacingRender,
-  formatStructuredRenderingFailureMessage,
-  type StructuredRenderLanguageIntegrity,
-  renderStructuredFamilyDocument,
-  StructuredRenderingRequiredError,
-} from '@/services/structuredDocumentRenderer';
-import { resolveDocumentTypeModality } from '@/services/documentFamilyRegistry';
-import { buildPageLayoutBudget, buildPreRenderLayoutHints } from '@/lib/parityRecovery';
-import { resolveSinglePageRouting, isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
+import { type StructuredRenderLanguageIntegrity } from '@/services/structuredDocumentRenderer';
+import { isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
@@ -490,18 +477,37 @@ export async function previewStructuredKit(
       `(confidence: ${classification.confidence})`,
     );
 
-    // ── Step 4: Resolve preview HTML under strict structured invariant ──────
+    // ── Step 4: Build mirror HTML from translated artifact (canonical path) ──
+    //
+    // doc.translatedText (or editorHtml) is the Anthropic mirror HTML. CSS and
+    // Gotenberg handle typography, density, and letterhead — no family renderer.
+    // Document type is a layout hint only (certificate vs standard page sizing).
 
-    let structuredHtml = '';  // assigned by structured rendering or faithful-light fallback
-    // orientationForKit: the orientation to pass to assembleStructuredPreviewKit.
-    // May differ from detectedOrientation depending on per-family override logic.
-    let orientationForKit: DocumentOrientation = detectedOrientation;
-    let resolvedFamilyForKit: string = 'unknown';
-    let resolvedRendererForKit: string = 'unknown';
-    let resolvedLanguageIntegrityForKit: StructuredRenderLanguageIntegrity = {
+    const faithfulText = effectiveTranslatedText?.trim() ?? null;
+    if (!faithfulText || faithfulText.length < 50) {
+      return {
+        success: false,
+        error:
+          `Document #${documentId} has no translated HTML. ` +
+          `Translation must complete before generating a preview kit.`,
+      };
+    }
+
+    const layoutHint = isCertificateGenreDocumentType(classification.documentType)
+      ? 'certificate' as const
+      : 'standard' as const;
+
+    const mirrorHtml = buildTranslatedPageHtml({
+      translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+      documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
+      orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
+      layoutHint,
+    });
+
+    const languageIntegrity: StructuredRenderLanguageIntegrity = {
       targetLanguage: 'EN',
       sourceLanguage: (doc.sourceLanguage ?? 'unknown').toUpperCase(),
-      translatedPayloadFound: false,
+      translatedPayloadFound: true,
       translatedZonesCount: null,
       sourceZonesCount: null,
       missingTranslatedZones: [],
@@ -513,165 +519,23 @@ export async function previewStructuredKit(
       mappedGenericZones: [],
       languageIssueType: 'none',
     };
-    const modality = resolveDocumentTypeModality(classification.documentType);
-    // Phase 2 prep: pre-render layout hints passed to the renderer so it
-    // can eventually pre-optimise layout before the first Gotenberg pass.
-    const layoutHints =
-      modality === 'faithful' &&
-      sourcePageCount != null &&
-      sourcePageCount > 0
-        ? buildPreRenderLayoutHints(
-            buildPageLayoutBudget(
-              sourcePageCount,
-              detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
-            ),
-          )
-        : undefined;
 
-    // ── Single-page routing safeguard ─────────────────────────────────────────
-    // For sourcePageCount === 1, structured AI is blocked by default because it
-    // frequently expands 1-page docs to 2+ pages, forcing parity conflicts.
-    // Only whitelisted document types (field-heavy forms, dedicated cert renderers)
-    // are allowed to use structured AI for single-page sources.
-    const singlePageRouting = resolveSinglePageRouting(
-      classification.documentType,
-      sourcePageCount,
+    console.log(
+      `${logPrefix} — mirror_html renderer | ` +
+      `documentType=${classification.documentType} orientation=${detectedOrientation} ` +
+      `layoutHint=${layoutHint} pages=${sourcePageCount ?? 'n/a'}`,
     );
-    const singlePageSafeguardApplied = singlePageRouting === 'safeguard_blocked';
-
-    if (singlePageSafeguardApplied) {
-      console.log(
-        `${logPrefix} — single_page_routing: source_page_count=1 ` +
-        `structured_ai_blocked=true renderer_chosen=faithful_light_safeguard ` +
-        `document_type=${classification.documentType}`,
-      );
-      const faithfulText = effectiveTranslatedText?.trim() ?? null;
-      if (faithfulText !== null && faithfulText.length > 50) {
-        structuredHtml = buildTranslatedPageHtml({
-          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
-          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
-          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
-          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
-        });
-        resolvedFamilyForKit = classification.documentType;
-        resolvedRendererForKit = 'faithful_light_safeguard';
-        // orientationForKit and resolvedLanguageIntegrityForKit keep their defaults
-      } else {
-        return {
-          success: false,
-          error:
-            `Single-page safeguard blocked structured AI for "${classification.documentType}" ` +
-            `but no translated text is available for faithful-light rendering.`,
-        };
-      }
-    } else {
-      if (singlePageRouting === 'structured_ai_allowed') {
-        console.log(
-          `${logPrefix} — single_page_routing: source_page_count=1 ` +
-          `structured_ai_blocked=false (whitelisted) document_type=${classification.documentType}`,
-        );
-      }
-
-    try {
-      const renderAssertion = assertStructuredClientFacingRender({
-        documentType: classification.documentType,
-        documentLabel: documentLabelHint,
-        fileUrl: doc.originalFileUrl,
-        translatedText: effectiveTranslatedText,
-        detectedOrientation,
-        surface: 'preview-kit',
-        logPrefix,
-      });
-
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const resolved = await renderStructuredFamilyDocument({
-        client,
-        family: renderAssertion.family,
-        documentType: renderAssertion.documentType,
-        originalFileBuffer,
-        originalFileUrl: doc.originalFileUrl,
-        contentType,
-        sourcePageCount,
-        detectedOrientation,
-        orderId,
-        documentId,
-        sourceLanguage: doc.sourceLanguage ?? null,
-        targetLanguage: 'EN',
-        logPrefix,
-        layoutHints,
-        documentTypeLabel: documentLabelHint,
-      });
-
-      structuredHtml = resolved.structuredHtml;
-      orientationForKit = resolved.orientationForKit;
-      resolvedFamilyForKit = renderAssertion.family;
-      resolvedRendererForKit = resolved.rendererName;
-      resolvedLanguageIntegrityForKit = resolved.languageIntegrity;
-
-      console.log(
-        `${logPrefix} — structured renderer applied: yes | family=${renderAssertion.family} | ` +
-        `renderer=${resolved.rendererName} | orientation=${orientationForKit} | pages=${sourcePageCount ?? 'n/a'} | ` +
-        `layoutDefault=${renderAssertion.familyLayoutProfile.defaultOrientation} | ` +
-        `surfaceRequirement=${renderAssertion.surfaceRequirement} | ` +
-        `priority=${renderAssertion.implementationMatrixRow.priorityLevel} | ` +
-        `capabilities=preview:${renderAssertion.familyClientFacingCapability.previewSupported ? 'yes' : 'no'} ` +
-        `delivery:${renderAssertion.familyClientFacingCapability.deliverySupported ? 'yes' : 'no'} ` +
-        `orientation:${renderAssertion.familyClientFacingCapability.orientationSupport} ` +
-        `table:${renderAssertion.familyClientFacingCapability.tableSupport} ` +
-        `signature:${renderAssertion.familyClientFacingCapability.signatureBlockSupport} ` +
-        `denseTable:${renderAssertion.implementationMatrixRow.denseTableHandling ? 'yes' : 'no'} ` +
-        `signatureSeal:${renderAssertion.implementationMatrixRow.signatureSealHandling ? 'yes' : 'no'}`,
-      );
-    } catch (err) {
-      // ── Faithful-light fallback ────────────────────────────────────────────
-      // When the specialized family renderer fails (bad JSON / schema mismatch /
-      // unimplemented family), downgrade to faithful-light for all modalities
-      // ('standard' and 'faithful') rather than blocking the kit.
-      // 'faithful' families (editorial/news) must use this path to preserve layout.
-      // 'standard' families may simplify — faithful-light is an acceptable wrapper.
-      // The kit assembler's language gate still runs to block source-language leakage.
-      const faithfulText = effectiveTranslatedText?.trim() ?? null;
-      if (
-        err instanceof StructuredRenderingRequiredError &&
-        (modality === 'standard' || modality === 'faithful') &&
-        faithfulText !== null &&
-        faithfulText.length > 50
-      ) {
-        console.log(
-          `${logPrefix} — structured rendering failed; activating faithful-light fallback ` +
-          `for "${classification.documentType}" (modality: ${modality}, reason: ${err.message.slice(0, 120)})`,
-        );
-        structuredHtml = buildTranslatedPageHtml({
-          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
-          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
-          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
-          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
-        });
-        resolvedFamilyForKit = classification.documentType;
-        resolvedRendererForKit = 'faithful_light_fallback';
-        // orientationForKit and resolvedLanguageIntegrityForKit keep their defaults
-      } else {
-        return {
-          success: false,
-          error: formatStructuredRenderingFailureMessage(classification.documentType, err),
-        };
-      }
-    }
-    } // end: else (not singlePageSafeguardApplied)
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
 
-    // Cover logic, original-append logic, letterhead PNG overlay, and Gotenberg
-    // margins are all handled inside assembleStructuredPreviewKit — unchanged.
-
     const kit = await assembleStructuredPreviewKit({
-      structuredHtml,
+      structuredHtml: mirrorHtml,
       originalFileBuffer,
       isOriginalPdf,
       orderId,
       documentId,
       sourceLanguage: doc.sourceLanguage ?? 'pt',
-      targetLanguage: resolvedLanguageIntegrityForKit.targetLanguage,
+      targetLanguage: 'EN',
       coverVariant,
       documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
       sourcePageCount,
@@ -680,136 +544,24 @@ export async function previewStructuredKit(
       groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
       originalFileUrl: doc.originalFileUrl,
       originalContentType: contentType,
-      orientation: orientationForKit === 'landscape' ? 'landscape' : undefined,
-      documentFamily: resolvedFamilyForKit,
-      rendererName: resolvedRendererForKit,
-      modality: resolveDocumentTypeModality(classification.documentType),
+      orientation: detectedOrientation === 'landscape' ? 'landscape' : undefined,
+      documentFamily: classification.documentType,
+      rendererName: 'mirror_html',
+      modality: 'faithful',
       surface: 'preview-kit',
       compactionAttempted: false,
-      languageIntegrity: resolvedLanguageIntegrityForKit,
+      languageIntegrity,
       pageParityDecision: effectivePageParityDecision,
     });
 
-    // ── Single-page expansion retry ──────────────────────────────────────────
-    // If the initial render (structured AI or its fallback) expanded a 1-page
-    // source doc to 2+ translated pages, automatically retry with faithful-light
-    // before surfacing the parity decision modal. The modal is a last resort.
-    let activeKit = kit;
-    if (
-      !activeKit.assembled &&
-      sourcePageCount === 1 &&
-      !singlePageSafeguardApplied &&
-      (activeKit.singlePageExpansionDetected || (activeKit.translatedPageCount ?? 0) > 1)
-    ) {
-      const faithfulText = effectiveTranslatedText?.trim() ?? null;
-      if (faithfulText !== null && faithfulText.length > 50) {
-        console.log(
-          `${logPrefix} — single_page_expansion_retry: structured AI expanded 1→${activeKit.translatedPageCount ?? '?'} pages ` +
-          `for "${classification.documentType}", retrying with faithful-light`,
-        );
-        const retryHtml = buildTranslatedPageHtml({
-          translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
-          documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
-          orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
-          layoutHint: isCertificateGenreDocumentType(classification.documentType) ? 'certificate' : 'standard',
-        });
-        const retryKit = await assembleStructuredPreviewKit({
-          structuredHtml: retryHtml,
-          originalFileBuffer,
-          isOriginalPdf,
-          orderId,
-          documentId,
-          sourceLanguage: doc.sourceLanguage ?? 'pt',
-          targetLanguage: resolvedLanguageIntegrityForKit.targetLanguage,
-          coverVariant,
-          documentTypeLabel: doc.exactNameOnDoc ?? doc.docType ?? 'Document',
-          sourcePageCount,
-          sourceArtifactType,
-          sourcePageCountStrategy,
-          groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
-          originalFileUrl: doc.originalFileUrl,
-          originalContentType: contentType,
-          orientation: detectedOrientation === 'landscape' ? 'landscape' : undefined,
-          documentFamily: classification.documentType,
-          rendererName: 'faithful_light_expansion_retry',
-          modality: resolveDocumentTypeModality(classification.documentType),
-          surface: 'preview-kit',
-          compactionAttempted: false,
-          languageIntegrity: resolvedLanguageIntegrityForKit,
-          pageParityDecision: effectivePageParityDecision,
-        });
-
-        const retryStayedSinglePage = (retryKit.translatedPageCount ?? 0) <= 1;
-        console.log(
-          `${logPrefix} — single_page_routing: source_page_count=1 ` +
-          `structured_ai_blocked=false rerouted=true ` +
-          `final_output_single_page=${retryStayedSinglePage} ` +
-          `document_type=${classification.documentType}`,
-        );
-
-        if (retryKit.assembled) {
-          if (requestedParityDecision) {
-            const nextMetadata = upsertPageParityRegistryRecord(
-              parsedOrderMetadata,
-              doc.id,
-              {
-                mode: requestedParityDecision.mode,
-                sourcePhysicalPageCount:
-                  retryKit.sourcePhysicalPageCount ?? retryKit.sourcePageCount ?? sourcePageCount ?? null,
-                sourceRelevantPageCount:
-                  retryKit.sourceRelevantPageCount ??
-                  requestedParityDecision.sourceRelevantPageCount ??
-                  (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
-                translatedPageCount: retryKit.translatedPageCount ?? null,
-                status:
-                  requestedParityDecision.mode === 'strict_all_pages'
-                    ? 'strict_enforced'
-                    : 'approved_by_user',
-                justification: requestedParityDecision.justification ?? null,
-                approvedByUserId:
-                  explicitParityDecision?.approvedByUserId ?? currentUser?.email ?? null,
-                approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
-                sourceArtifactType: sourceArtifactType ?? null,
-                sourcePageCountStrategy: sourcePageCountStrategy ?? null,
-                translationArtifactSource: 'faithful_light_internal',
-              },
-            );
-            await prisma.order.update({
-              where: { id: orderId },
-              data: { metadata: JSON.stringify(nextMetadata) },
-            });
-          }
-          return {
-            success: true,
-            previewUrl: retryKit.kitUrl ?? retryKit.kitLocalPath ?? undefined,
-            resolvedPageParity: {
-              mode: retryKit.pageParityMode ?? 'strict_all_pages',
-              sourcePhysicalPageCount:
-                retryKit.sourcePhysicalPageCount ?? retryKit.sourcePageCount ?? null,
-              sourceRelevantPageCount: retryKit.sourceRelevantPageCount ?? null,
-              translatedPageCount: retryKit.translatedPageCount ?? null,
-            },
-          };
-        }
-
-        // Retry also failed — fall through to parity modal as last resort.
-        activeKit = retryKit;
-      }
-    }
-
-    if (!activeKit.assembled) {
-      if (activeKit.parityDecisionRequired && activeKit.parityDecisionContext) {
+    if (!kit.assembled) {
+      if (kit.parityDecisionRequired && kit.parityDecisionContext) {
         return {
           success: false,
           parityDecisionRequired: true,
           parityDecision: {
-            ...activeKit.parityDecisionContext,
-            translationArtifactSource:
-              resolvedRendererForKit === 'faithful_light_fallback' ||
-              resolvedRendererForKit === 'faithful_light_safeguard' ||
-              resolvedRendererForKit === 'faithful_light_expansion_retry'
-                ? 'faithful_light_internal'
-                : artifactSelection.source,
+            ...kit.parityDecisionContext,
+            translationArtifactSource: artifactSelection.source,
           },
           error:
             'Diferença de páginas detectada. Revise as contagens e escolha um modo de paridade para continuar.',
@@ -817,22 +569,19 @@ export async function previewStructuredKit(
       }
 
       const parityDetail =
-        activeKit.blockingReason === 'page_parity_mismatch'
-          ? ` Page parity failed: source=${activeKit.sourcePageCount ?? 'unknown'}, translated=${activeKit.translatedPageCount ?? 'unknown'}.`
-          : activeKit.blockingReason === 'page_parity_unverifiable_source_page_count'
+        kit.blockingReason === 'page_parity_mismatch'
+          ? ` Page parity failed: source=${kit.sourcePageCount ?? 'unknown'}, translated=${kit.translatedPageCount ?? 'unknown'}.`
+          : kit.blockingReason === 'page_parity_unverifiable_source_page_count'
             ? ' Page parity failed: source page count is unavailable, so parity cannot be verified.'
-            : activeKit.blockingReason === 'page_parity_manual_override_requires_justification'
+            : kit.blockingReason === 'page_parity_manual_override_requires_justification'
               ? ' Page parity failed: manual override requires a textual justification.'
-            : activeKit.blockingReason === 'translated_zone_content_missing_or_source_language_detected'
-              ? ' Structured translated preview blocked: translated zone content missing or source-language content detected in translated client-facing surface.'
             : '';
       return {
         success: false,
         error:
-          `Structured preview kit assembly failed for "${classification.documentType}". ` +
-          `Client-facing translated preview output is blocked by invariant.` +
+          `Preview kit assembly failed for document #${documentId}.` +
           parityDetail +
-          ` Check server logs for parity diagnostics and kit assembly details.`,
+          ` Check server logs for details.`,
       };
     }
 
@@ -843,12 +592,12 @@ export async function previewStructuredKit(
         {
           mode: requestedParityDecision.mode,
           sourcePhysicalPageCount:
-            activeKit.sourcePhysicalPageCount ?? activeKit.sourcePageCount ?? sourcePageCount ?? null,
+            kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? sourcePageCount ?? null,
           sourceRelevantPageCount:
-            activeKit.sourceRelevantPageCount ??
+            kit.sourceRelevantPageCount ??
             requestedParityDecision.sourceRelevantPageCount ??
             (requestedParityDecision.mode === 'first_page_only' ? 1 : null),
-          translatedPageCount: activeKit.translatedPageCount ?? null,
+          translatedPageCount: kit.translatedPageCount ?? null,
           status:
             requestedParityDecision.mode === 'strict_all_pages'
               ? 'strict_enforced'
@@ -859,12 +608,7 @@ export async function previewStructuredKit(
           approvedAt: explicitParityDecision?.approvedAt ?? requestTimestamp,
           sourceArtifactType: sourceArtifactType ?? null,
           sourcePageCountStrategy: sourcePageCountStrategy ?? null,
-          translationArtifactSource:
-            resolvedRendererForKit === 'faithful_light_fallback' ||
-            resolvedRendererForKit === 'faithful_light_safeguard' ||
-            resolvedRendererForKit === 'faithful_light_expansion_retry'
-              ? 'faithful_light_internal'
-              : artifactSelection.source,
+          translationArtifactSource: artifactSelection.source,
         },
       );
       await prisma.order.update({
@@ -873,26 +617,15 @@ export async function previewStructuredKit(
       });
     }
 
-    const finalOutputSinglePage = sourcePageCount === 1 && (activeKit.translatedPageCount ?? 0) <= 1;
-    if (sourcePageCount === 1) {
-      console.log(
-        `${logPrefix} — single_page_routing: source_page_count=1 ` +
-        `structured_ai_blocked=${singlePageSafeguardApplied} ` +
-        `rerouted=${!singlePageSafeguardApplied && resolvedRendererForKit === 'faithful_light_expansion_retry'} ` +
-        `final_output_single_page=${finalOutputSinglePage} ` +
-        `renderer=${resolvedRendererForKit} document_type=${classification.documentType}`,
-      );
-    }
-
     return {
       success: true,
-      previewUrl: activeKit.kitUrl ?? activeKit.kitLocalPath ?? undefined,
+      previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
       resolvedPageParity: {
-        mode: activeKit.pageParityMode ?? 'strict_all_pages',
+        mode: kit.pageParityMode ?? 'strict_all_pages',
         sourcePhysicalPageCount:
-          activeKit.sourcePhysicalPageCount ?? activeKit.sourcePageCount ?? null,
-        sourceRelevantPageCount: activeKit.sourceRelevantPageCount ?? null,
-        translatedPageCount: activeKit.translatedPageCount ?? null,
+          kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
+        sourceRelevantPageCount: kit.sourceRelevantPageCount ?? null,
+        translatedPageCount: kit.translatedPageCount ?? null,
       },
     };
   } catch (err: any) {

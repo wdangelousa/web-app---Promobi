@@ -21,7 +21,7 @@ export async function retryTranslation(orderId: number) {
             }
         })
 
-        console.log(`[retryTranslation] Triggering DeepL for order #${orderId}`)
+        console.log(`[retryTranslation] Triggering translation for order #${orderId}`)
 
         const edgeFnUrl = `${SUPABASE_URL}/functions/v1/translate-order`
         const res = await fetch(edgeFnUrl, {
@@ -35,7 +35,7 @@ export async function retryTranslation(orderId: number) {
 
         if (!res.ok) {
             const txt = await res.text().catch(() => '')
-            throw new Error(`Edge function returned ${res.status}: ${txt}`)
+            throw new Error(`Translation edge function returned ${res.status}: ${txt}`)
         }
 
         revalidatePath(`/admin/orders/${orderId}`)

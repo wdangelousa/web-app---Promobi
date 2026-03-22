@@ -10,7 +10,7 @@
 //
 // Always does the same thing:
 //   1. Mark order TRANSLATING + record payment details
-//   2. Trigger DeepL Edge Function (non-blocking)
+//   2. Trigger translation edge function (non-blocking, Anthropic mirror HTML)
 //   3. Notify Isabele (badge counter + email)
 //   4. Send confirmation email to client
 
@@ -93,9 +93,9 @@ export async function confirmPayment(
       },
     })
 
-    // 4. Trigger DeepL Edge Function (fire-and-forget, non-blocking)
-    triggerDeepL(orderId).catch(err =>
-      console.error(`[confirmPayment] DeepL trigger failed for order ${orderId}:`, err)
+    // 4. Trigger translation edge function (fire-and-forget, non-blocking)
+    triggerTranslation(orderId).catch(err =>
+      console.error(`[confirmPayment] Translation trigger failed for order ${orderId}:`, err)
     )
 
     // 5. Notify Isabele
@@ -119,9 +119,9 @@ export async function confirmPayment(
   }
 }
 
-// ─── DeepL trigger ────────────────────────────────────────────────────────────
+// ─── Translation trigger ──────────────────────────────────────────────────────
 
-async function triggerDeepL(orderId: number) {
+async function triggerTranslation(orderId: number) {
   const edgeFnUrl = `${SUPABASE_URL}/functions/v1/translate-order`
   const res = await fetch(edgeFnUrl, {
     method: 'POST',
@@ -133,9 +133,9 @@ async function triggerDeepL(orderId: number) {
   })
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
-    throw new Error(`DeepL edge function returned ${res.status}: ${txt}`)
+    throw new Error(`Translation edge function returned ${res.status}: ${txt}`)
   }
-  console.log(`[triggerDeepL] ✅ Dispatched for order #${orderId}`)
+  console.log(`[triggerTranslation] ✅ Dispatched for order #${orderId}`)
 }
 
 // ─── Isabele notification ─────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
           <div style="padding: 28px 32px;">
             <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
               O pagamento do pedido <strong>#${order.id}</strong> foi confirmado via <strong>${methodLabel[method]}</strong>.
-              O DeepL já está processando os documentos — em breve os rascunhos estarão disponíveis no Workbench.
+              A tradução já está sendo processada — em breve os rascunhos estarão disponíveis no Workbench.
             </p>
 
             <!-- Order summary -->

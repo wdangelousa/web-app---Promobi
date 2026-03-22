@@ -1,7 +1,7 @@
 'use server'
 
 import prisma from '../../lib/prisma';
-import { generateTranslationDraft } from './generateTranslation';
+import { confirmPayment } from './confirm-payment';
 
 export async function saveTranslationDraft(docId: number, content: string) {
     try {
@@ -19,17 +19,10 @@ export async function saveTranslationDraft(docId: number, content: string) {
 export async function simulateWebhook(orderId: number) {
     try {
         console.log(`[Simulation] Simulating Payment Confirmation for Order #${orderId}`);
-
-        // 1. Mark as PAID
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'PAID' }
-        });
-
-        // 2. Trigger Automation
-        const result = await generateTranslationDraft(orderId);
-
-        return { success: true, translationResult: result };
+        // Forwards to the canonical payment confirmation path, which triggers
+        // the Anthropic translation edge function — same as a real Stripe webhook.
+        const result = await confirmPayment(orderId, 'STRIPE');
+        return { success: result.success, translationResult: result };
     } catch (error) {
         console.error("Simulation Error:", error);
         return { success: false, error: String(error) };

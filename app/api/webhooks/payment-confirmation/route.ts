@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
-import { generateTranslationDraft } from '../../../../app/actions/generateTranslation';
 import Stripe from 'stripe';
 
 import { getGlobalSettings } from '../../../../app/actions/settings';

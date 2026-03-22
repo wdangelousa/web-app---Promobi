@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
 import { buildTranslationPrompt, buildFaithfulTranslationPrompt, buildContinuousTextTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
-import { selectTranslationPipeline } from "@/services/translationRouter";
 import { classifyDocument } from "@/services/documentClassifier";
+// Used as a prompt-quality hint only — NOT a rendering gate.
 import { isDocumentTypeInImplementedStructuredFamily } from "@/services/documentFamilyRegistry";
-import { dispatchStructuredPipeline } from "@/services/structuredPipeline";
 
 // Allow up to 5 minutes for translation (large PDFs + retries on overload)
 export const maxDuration = 300;
@@ -13,10 +12,12 @@ export const maxDuration = 300;
 // ─────────────────────────────────────────────────────────────────────────────
 // Promobidocs — Claude Translation API Route
 //
-// Architecture (clean separation of concerns):
+// Canonical pipeline (single path):
 //
 //   Layer 1: translationPrompt.ts  → WHAT to translate (USCIS rules, bracket
 //            notation, domain expertise). Pure translation, zero HTML awareness.
+//            Prompt variant (standard / faithful / continuous-text) is chosen
+//            as a quality hint from document pre-classification — not a gate.
 //
 //   Layer 2: this route (route.ts)  → HOW to call Claude (fetch file, build
 //            message, invoke API, pass through sanitizer).
@@ -24,8 +25,11 @@ export const maxDuration = 300;
 //   Layer 3: translationHtmlSanitizer.ts → HOW to format the output for
 //            Gotenberg (flatten headings, compact tables, strip whitespace).
 //
-//   Layer 4: CARTORIO_CSS in generateDeliveryKit.ts → HOW the PDF looks
+//   Layer 4: CSS in generateDeliveryKit.ts → HOW the PDF looks
 //            (fonts, margins, spacing — all in CSS, not in the prompt).
+//
+// Document family/type is used ONLY as a prompt-quality hint. It does not
+// gate translation, preview, or delivery.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const client = new Anthropic({
@@ -137,27 +141,27 @@ export async function POST(req: Request) {
       contentType.includes("image/") ||
       /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl);
 
-    // ── Pre-classify from URL for prompt selection ──
-    // Pipeline routing requires post-translation classification, but we must pick
-    // a prompt before calling Claude. A fileUrl-only pre-classification provides
-    // an early structural signal: if the filename reliably hints at a structured
-    // family (e.g. "casamento", "diploma", "transcript"), use the faithful prompt
-    // so Claude emits HTML tables. The authoritative classification (~line 215)
-    // still drives routing — this only determines the prompt.
+    // ── Pre-classify from URL for prompt selection (quality hint only) ──
+    // We pick a prompt before calling Claude using a filename-only signal.
+    // If the filename hints at a structured form (e.g. "casamento", "diploma",
+    // "transcript"), use the faithful prompt so Claude emits HTML tables.
+    // This classification is a QUALITY HINT — it does not gate rendering or delivery.
     const preClassification = classifyDocument({ fileUrl, sourceLanguage });
     const preClassifiedAsStructured =
       isDocumentTypeInImplementedStructuredFamily(preClassification.documentType);
     console.log(
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `preClassification=${preClassification.documentType} (${preClassification.confidence}) ` +
-      `preClassifiedAsStructured=${preClassifiedAsStructured}`,
+      `preClassifiedAsStructured=${preClassifiedAsStructured} (prompt-quality hint only)`,
     );
 
     // ── Layer 1: Translation prompt ──
-    // Continuous-text path: pre-classified as a flowing-prose family (news, editorial, etc.).
+    // Continuous-text path: pre-classified as a flowing-prose family (news, editorial).
     //   Uses flowing-paragraph output rules — prevents table injection and sentence splitting.
-    // Faithful path: operator forced blueprint OR pre-classified as structured civil-registry family.
+    // Faithful path: operator requested faithful_layout OR filename hints at a structured form.
+    //   Prompt instructs Claude to preserve table structure in HTML output.
     // Standard path: all other cases.
+    // None of these paths gate rendering — they only tune Claude output quality.
     const preClassifiedAsContinuousText = CONTINUOUS_TEXT_DOCUMENT_TYPES.has(preClassification.documentType);
     const useFaithfulPrompt = !preClassifiedAsContinuousText && (forceBlueprintPipeline || preClassifiedAsStructured);
     const systemPrompt = preClassifiedAsContinuousText
@@ -228,106 +232,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Claude returned empty translation" }, { status: 500 });
     }
 
-    // ── Document classification ──
+    // ── Post-translation classification (metadata hint only) ──
+    // Used only for sanitizer selection and logging. Does NOT gate rendering.
     const classification = classifyDocument({ fileUrl, translatedText: rawTranslation, sourceLanguage });
     console.log(
       `[documentClassifier] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
-      `detected document type: ${classification.documentType} (confidence: ${classification.confidence})`
+      `detected document type: ${classification.documentType} (confidence: ${classification.confidence}) ` +
+      `mode=${normalizedTranslationMode} selectionSource=${translationSelectionSource ?? "unknown"} ` +
+      `faithfulPromptUsed=${useFaithfulPrompt ? "yes" : "no"}`
     );
-
-    // ── Router: select pipeline based on classification ──
-    const pipeline = selectTranslationPipeline({
-      orderId,
-      documentId,
-      documentType: classification.documentType,
-      forcedBlueprint: forceBlueprintPipeline,
-    });
-    const structuredFamilyImplemented = isDocumentTypeInImplementedStructuredFamily(
-      classification.documentType,
-    );
-    const shouldRunStructuredPipeline = pipeline === 'structured';
-
-    console.log(
-      `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
-      `mode=${normalizedTranslationMode} pipeline=${normalizedTranslationPipeline} ` +
-      `selectionSource=${translationSelectionSource ?? "unknown"} ` +
-      `forceBlueprint=${forceBlueprintPipeline ? "yes" : "no"} ` +
-      `routerDecision=${pipeline} familyImplemented=${structuredFamilyImplemented ? "yes" : "no"}`
-    );
-
-    if (forceBlueprintPipeline && !structuredFamilyImplemented && !preClassifiedAsContinuousText) {
-      return NextResponse.json(
-        {
-          error:
-            "Faithful to the original document is not available for this document family. Choose Standard for this document.",
-        },
-        { status: 422 },
-      );
-    }
-
-    let structuredPipelineFailed = false;
-    if (shouldRunStructuredPipeline) {
-      try {
-        console.log(
-          `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — structured pipeline executed: yes`
-        );
-        const structuredResult = await dispatchStructuredPipeline(client, {
-          fileBuffer,
-          fileUrl,
-          contentType,
-          sourceLanguage,
-          orderId,
-          documentId,
-        }, classification.documentType);
-
-        if (!structuredResult.success) {
-          structuredPipelineFailed = true;
-          console.warn(
-            `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
-            `structured pipeline failed: ${structuredResult.error ?? "unknown error"}`
-          );
-          if (forceBlueprintPipeline) {
-            return NextResponse.json(
-              {
-                error:
-                  structuredResult.error ||
-                  "Faithful pipeline failed for this document. Try Standard.",
-              },
-              { status: 502 },
-            );
-          }
-        }
-      } catch (structuredErr) {
-        structuredPipelineFailed = true;
-        console.error(
-          `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
-          `unexpected error escaped pipeline: ${structuredErr}`
-        );
-        if (forceBlueprintPipeline) {
-          return NextResponse.json(
-            {
-              error:
-                "Faithful pipeline failed unexpectedly. Try Standard or check document compatibility.",
-            },
-            { status: 502 },
-          );
-        }
-      }
-    } else {
-      console.log(
-        `[structuredPipeline] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — structured pipeline executed: no`
-      );
-    }
 
     // ── Layer 3: Sanitize for Gotenberg ──
     // Continuous-text path: standard sanitizer (flattens spurious tables, compacts layout).
     //   Faithful sanitizer is intentionally NOT used here — it preserves tables, which
     //   inflates page count for flowing prose documents.
-    // Faithful path: faithful sanitizer — preserves table structure for civil-registry forms.
+    // Faithful path (forceBlueprintPipeline OR pre-classified as structured form): faithful
+    //   sanitizer — preserves table structure for civil-registry forms.
     // Standard path: standard sanitizer.
-    const isFaithfulPath = pipeline === 'structured';
     const isContinuousTextPath = CONTINUOUS_TEXT_DOCUMENT_TYPES.has(classification.documentType);
-    let translatedText = isFaithfulPath && !isContinuousTextPath
+    let translatedText = useFaithfulPrompt && !isContinuousTextPath
       ? sanitizeTranslationHtmlFaithful(rawTranslation)
       : sanitizeTranslationHtml(rawTranslation);
 
@@ -360,7 +283,7 @@ export async function POST(req: Request) {
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
       `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction) ` +
-      `faithfulPath=${isFaithfulPath} continuousTextPath=${isContinuousTextPath} ` +
+      `faithfulPromptUsed=${useFaithfulPrompt} continuousTextPath=${isContinuousTextPath} ` +
       `structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
     );
 
@@ -370,10 +293,7 @@ export async function POST(req: Request) {
       translationPipeline: forceBlueprintPipeline
         ? "anthropic_blueprint"
         : "standard_structured",
-      structuredPipelineExecuted: shouldRunStructuredPipeline,
-      structuredPipelineForced: forceBlueprintPipeline,
-      structuredPipelineFailed,
-      faithfulPathUsed: isFaithfulPath,
+      faithfulPromptUsed: useFaithfulPrompt,
       continuousTextPathUsed: isContinuousTextPath,
       structuralElementCount,
       pageDivergenceFlag,

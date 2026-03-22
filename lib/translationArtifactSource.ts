@@ -1,5 +1,9 @@
 export type TranslationArtifactSource =
   | 'external_pdf'
+  | 'translated_html'
+  | 'missing'
+  // Legacy values kept for backward-compatible reading of existing DB registry records.
+  // New writes use 'translated_html' or 'external_pdf' only.
   | 'structured_internal'
   | 'faithful_light_internal'
   | 'legacy_internal';
@@ -20,7 +24,7 @@ export interface TranslationArtifactSelection {
     | 'external_translation_url_present'
     | 'translated_text_present'
     | 'legacy_translated_file_url_present'
-    | 'fallback_structured_internal_default';
+    | 'no_artifact_found';
 }
 
 export interface DeliveryArtifactRegistryRecord {
@@ -129,6 +133,9 @@ function normalizeTranslationArtifactSource(
 ): TranslationArtifactSource | 'unknown' {
   if (
     value === 'external_pdf' ||
+    value === 'translated_html' ||
+    value === 'missing' ||
+    // Legacy values from pre-refactor DB records — still readable.
     value === 'structured_internal' ||
     value === 'faithful_light_internal' ||
     value === 'legacy_internal'
@@ -192,7 +199,7 @@ export function resolveTranslationArtifactSelection(
 
   if (translatedText) {
     return {
-      source: 'structured_internal',
+      source: 'translated_html',
       externalTranslationUrlPresent: false,
       selectedArtifactUrl: null,
       hasTranslatedText: true,
@@ -213,12 +220,12 @@ export function resolveTranslationArtifactSelection(
   }
 
   return {
-    source: 'structured_internal',
+    source: 'missing',
     externalTranslationUrlPresent: false,
     selectedArtifactUrl: null,
     hasTranslatedText: false,
     hasLegacyTranslatedFileUrl: false,
-    reason: 'fallback_structured_internal_default',
+    reason: 'no_artifact_found',
   };
 }
 
@@ -246,7 +253,11 @@ export function readDeliveryArtifactRegistry(
     const generatedAt = normalizeOptionalString(record.generatedAt as string | null | undefined);
     if (
       (source === 'external_pdf' ||
+        source === 'translated_html' ||
+        source === 'missing' ||
+        // Legacy values from pre-refactor DB records.
         source === 'structured_internal' ||
+        source === 'faithful_light_internal' ||
         source === 'legacy_internal') &&
       generatedAt
     ) {
