@@ -80,12 +80,12 @@ export interface TranslatedPageTemplateOptions {
  * without requiring markup changes.
  */
 function buildCertificateLayoutCss(isLandscape: boolean): string {
-  const titleSize      = isLandscape ? '11pt'   : '13pt';
-  const headingSize    = isLandscape ? '9.5pt'  : '10.5pt';
+  const titleSize      = isLandscape ? '14pt'   : '18pt';
+  const headingSize    = isLandscape ? '10.5pt' : '12pt';
   const bodySize       = isLandscape ? '8.5pt'  : '9.5pt';
   const titleSpacing   = isLandscape ? '0.05em' : '0.08em';
   const headingSpacing = isLandscape ? '0.03em' : '0.04em';
-  const titleBottom    = isLandscape ? '5pt'    : '7pt';
+  const titleBottom    = isLandscape ? '6pt'    : '10pt';
   return `
     /* ── Certificate-style layout override ──────────────────────────────────── */
     .cert-layout .conteudo-principal {
@@ -94,9 +94,9 @@ function buildCertificateLayoutCss(isLandscape: boolean): string {
 
     .cert-layout .conteudo-principal p {
       text-align: center;
-      margin: 2.5pt auto;
+      margin: 4pt auto;
       max-width: 87%;
-      line-height: 1.5;
+      line-height: 1.6;
       font-size: ${bodySize};
     }
 
@@ -104,7 +104,7 @@ function buildCertificateLayoutCss(isLandscape: boolean): string {
     .cert-layout .conteudo-principal p:has(> strong:only-child) {
       font-size: ${headingSize};
       letter-spacing: ${headingSpacing};
-      margin: 3pt auto 4pt;
+      margin: 5pt auto 6pt;
       max-width: 93%;
     }
 

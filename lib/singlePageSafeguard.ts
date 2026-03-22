@@ -44,6 +44,7 @@ export const CERTIFICATE_GENRE_DOCUMENT_TYPES = new Set<string>([
   'academic_diploma_certificate',
   'marriage_certificate_brazil',
   'birth_certificate_brazil',
+  'publication_acceptance_certificate',
 ]);
 
 /**

@@ -18,6 +18,7 @@
  *   - academic_transcript            (grade records, school histories, histórico escolar)
  *   - academic_record_general        (enrollment/declaration/completion/syllabus records)
  *   - corporate_business_record      (corporate registrations, bylaws, resolutions, extracts)
+ *   - publication_acceptance_certificate (journal article acceptance certificates, Declaração de Aceite Artigo)
  *   - editorial_news_pages           (news/editorial pages: print clipping, web article, printview, metadata)
  *   - publication_media_record       (articles, media clippings, publication metadata pages)
  *   - letters_and_statements         (recommendation letters, declarations, letter+resume bundles)
@@ -28,7 +29,7 @@
  *   - unknown                        (anything else, or insufficient signals)
  *
  * Classification order matters — more-specific families are checked first:
- *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → editorial_news_pages → publication_media_record → letters_and_statements → recommendation_letter → employment_record → course_certificate → eb1_evidence_photo_sheet → unknown
+ *   marriage → birth → civil_record_general → identity_travel → academic_diploma → academic_transcript → academic_record_general → corporate_business_record → publication_acceptance_certificate → editorial_news_pages → publication_media_record → letters_and_statements → recommendation_letter → employment_record → course_certificate → eb1_evidence_photo_sheet → unknown
  *
  * Integration note:
  *   This classifier is AUXILIARY — it never modifies translation behavior.
@@ -47,6 +48,7 @@ export type DocumentType =
   | 'academic_transcript'            // Grade transcripts, school records, histórico escolar
   | 'academic_record_general'        // Enrollment/declaration/completion/syllabus records
   | 'corporate_business_record'      // Corporate registries, resolutions, bylaws, business licenses
+  | 'publication_acceptance_certificate' // Journal/publication acceptance certificates (Declaração de Aceite Artigo)
   | 'editorial_news_pages'           // Flexible editorial/news pages (print/web/metadata/printview)
   | 'publication_media_record'       // Publication/media evidence: article pages, covers, clippings
   | 'letters_and_statements'         // Flexible recommendations/declarations (including letter+resume bundles)
@@ -907,6 +909,41 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
   }
   if (corporateHits >= 2) {
     return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
+  }
+
+  // ── Publication Acceptance Certificates ──────────────────────────────────
+  // Covers journal/publication article acceptance/publication certificates:
+  //   - "Declaração de Aceite Artigo" from Brazilian journals
+  //   - "We certify that the article [TITLE] was published in [Journal]"
+  //   - Single-page centered ceremonial certificates from academic publishers
+  //
+  // Must be checked BEFORE editorial_news_pages because acceptance certificates
+  // contain ISSN, DOI, and volume/issue metadata that would otherwise trigger
+  // the editorial_news classifier (heuristic-low match on volume \d+).
+  const publicationAcceptanceSignals: RegExp[] = [
+    /\bwe certify that the article\b/i,
+    /\bwe certify that the work\b/i,
+    /\bwe certify that this article\b/i,
+    /\bcertify that the article\b/i,
+    /\bcertify that the study\b/i,
+    /\bcertify that the paper\b/i,
+    /\barticle acceptance certificate\b/i,
+    /\bpublication acceptance certificate\b/i,
+    /\bdeclaracao de aceite\b/i,
+    /\bdeclara[çc][aã]o de aceite\b/i,
+    /\baceite do artigo\b/i,
+    /\bcertificamos que o artigo\b/i,
+    /\bcertificamos que a obra\b/i,
+    /\bwas published in\b.*\bissn\b/i,
+    /\bpublication_acceptance_certificate\b/i,
+  ];
+
+  const publicationAcceptanceHits = publicationAcceptanceSignals.filter((rx) => rx.test(text)).length;
+  if (publicationAcceptanceHits >= 1) {
+    return {
+      documentType: 'publication_acceptance_certificate',
+      confidence: publicationAcceptanceHits >= 2 ? 'heuristic-high' : 'heuristic-low',
+    };
   }
 
   // ── Editorial / News Pages (Flexible Structured Family) ─────────────────
@@ -1770,13 +1807,16 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
   if (/articles[-_ ]of[-_ ](?:incorporation|organization)|operating[-_ ]agreement|bylaws?|annual[-_ ]report|good[-_ ]standing|business[-_ ]license|corporate[-_ ]resolution|business[-_ ]registration|registry[-_ ]extract|junta[-_ ]comercial|cnpj/i.test(fileUrl)) {
     return { documentType: 'corporate_business_record', confidence: 'heuristic-low' };
   }
+  if (/declarac[aã]o[-_ ]de[-_ ]aceite|aceite[-_ ](?:de[-_ ])?artigo|article[-_ ]acceptance|acceptance[-_ ]certificate|carta[-_ ]aceite|publicacao[-_ ]aceite/i.test(fileUrl)) {
+    return { documentType: 'publication_acceptance_certificate', confidence: 'heuristic-low' };
+  }
   if (/not[ií]cia|materia|mat[eé]ria|reportagem|jornal|newspaper|clipping|press[-_ ]coverage|media[-_ ]coverage|web[-_ ]news|news[-_ ]article|print[-_ ]view|cookie|related[-_ ]stories|headline|byline|editorial|op[-_ ]ed|doi|volume[-_ ]?\d+|issue[-_ ]?\d+|publication[-_ ]metadata|revista[-_ ]de[-_ ]estudos/i.test(fileUrl)) {
     return { documentType: 'editorial_news_pages', confidence: 'heuristic-low' };
   }
   if (/book[-_ ]cover|article[-_ ]cover|journal|magazine|newspaper|clipping|media[-_ ]coverage|press[-_ ]coverage|interview|conference[-_ ]paper|abstract|proceedings|doi|issn|isbn|publication[-_ ]metadata/i.test(fileUrl)) {
     return { documentType: 'publication_media_record', confidence: 'heuristic-low' };
   }
-  if (/declarac[aã]o|declaration|statement|carta[-_ ]de[-_ ]refer[eê]ncia|recommendation[-_ ]letter|reference[-_ ]letter|support[-_ ]letter|letter[-_ ]of[-_ ]reference|hr[-_ ]declaration|human[-_ ]resources|contador|accountant[-_ ]declaration|matr[ií]cula|enrollment[-_ ]declaration|aceite[-_ ]artigo|article[-_ ]acceptance|resume|curriculum[-_ ]vitae|cv[-_ ]attached/i.test(fileUrl)) {
+  if (/declarac[aã]o|declaration|statement|carta[-_ ]de[-_ ]refer[eê]ncia|recommendation[-_ ]letter|reference[-_ ]letter|support[-_ ]letter|letter[-_ ]of[-_ ]reference|hr[-_ ]declaration|human[-_ ]resources|contador|accountant[-_ ]declaration|matr[ií]cula|enrollment[-_ ]declaration|resume|curriculum[-_ ]vitae|cv[-_ ]attached/i.test(fileUrl)) {
     return { documentType: 'letters_and_statements', confidence: 'heuristic-low' };
   }
   if (/recommendation[-_ ]letter|expert[-_ ]opinion|support[-_ ]letter|reference[-_ ]letter|testimonial[-_ ]letter|endorsement[-_ ]letter|carta[-_ ]recomend|carta[-_ ]apoio|opinion[-_ ]letter|o[-_ ]1|eb[-_ ]1|eb[-_ ]2|niw/i.test(fileUrl)) {

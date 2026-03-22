@@ -694,6 +694,7 @@ const STRUCTURED_DOCUMENT_LABELS: Record<SupportedStructuredDocumentType, string
   academic_transcript: 'Academic Transcript',
   academic_record_general: 'Academic Record',
   corporate_business_record: 'Corporate / Business Record',
+  publication_acceptance_certificate: 'Publication Acceptance Certificate',
   editorial_news_pages: 'Editorial / News Pages',
   publication_media_record: 'Publication / Media Evidence',
   letters_and_statements: 'Letters / Statements',
