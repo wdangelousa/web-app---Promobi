@@ -449,6 +449,12 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                                 <span className="font-mono font-bold text-emerald-300">-${financialSummary.paymentDiscountAmount.toFixed(2)}</span>
                                             </div>
                                         )}
+                                        {financialSummary.manualDiscountAmount > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Desconto Manual {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue.toFixed(2)}%)` : ''}</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.manualDiscountAmount.toFixed(2)}</span>
+                                            </div>
+                                        )}
                                         {financialSummary.volumeDiscountAmount > 0 && (
                                             <div className="flex justify-between text-xs">
                                                 <span className="text-emerald-400 font-bold uppercase tracking-wider">Desconto de Volume ({financialSummary.volumeDiscountPercentage}%)</span>

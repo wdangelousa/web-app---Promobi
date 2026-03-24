@@ -96,13 +96,16 @@ export async function createOrder(data: CreateOrderInput) {
         let discountPercentage = 0;
         let discountAmount = 0;
 
-        if (data.grandTotalOverride) {
+        if (typeof data.grandTotalOverride === 'number') {
             totalAmount = calculateCanonicalProposalTotal({
                 breakdown: sanitizedBreakdown,
-                operationalAdjustmentAmount: 0,
+                operationalAdjustmentAmount: data.extraDiscount || 0,
             });
             discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
-            discountAmount = (sanitizedBreakdown?.volumeDiscountAmount || 0) + (sanitizedBreakdown?.totalDiscountApplied || 0);
+            discountAmount =
+                (sanitizedBreakdown?.volumeDiscountAmount || 0) +
+                (sanitizedBreakdown?.totalDiscountApplied || 0) +
+                (sanitizedBreakdown?.manualDiscountAmount || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
@@ -156,7 +159,7 @@ export async function createOrder(data: CreateOrderInput) {
                     }),
                     discountPercentage,
                     discountAmount,
-                    extraDiscount: 0,
+                    extraDiscount: data.extraDiscount || 0,
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);
@@ -203,13 +206,16 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
         let discountPercentage = 0;
         let discountAmount = 0;
 
-        if (data.grandTotalOverride) {
+        if (typeof data.grandTotalOverride === 'number') {
             totalAmount = calculateCanonicalProposalTotal({
                 breakdown: sanitizedBreakdown,
-                operationalAdjustmentAmount: 0,
+                operationalAdjustmentAmount: data.extraDiscount || 0,
             });
             discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
-            discountAmount = (sanitizedBreakdown?.volumeDiscountAmount || 0) + (sanitizedBreakdown?.totalDiscountApplied || 0);
+            discountAmount =
+                (sanitizedBreakdown?.volumeDiscountAmount || 0) +
+                (sanitizedBreakdown?.totalDiscountApplied || 0) +
+                (sanitizedBreakdown?.manualDiscountAmount || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
@@ -260,7 +266,7 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     }),
                     discountPercentage,
                     discountAmount,
-                    extraDiscount: 0,
+                    extraDiscount: data.extraDiscount || 0,
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);

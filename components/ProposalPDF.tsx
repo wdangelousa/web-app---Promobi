@@ -543,6 +543,14 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalDiscountVal}>-${financialSummary.volumeDiscountAmount.toFixed(2)}</Text>
                   </View>
                 )}
+                {financialSummary.manualDiscountAmount > 0 && (
+                  <View style={S.totalDiscountRow}>
+                    <Text style={S.totalDiscountLbl}>
+                      DESCONTO MANUAL {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue.toFixed(2)}%)` : ''}
+                    </Text>
+                    <Text style={S.totalDiscountVal}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
+                  </View>
+                )}
                 {financialSummary.operationalAdjustmentAmount > 0 && (
                   <View style={S.totalDiscountRow}>
                     <Text style={S.totalDiscountLbl}>CORTESIA OPERACIONAL (AJUSTE DE TARIFA)</Text>

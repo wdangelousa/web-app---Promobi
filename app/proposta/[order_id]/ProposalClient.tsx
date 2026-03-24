@@ -372,6 +372,14 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                 <span>-${financialSummary.paymentDiscountAmount.toFixed(2)}</span>
                             </div>
                         )}
+                        {financialSummary.manualDiscountAmount > 0 && (
+                            <div className="flex justify-between text-green-400">
+                                <span>
+                                    Desconto Manual {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue.toFixed(2)}%)` : ''}
+                                </span>
+                                <span>-${financialSummary.manualDiscountAmount.toFixed(2)}</span>
+                            </div>
+                        )}
                         {financialSummary.operationalAdjustmentAmount > 0 && (
                             <div className="flex justify-between text-green-400 font-bold border-t border-slate-800 pt-2 mt-2">
                                 <span>Cortesia Operacional / Ajuste de Tarifa</span>

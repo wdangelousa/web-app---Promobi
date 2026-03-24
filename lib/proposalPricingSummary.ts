@@ -16,6 +16,7 @@ type PricedDocument = {
 
 export type ProposalServiceType = 'translation' | 'notarization';
 export type ProposalPaymentPlan = 'upfront_discount' | 'upfront' | 'split';
+export type ManualProposalDiscountType = 'nominal' | 'percent';
 
 export interface ProposalPricingBreakdown {
   basePrice: number;
@@ -31,6 +32,8 @@ export interface ProposalPricingBreakdown {
   excludedPages: number;
   volumeDiscountPercentage: number;
   volumeDiscountAmount: number;
+  manualDiscountType?: ManualProposalDiscountType;
+  manualDiscountValue?: number;
   manualDiscountAmount?: number;
 }
 
@@ -60,6 +63,8 @@ export interface ProposalFinancialSummary {
   volumeDiscountAmount: number;
   paymentDiscountAmount: number;
   operationalAdjustmentAmount: number;
+  manualDiscountType: ManualProposalDiscountType;
+  manualDiscountValue: number;
   manualDiscountAmount: number;
   totalPayable: number;
 }
@@ -95,10 +100,49 @@ function safeMetadata(raw: unknown): Record<string, any> {
 
 export function sanitizeProposalBreakdown(rawBreakdown: unknown): ProposalBreakdownLike {
   const breakdown = safeMetadata(rawBreakdown);
+  const manualDiscountType: ManualProposalDiscountType =
+    breakdown.manualDiscountType === 'percent' ? 'percent' : 'nominal';
+  const manualDiscountValue = roundCurrency(Math.max(0, asNumber(breakdown.manualDiscountValue)));
+  const manualDiscountAmount = roundCurrency(Math.max(0, asNumber(breakdown.manualDiscountAmount)));
 
   return {
     ...breakdown,
-    manualDiscountAmount: 0,
+    manualDiscountType,
+    manualDiscountValue,
+    manualDiscountAmount,
+  };
+}
+
+export function calculateManualProposalDiscount(input: {
+  subtotal: number;
+  discountType?: unknown;
+  discountValue?: unknown;
+}): {
+  manualDiscountType: ManualProposalDiscountType;
+  manualDiscountValue: number;
+  manualDiscountAmount: number;
+} {
+  const subtotal = roundCurrency(Math.max(0, asNumber(input.subtotal)));
+  const manualDiscountType: ManualProposalDiscountType =
+    input.discountType === 'percent' ? 'percent' : 'nominal';
+
+  const rawValue = Math.max(0, asNumber(input.discountValue));
+  const manualDiscountValue = roundCurrency(
+    manualDiscountType === 'percent' ? Math.min(rawValue, 100) : rawValue,
+  );
+  const manualDiscountAmount = roundCurrency(
+    Math.min(
+      subtotal,
+      manualDiscountType === 'percent'
+        ? subtotal * (manualDiscountValue / 100)
+        : manualDiscountValue,
+    ),
+  );
+
+  return {
+    manualDiscountType,
+    manualDiscountValue,
+    manualDiscountAmount,
   };
 }
 
@@ -112,6 +156,7 @@ export function calculateCanonicalProposalTotal(input: {
   const notaryFee = roundCurrency(asNumber(breakdown.notaryFee));
   const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
   const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
+  const manualDiscountAmount = roundCurrency(asNumber(breakdown.manualDiscountAmount));
   const operationalAdjustmentAmount = roundCurrency(asNumber(input.operationalAdjustmentAmount));
 
   return roundCurrency(
@@ -120,6 +165,7 @@ export function calculateCanonicalProposalTotal(input: {
       notaryFee -
       volumeDiscountAmount -
       paymentDiscountAmount -
+      manualDiscountAmount -
       operationalAdjustmentAmount,
   );
 }
@@ -260,7 +306,10 @@ export function deriveProposalFinancialSummary(
   const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
   const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
   const operationalAdjustmentAmount = roundCurrency(asNumber(input.extraDiscount));
-  const manualDiscountAmount = 0;
+  const manualDiscountType: ManualProposalDiscountType =
+    breakdown.manualDiscountType === 'percent' ? 'percent' : 'nominal';
+  const manualDiscountValue = roundCurrency(asNumber(breakdown.manualDiscountValue));
+  const manualDiscountAmount = roundCurrency(asNumber(breakdown.manualDiscountAmount));
   const volumeDiscountPercentage = asNumber(breakdown.volumeDiscountPercentage);
   const totalPayable = calculateCanonicalProposalTotal({
     breakdown,
@@ -272,6 +321,7 @@ export function deriveProposalFinancialSummary(
       totalSavings +
       volumeDiscountAmount +
       paymentDiscountAmount +
+      manualDiscountAmount +
       operationalAdjustmentAmount +
       urgencyFee -
       notaryFee,
@@ -291,6 +341,8 @@ export function deriveProposalFinancialSummary(
     volumeDiscountAmount,
     paymentDiscountAmount,
     operationalAdjustmentAmount,
+    manualDiscountType,
+    manualDiscountValue,
     manualDiscountAmount,
     totalPayable,
   };

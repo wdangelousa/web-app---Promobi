@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createOrder } from '@/app/actions/create-order'
 import { getGlobalSettings, GlobalSettings } from '@/app/actions/settings'
@@ -23,7 +23,7 @@ import {
     PageAnalysis,
 } from '@/lib/documentAnalyzer'
 import { PDFDocument } from 'pdf-lib'
-import { calculateProposalBreakdown } from '@/lib/proposalPricingSummary'
+import { calculateManualProposalDiscount, calculateProposalBreakdown, ManualProposalDiscountType } from '@/lib/proposalPricingSummary'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,8 @@ export default function ConciergePage() {
     const [urgency, setUrgency] = useState('standard')
     const [paymentPlan, setPaymentPlan] = useState<'upfront_discount' | 'upfront' | 'split'>('upfront')
     const [totalPrice, setTotalPrice] = useState(0)
+    const [manualDiscountType, setManualDiscountType] = useState<ManualProposalDiscountType>('nominal')
+    const [manualDiscountValue, setManualDiscountValue] = useState(0)
 
     const [fullName, setFullName] = useState('')
     const [email, setEmail] = useState('')
@@ -151,6 +153,12 @@ export default function ConciergePage() {
                     try {
                         const meta = JSON.parse(order.metadata || '{}')
                         setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
+                        setManualDiscountType(meta.breakdown?.manualDiscountType === 'percent' ? 'percent' : 'nominal')
+                        setManualDiscountValue(
+                            typeof meta.breakdown?.manualDiscountValue === 'number'
+                                ? meta.breakdown.manualDiscountValue
+                                : (meta.breakdown?.manualDiscountAmount || 0)
+                        )
                         if (meta.documents && meta.documents.length > 0) {
                             // Rehydrate documents from metadata (concierge-created orders)
                             setDocuments(meta.documents.map((d: any) => ({
@@ -417,13 +425,24 @@ export default function ConciergePage() {
         setTotalPrice(total)
     }, [documents, urgency, paymentPlan, serviceType, globalSettings])
 
+    const manualDiscount = useMemo(() => calculateManualProposalDiscount({
+        subtotal: totalPrice,
+        discountType: manualDiscountType,
+        discountValue: manualDiscountValue,
+    }), [manualDiscountType, manualDiscountValue, totalPrice])
+
+    const finalTotal = useMemo(
+        () => Math.max(0, totalPrice - manualDiscount.manualDiscountAmount),
+        [manualDiscount.manualDiscountAmount, totalPrice]
+    )
+
     // ─── Order creation ───────────────────────────────────────────────────────
 
     const handleCreateConciergeOrder = async () => {
         if (!fullName || !email || !phone) { toast.error('Preencha os dados do cliente.'); return }
         if (documents.length === 0) { toast.error('Adicione pelo menos um documento.'); return }
 
-        const effectiveTotal = totalPrice;
+        const effectiveTotal = finalTotal;
 
         setLoading(true); setUploadProgress('Enviando arquivos...')
         try {
@@ -456,6 +475,9 @@ export default function ConciergePage() {
                 breakdown: {
                     ...breakdown,
                     serviceType,
+                    manualDiscountType: manualDiscount.manualDiscountType,
+                    manualDiscountValue: manualDiscount.manualDiscountValue,
+                    manualDiscountAmount: manualDiscount.manualDiscountAmount,
                 },
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
@@ -803,6 +825,9 @@ export default function ConciergePage() {
                             {breakdown.volumeDiscountAmount > 0 && (
                                 <div className="flex justify-between text-sm text-emerald-400 font-bold"><span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%):</span><span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span></div>
                             )}
+                            {manualDiscount.manualDiscountAmount > 0 && (
+                                <div className="flex justify-between text-sm text-emerald-300 font-bold"><span>Desconto Manual {manualDiscount.manualDiscountType === 'percent' ? `(${manualDiscount.manualDiscountValue.toFixed(2)}%)` : ''}:</span><span>-${manualDiscount.manualDiscountAmount.toFixed(2)}</span></div>
+                            )}
                             <div className="h-px bg-white/10 my-2" />
                             {deepPending > 0 && !fastProgress && (
                                 <div className="flex items-center gap-2 text-xs text-amber-400">
@@ -819,7 +844,7 @@ export default function ConciergePage() {
                             )}
                             <div className="flex justify-between items-end">
                                 <span className="text-gray-400 text-sm">Valor Final:</span>
-                                <span className="text-4xl font-black text-[#f58220]">${totalPrice.toFixed(2)}</span>
+                                <span className="text-4xl font-black text-[#f58220]">${finalTotal.toFixed(2)}</span>
                             </div>
                         </div>
                         {generatedLink ? (
@@ -845,6 +870,10 @@ export default function ConciergePage() {
                                 subtotal={totalPrice}
                                 totalDocs={breakdown.totalDocs}
                                 totalPages={breakdown.totalCount}
+                                discountType={manualDiscountType}
+                                discountValue={manualDiscountValue}
+                                onDiscountTypeChange={setManualDiscountType}
+                                onDiscountValueChange={setManualDiscountValue}
                                 onGenerateProposal={handleCreateConciergeOrder}
                             />
                         )}

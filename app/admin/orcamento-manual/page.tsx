@@ -31,7 +31,7 @@ import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer
 import { PDFDocument } from 'pdf-lib'
 import { searchCustomers, CustomerSearchResult } from '../../actions/search-customers'
 import { getOrderForConcierge } from '../../actions/adminOrders'
-import { calculateProposalBreakdown } from '../../../lib/proposalPricingSummary'
+import { calculateManualProposalDiscount, calculateProposalBreakdown, ManualProposalDiscountType } from '../../../lib/proposalPricingSummary'
 
 
 // --- TYPES ---
@@ -82,6 +82,8 @@ export default function OrcamentoManual() {
     const [documents, setDocuments] = useState<DocumentItem[]>([])
     const [urgency, setUrgency] = useState('standard')
     const [totalPrice, setTotalPrice] = useState(0)
+    const [manualDiscountType, setManualDiscountType] = useState<ManualProposalDiscountType>('nominal')
+    const [manualDiscountValue, setManualDiscountValue] = useState(0)
 
     const [clientName, setClientName] = useState('')
     const [clientEmail, setClientEmail] = useState('')
@@ -152,6 +154,12 @@ export default function OrcamentoManual() {
                     setServiceType(meta.serviceType || (order.hasTranslation ? 'translation' : 'notarization'))
                     if (meta.breakdown) {
                         setBreakdown(meta.breakdown) // Restores manual discounts and exact fees
+                        setManualDiscountType(meta.breakdown.manualDiscountType === 'percent' ? 'percent' : 'nominal')
+                        setManualDiscountValue(
+                            typeof meta.breakdown.manualDiscountValue === 'number'
+                                ? meta.breakdown.manualDiscountValue
+                                : (meta.breakdown.manualDiscountAmount || 0)
+                        )
                     }
 
                     // 4. Restore Documents from METADATA (Crucial for UI state)
@@ -414,13 +422,24 @@ export default function OrcamentoManual() {
         setTotalPrice(total)
     }, [documents, urgency, serviceType, globalSettings])
 
+    const manualDiscount = useMemo(() => calculateManualProposalDiscount({
+        subtotal: totalPrice,
+        discountType: manualDiscountType,
+        discountValue: manualDiscountValue,
+    }), [manualDiscountType, manualDiscountValue, totalPrice])
+
+    const finalTotal = useMemo(
+        () => Math.max(0, totalPrice - manualDiscount.manualDiscountAmount),
+        [manualDiscount.manualDiscountAmount, totalPrice]
+    )
+
     // --- ORDER CREATION ---
     const handleGenerateProposal = async () => {
         const selectedDocs = documents.filter(d => d.isSelected)
         if (!clientName || !clientEmail) { toast.error('Preencha pelo menos Nome e Email do cliente.'); return }
         if (selectedDocs.length === 0) { toast.error('Selecione pelo menos um documento.'); return }
 
-        const effectiveTotal = totalPrice;
+        const effectiveTotal = finalTotal;
 
         setLoading(true); setUploadProgress(null)
         try {
@@ -485,6 +504,9 @@ export default function OrcamentoManual() {
                 breakdown: {
                     ...breakdown,
                     serviceType,
+                    manualDiscountType: manualDiscount.manualDiscountType,
+                    manualDiscountValue: manualDiscount.manualDiscountValue,
+                    manualDiscountAmount: manualDiscount.manualDiscountAmount,
                 },
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
@@ -952,6 +974,10 @@ export default function OrcamentoManual() {
                                             subtotal={totalPrice}
                                             totalDocs={breakdown.totalDocs}
                                             totalPages={breakdown.totalCount}
+                                            discountType={manualDiscountType}
+                                            discountValue={manualDiscountValue}
+                                            onDiscountTypeChange={setManualDiscountType}
+                                            onDiscountValueChange={setManualDiscountValue}
                                             onGenerateProposal={handleGenerateProposal}
                                         />
                                     </div>
