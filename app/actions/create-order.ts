@@ -18,8 +18,20 @@ type DocumentItem = {
     count: number;
     notarized?: boolean;
     customDescription?: string;
-    // Real file URL if uploaded before createOrder is called
     uploadedFile?: UploadedFile;
+    analysis?: {
+        totalPages: number;
+        pages: Array<{
+            pageNumber: number;
+            wordCount: number;
+            density: string;
+            fraction: number;
+            price: number;
+            included?: boolean;
+        }>;
+        [key: string]: any;
+    };
+    handwritten?: boolean;
 }
 
 type CreateOrderInput = {
@@ -36,27 +48,45 @@ type CreateOrderInput = {
     grandTotalOverride?: number;
     breakdown?: any;
     paymentProvider: 'STRIPE' | 'PARCELADO_USA';
-    serviceType?: 'translation' | 'notarization'; // drives hasTranslation
-    status?: any; // Allow custom initial status (e.g. PENDING_PAYMENT)
+    serviceType?: 'translation' | 'notarization';
+    status?: any;
     sourceLanguage?: 'PT_BR' | 'ES';
     extraDiscount?: number;
+}
+
+// ── Scope helper ───────────────────────────────────────────────────────────────
+function extractDocumentScope(doc: DocumentItem) {
+    const analysis = doc.analysis;
+
+    if (!analysis || !analysis.pages || analysis.pages.length === 0) {
+        return {
+            billablePages: doc.count || 1,
+            totalPages: null,
+            excludedFromScope: false,
+        };
+    }
+
+    const totalPages = analysis.pages.length;
+    const billablePages = analysis.pages.filter(
+        (p) => p.included !== false
+    ).length;
+    const excludedFromScope = billablePages === 0;
+
+    return { billablePages, totalPages, excludedFromScope };
 }
 
 export async function createOrder(data: CreateOrderInput) {
     try {
         console.log('[createOrder] Starting for:', data.user.email);
 
-        // ── 1. Calculate total ────────────────────────────────────────────────
         const settings = await getGlobalSettings();
         const PRICE_PER_PAGE = settings.basePrice || 9.00;
         const NOTARY_FEE_PER_DOC = settings.notaryFee || 25.00;
 
-        // Unify with frontend: standard/urgent/flash
         const URGENCY_MULTIPLIER: Record<string, number> = {
             standard: 1.0,
             urgent: 1.0 + settings.urgencyRate,
             flash: 1.0 + (settings.urgencyRate * 2),
-            // Fallback for legacy keys if any
             normal: 1.0,
         };
 
@@ -84,14 +114,11 @@ export async function createOrder(data: CreateOrderInput) {
             totalAmount = baseAfterDiscount + notary;
         }
 
-        // ── 2. Derive flags from serviceType ──────────────────────────────────
         const hasTranslation = data.serviceType !== 'notarization';
         const hasNotary = data.serviceType === 'notarization'
             || data.documents.some(d => d.notarized);
 
-        // ── 3. Database transaction ───────────────────────────────────────────
         const order = await prisma.$transaction(async (tx) => {
-            // Find or create user
             let user = await tx.user.findUnique({ where: { email: data.user.email } });
             if (!user) {
                 user = await tx.user.create({
@@ -104,7 +131,6 @@ export async function createOrder(data: CreateOrderInput) {
                 });
             }
 
-            // Create order with real Document records
             return tx.order.create({
                 data: {
                     userId: user.id,
@@ -127,12 +153,17 @@ export async function createOrder(data: CreateOrderInput) {
                     discountAmount,
                     extraDiscount: data.extraDiscount || 0,
                     documents: {
-                        create: data.documents.map((doc) => ({
-                            docType: doc.fileName?.split('.').pop() ?? 'file',
-                            // ✅ Use real Supabase URL if available, otherwise mark for manual upload
-                            originalFileUrl: doc.uploadedFile?.url ?? 'PENDING_UPLOAD',
-                            exactNameOnDoc: doc.fileName ?? 'Unknown File',
-                        })),
+                        create: data.documents.map((doc) => {
+                            const scope = extractDocumentScope(doc);
+                            return {
+                                docType: doc.fileName?.split('.').pop() ?? 'file',
+                                originalFileUrl: doc.uploadedFile?.url ?? 'PENDING_UPLOAD',
+                                exactNameOnDoc: doc.fileName ?? 'Unknown File',
+                                billablePages: scope.billablePages,
+                                totalPages: scope.totalPages,
+                                excludedFromScope: scope.excludedFromScope,
+                            };
+                        }),
                     },
                 },
             });
@@ -222,11 +253,17 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     discountAmount,
                     extraDiscount: data.extraDiscount || 0,
                     documents: {
-                        create: data.documents.map((doc) => ({
-                            docType: doc.fileName?.split('.').pop() ?? 'file',
-                            originalFileUrl: doc.uploadedFile?.url ?? 'PENDING_UPLOAD',
-                            exactNameOnDoc: doc.fileName ?? 'Unknown File',
-                        })),
+                        create: data.documents.map((doc) => {
+                            const scope = extractDocumentScope(doc);
+                            return {
+                                docType: doc.fileName?.split('.').pop() ?? 'file',
+                                originalFileUrl: doc.uploadedFile?.url ?? 'PENDING_UPLOAD',
+                                exactNameOnDoc: doc.fileName ?? 'Unknown File',
+                                billablePages: scope.billablePages,
+                                totalPages: scope.totalPages,
+                                excludedFromScope: scope.excludedFromScope,
+                            };
+                        }),
                     },
                 },
             });

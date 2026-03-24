@@ -104,6 +104,87 @@ export async function generateDeliveryKit(
     const doc = order.documents[0];
     const logPrefix = `[generateDeliveryKit] Order #${orderId} Doc #${documentId}`;
 
+    // ── Short-circuit: use approved (frozen) kit if available ──────────────
+    if (!preview && doc.approvedKitUrl) {
+      console.log(
+        `${logPrefix} — using approved (frozen) kit: ${doc.approvedKitUrl}`
+      );
+
+      // Copy from previews/ to completed/ path in storage
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+
+      const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
+      const completedPath = `orders/completed/${fileName}`;
+
+      // Fetch the approved kit PDF
+      const approvedRes = await fetch(doc.approvedKitUrl);
+      if (!approvedRes.ok) {
+        console.warn(
+          `${logPrefix} — approved kit fetch failed (${approvedRes.status}), falling through to regeneration`
+        );
+      } else {
+        const approvedBuffer = Buffer.from(await approvedRes.arrayBuffer());
+
+        const { error: uploadError } = await supabase.storage
+          .from("translations")
+          .upload(completedPath, approvedBuffer, {
+            contentType: "application/pdf",
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.warn(
+            `${logPrefix} — approved kit upload to completed/ failed: ${uploadError.message}, falling through`
+          );
+        } else {
+          const { data: urlData } = supabase.storage
+            .from("translations")
+            .getPublicUrl(completedPath);
+
+          // Persist delivery URL
+          const parsedOrderMetadata = parseOrderMetadata(
+            order.metadata as string | null | undefined,
+          );
+          const nextMetadata = upsertDeliveryArtifactRegistryRecord(
+            parsedOrderMetadata,
+            documentId,
+            {
+              source: 'approved_frozen_kit' as any,
+              selectedArtifactUrl: doc.approvedKitUrl,
+              deliveryPdfUrl: urlData.publicUrl,
+              generatedAt: new Date().toISOString(),
+            },
+          );
+
+          await prisma.$transaction([
+            prisma.document.update({
+              where: { id: documentId },
+              data: { delivery_pdf_url: urlData.publicUrl },
+            }),
+            prisma.order.update({
+              where: { id: orderId },
+              data: { metadata: JSON.stringify(nextMetadata) },
+            }),
+          ]);
+
+          revalidatePath(`/admin/orders/${orderId}`);
+          revalidatePath("/admin/orders");
+
+          return {
+            success: true,
+            deliveryUrl: urlData.publicUrl,
+            pdfUrl: urlData.publicUrl,
+            fileName,
+            isPreview: false,
+          };
+        }
+      }
+    }
+
     const artifactSelection = resolveTranslationArtifactSelection({
       externalTranslationUrl: doc.externalTranslationUrl,
       translatedText: doc.translatedText,

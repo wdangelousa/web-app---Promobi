@@ -750,6 +750,7 @@ export async function releaseToClient(
             delivery_pdf_url: true,
             translation_status: true,
             isReviewed: true,
+            excludedFromScope: true,
           },
         },
       },
@@ -1184,8 +1185,9 @@ export async function releaseToClient(
 
     // Send delivery email only for selected docs.
     // Document "sent" state is persisted only after email dispatch succeeds.
+    let emailResult: { resendMessageId: string | null; recipients: string[] } = { resendMessageId: null, recipients: [] }
     try {
-      await sendDeliveryEmail(order, docsToRelease, options)
+      emailResult = await sendDeliveryEmail(order, docsToRelease, options)
     } catch (err: any) {
       console.error('[releaseToClient] Critical failure calling sendDeliveryEmail:', err)
       return {
@@ -1208,8 +1210,10 @@ export async function releaseToClient(
     }
 
     const deliveryRegistry = readDocumentDeliveryStatusRegistry(nextMetadata)
-    const totalDocumentCount = order.documents.length
-    const sentDocumentCount = order.documents.filter(
+    // Only count in-scope documents for lifecycle calculation
+    const inScopeDocs = order.documents.filter((doc) => !(doc as any).excludedFromScope)
+    const totalDocumentCount = inScopeDocs.length
+    const sentDocumentCount = inScopeDocs.filter(
       (doc) => deliveryRegistry[String(doc.id)]?.deliveryStatus === 'sent',
     ).length
     const lifecycleStatus: 'sent' | 'partially_sent' =
@@ -1229,21 +1233,30 @@ export async function releaseToClient(
       lastDispatchDocumentIds: docsToRelease.map((d) => d.id),
       sentDocumentCount,
       totalDocumentCount,
+      // Email delivery tracking — resolved by Resend webhook
+      emailTracking: {
+        resendMessageId: emailResult.resendMessageId,
+        recipients: emailResult.recipients,
+        sentAt: dispatchTimestamp,
+        deliveryConfirmed: false,
+        deliveryConfirmedAt: null,
+      },
     }
 
-    const shouldMarkOrderCompleted = lifecycleStatus === 'sent'
-    const nextOrderStatus = shouldMarkOrderCompleted ? 'COMPLETED' : order.status
+    // Don't mark COMPLETED yet — wait for Resend "delivered" webhook confirmation.
+    // Order stays in current status until email delivery is confirmed.
+    const nextOrderStatus = order.status
 
     await prisma.order.update({
       where: { id: orderId },
       data: {
         status: nextOrderStatus,
-        sentAt: shouldMarkOrderCompleted ? new Date(dispatchTimestamp) : order.sentAt,
+        sentAt: lifecycleStatus === 'sent' ? new Date(dispatchTimestamp) : order.sentAt,
         metadata: JSON.stringify(nextMetadata),
       },
     })
 
-    const completionLabel = shouldMarkOrderCompleted
+    const completionLabel = lifecycleStatus === 'sent'
       ? options.isRetry
         ? 'RESENT'
         : 'COMPLETED'
@@ -1269,7 +1282,7 @@ async function sendDeliveryEmail(
   order: any,
   selectedDocs: Array<{ id: number; exactNameOnDoc: string | null; delivery_pdf_url: string | null }>,
   options: { sendToClient: boolean; sendToTranslator: boolean; isRetry?: boolean },
-) {
+): Promise<{ resendMessageId: string | null; recipients: string[] }> {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
 
@@ -1294,7 +1307,7 @@ async function sendDeliveryEmail(
     recipients.push('desk@promobidocs.com')
   }
 
-  if (recipients.length === 0) return
+  if (recipients.length === 0) return { resendMessageId: null, recipients: [] }
 
   console.log(`[sendDeliveryEmail] ${options.isRetry ? 'REENVIO MANUAL' : 'DISPARO INICIAL'} - Disparando e-mail para: ${recipients.join(', ')}`)
 
@@ -1377,7 +1390,9 @@ async function sendDeliveryEmail(
   if (error) {
     console.error(`[sendDeliveryEmail] ❌ Falha no Resend:`, JSON.stringify(error, null, 2))
     throw new Error(`Resend Error: ${error.message} (${(error as any).name || 'Unknown'})`)
-  } else {
-    console.log(`[sendDeliveryEmail] ✅ Enviado com sucesso!`, JSON.stringify(data, null, 2))
   }
+
+  const resendMessageId = data?.id ?? null
+  console.log(`[sendDeliveryEmail] ✅ Enviado! Resend ID: ${resendMessageId}`, JSON.stringify(data, null, 2))
+  return { resendMessageId, recipients }
 }

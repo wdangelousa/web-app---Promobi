@@ -77,6 +77,11 @@ export function normalizeOrder(order: any): NormalizedOrder {
             isReviewed: doc.isReviewed === true,
             externalTranslationUrl: typeof doc.externalTranslationUrl === 'string' ? doc.externalTranslationUrl : null,
             pageRotations: (doc.pageRotations && typeof doc.pageRotations === 'object') ? doc.pageRotations : null,
+            // Scope fields (cotejo financeiro)
+            billablePages: typeof doc.billablePages === 'number' ? doc.billablePages : null,
+            totalPages: typeof doc.totalPages === 'number' ? doc.totalPages : null,
+            excludedFromScope: doc.excludedFromScope === true,
+            approvedKitUrl: typeof doc.approvedKitUrl === 'string' ? doc.approvedKitUrl : null,
         }))
         : [];
 

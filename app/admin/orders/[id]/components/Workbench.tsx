@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus } from 'lucide-react'
+import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, ThumbsUp, Send, X, UploadCloud, Trash2, RefreshCw, RotateCcw, Maximize2, DollarSign, Plus, Ban, ShieldCheck } from 'lucide-react'
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
+import { applyScopeReduction, SCOPE_REDUCTION_REASON_LABELS, type ScopeReductionReason } from '@/app/actions/scope-reduction'
 import { readDocumentDeliveryStatusRegistry, readTranslationModeRegistry, type TranslationModeSelected } from '@/lib/translationArtifactSource'
 import { readFinancialLedger } from '@/lib/manualPayment'
 import ModalPortal from '@/components/ui/ModalPortal'
@@ -27,12 +28,18 @@ type Document = {
     isReviewed?: boolean
     pageRotations?: Record<string, number> | null
     sourceLanguage?: string | null
+    // Scope fields (cotejo financeiro)
+    billablePages?: number | null
+    totalPages?: number | null
+    excludedFromScope?: boolean
+    approvedKitUrl?: string | null
 }
 
 type Order = {
     id: number
     status: string
     totalAmount: number
+    urgency?: string
     extraDiscount?: number | null
     finalPaidAmount?: number | null
     metadata?: Record<string, unknown> | null
@@ -117,7 +124,74 @@ function cleanAiHtml(raw: string): string {
 export default function Workbench({ order }: { order: Order }) {
     const router = useRouter()
 
-    const [selectedDocId, setSelectedDocId] = useState<number | null>(order.documents[0]?.id ?? null)
+    // ── Kit approval state ──────────────────────────────────────────
+    const [isApprovingKit, setIsApprovingKit] = useState(false)
+    const [kitApproved, setKitApproved] = useState(false)
+
+    const handleApproveKit = async () => {
+        if (!selectedDoc || !kitPreviewUrl) return
+        setIsApprovingKit(true)
+        try {
+            const { approvePreviewKit } = await import('../../../../actions/approvePreviewKit')
+            const result = await approvePreviewKit(order.id, selectedDoc.id, kitPreviewUrl)
+            if (!result.success) {
+                alert('Erro ao aprovar kit: ' + result.error)
+                return
+            }
+            setKitApproved(true)
+            router.refresh()
+        } catch (err: any) {
+            alert('Erro: ' + (err?.message || 'Falha ao aprovar kit'))
+        } finally {
+            setIsApprovingKit(false)
+        }
+    }
+
+    // ── Scope reduction state ───────────────────────────────────────
+    const [showScopeReductionModal, setShowScopeReductionModal] = useState(false)
+    const [scopeReductionDocId, setScopeReductionDocId] = useState<number | null>(null)
+    const [scopeReductionReason, setScopeReductionReason] = useState<ScopeReductionReason>('already_in_english')
+    const [scopeReductionNotes, setScopeReductionNotes] = useState('')
+    const [isApplyingScopeReduction, setIsApplyingScopeReduction] = useState(false)
+
+    const openScopeReductionModal = (docId: number) => {
+        setScopeReductionDocId(docId)
+        setScopeReductionReason('already_in_english')
+        setScopeReductionNotes('')
+        setShowScopeReductionModal(true)
+    }
+
+    const handleApplyScopeReduction = async () => {
+        if (!scopeReductionDocId) return
+        setIsApplyingScopeReduction(true)
+        try {
+            const result = await applyScopeReduction(
+                order.id,
+                scopeReductionDocId,
+                scopeReductionReason,
+                scopeReductionNotes || null,
+                order.user?.fullName || 'Tradutora',
+            )
+            if (!result.success) {
+                alert('Erro: ' + result.error)
+                return
+            }
+            setShowScopeReductionModal(false)
+            router.refresh()
+        } catch (err: any) {
+            alert('Erro ao aplicar redução: ' + (err?.message || 'Erro interno'))
+        } finally {
+            setIsApplyingScopeReduction(false)
+        }
+    }
+
+    // ── Scope-aware document lists (cotejo financeiro) ──────────────
+    const inScopeDocs = order.documents.filter(d => !d.excludedFromScope)
+    const outOfScopeDocs = order.documents.filter(d => d.excludedFromScope)
+
+    const [selectedDocId, setSelectedDocId] = useState<number | null>(
+        order.documents.find(d => !d.excludedFromScope)?.id ?? order.documents[0]?.id ?? null
+    )
     const [editorContent, setEditorContent] = useState('')
     const [isResending, setIsResending] = useState(false)
 
@@ -231,6 +305,7 @@ export default function Workbench({ order }: { order: Order }) {
         setParityJustification('')
         setParityRelevantPageCountInput('')
         setSelectedParityMode('strict_all_pages')
+        setKitApproved(false)
     }, [selectedDoc?.id])
 
     useEffect(() => {
@@ -246,10 +321,11 @@ export default function Workbench({ order }: { order: Order }) {
     }
 
     const toggleSelectAll = () => {
-        setSelectedDocsForDelivery(selectedDocsForDelivery.length === order.documents.length ? [] : order.documents.map((d) => d.id))
+        const selectableDocs = inScopeDocs
+        setSelectedDocsForDelivery(selectedDocsForDelivery.length === selectableDocs.length ? [] : selectableDocs.map((d) => d.id))
     }
 
-    const allSelected = selectedDocsForDelivery.length === order.documents.length
+    const allSelected = selectedDocsForDelivery.length === inScopeDocs.length
     const someSelected = selectedDocsForDelivery.length > 0
     const parityModeLabel: Record<PageParityMode, string> = {
         strict_all_pages: 'Paridade estrita (todas as páginas)',
@@ -740,28 +816,81 @@ export default function Workbench({ order }: { order: Order }) {
                 </button>
 
                 <div className="flex-1 overflow-y-auto py-1">
-                    {order.documents.map((doc) => {
+                    {/* ── In-scope documents (work to be done) ── */}
+                    {inScopeDocs.map((doc) => {
                         const isActive = doc.id === selectedDocId
                         const isChecked = selectedDocsForDelivery.includes(doc.id)
                         const docWithReview = { ...doc, isReviewed: localReviewed.has(doc.id) }
                         const deliveryStatusRecord = (deliveryStatusRegistry[String(doc.id)] ?? null) as DocumentDeliveryStatusRecord | null
                         const { label: statusLabel, pill: pillClass } = getStatusInfo(docWithReview, deliveryStatusRecord)
 
+                        const scopeLabel = doc.billablePages != null && doc.totalPages != null && doc.billablePages < doc.totalPages
+                            ? `${doc.billablePages}/${doc.totalPages} pág.`
+                            : null
+
                         return (
                             <div key={doc.id} className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md group transition-colors ${isActive ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>
                                 <button onClick={(e) => { e.stopPropagation(); toggleDocForDelivery(doc.id) }} className="mt-0.5 shrink-0 text-gray-500 hover:text-[#f58220] transition-colors"><CheckSquare className={`h-4 w-4 ${isChecked ? 'text-[#f58220]' : ''}`} /></button>
                                 <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedDocId(doc.id)}>
                                     <div className={`text-xs font-medium truncate leading-tight ${isActive ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>{doc.exactNameOnDoc || doc.docType}</div>
-                                    <span className={`mt-1 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded ring-1 ${pillClass}`}>{statusLabel}</span>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        <span className={`inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded ring-1 ${pillClass}`}>{statusLabel}</span>
+                                        {scopeLabel && (
+                                            <span className="inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 ring-1 ring-amber-700/50">
+                                                {scopeLabel}
+                                            </span>
+                                        )}
+                                        {doc.approvedKitUrl && (
+                                            <span className="inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 ring-1 ring-emerald-700/50">
+                                                Kit ✓
+                                            </span>
+                                        )}
+                                    </div>
                                 </button>
                                 {!isPaid && (
                                     <button onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc.id, doc.exactNameOnDoc || doc.docType) }} disabled={isDeletingDocId === doc.id} className="mt-0.5 shrink-0 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50">
                                         {isDeletingDocId === doc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                                     </button>
                                 )}
+                                {isPaid && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openScopeReductionModal(doc.id) }}
+                                        title="Remover do escopo (gera crédito)"
+                                        className="mt-0.5 shrink-0 text-gray-600 hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100"
+                                    >
+                                        <Ban className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
                             </div>
                         )
                     })}
+
+                    {/* ── Out-of-scope documents (reference only) ── */}
+                    {outOfScopeDocs.length > 0 && (
+                        <>
+                            <div className="px-3 py-2 mt-2 border-t border-gray-800">
+                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">
+                                    Fora do escopo ({outOfScopeDocs.length})
+                                </span>
+                            </div>
+                            {outOfScopeDocs.map((doc) => {
+                                const isActive = doc.id === selectedDocId
+                                return (
+                                    <div key={doc.id} className={`flex items-start gap-2 px-2 py-2 mx-1 my-0.5 rounded-md opacity-40 group transition-colors ${isActive ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>
+                                        <div className="mt-0.5 shrink-0 w-4" />
+                                        <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedDocId(doc.id)}>
+                                            <div className={`text-xs font-medium truncate leading-tight line-through ${isActive ? 'text-white' : 'text-gray-400'}`}>
+                                                {doc.exactNameOnDoc || doc.docType}
+                                            </div>
+                                            <span className="mt-1 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 ring-1 ring-gray-700">
+                                                Referência
+                                            </span>
+                                        </button>
+                                    </div>
+                                )
+                            })}
+                        </>
+                    )}
                 </div>
 
                 {!isPaid && (
@@ -962,7 +1091,26 @@ export default function Workbench({ order }: { order: Order }) {
                         >
                             <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800 shrink-0">
                                 <span className="text-white font-semibold flex items-center gap-2"><Eye className="h-4 w-4" /> Preview do Kit — {selectedDoc?.exactNameOnDoc || selectedDoc?.docType}</span>
-                                <button onClick={() => setShowPreviewModal(false)} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
+                                <div className="flex items-center gap-3">
+                                    {kitApproved || selectedDoc?.approvedKitUrl ? (
+                                        <span className="flex items-center gap-1.5 text-emerald-400 text-sm font-bold">
+                                            <ShieldCheck className="h-4 w-4" /> Kit Aprovado
+                                        </span>
+                                    ) : (
+                                        <button
+                                            onClick={handleApproveKit}
+                                            disabled={isApprovingKit || !kitPreviewUrl}
+                                            className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors"
+                                        >
+                                            {isApprovingKit ? (
+                                                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Aprovando...</>
+                                            ) : (
+                                                <><ShieldCheck className="h-3.5 w-3.5" /> Aprovar Kit</>
+                                            )}
+                                        </button>
+                                    )}
+                                    <button onClick={() => { setShowPreviewModal(false); setKitApproved(false) }} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
                                 {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
@@ -1121,6 +1269,79 @@ export default function Workbench({ order }: { order: Order }) {
                 </ModalPortal>
             )}
             <FinancialAdjustmentModal isOpen={showFinancialModal} orderId={order.id} currentTotal={order.totalAmount} onClose={() => setShowFinancialModal(false)} onConfirm={async () => window.location.reload()} />
+            {/* ── Scope Reduction Modal ── */}
+            {showScopeReductionModal && scopeReductionDocId && (
+                <ModalPortal>
+                    <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" style={{ zIndex: UI_Z_INDEX.modalOverlay }}>
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-slate-200" style={{ zIndex: UI_Z_INDEX.modalContent }}>
+                            <h3 className="text-xl font-bold text-slate-900 mb-1">Redução de Escopo</h3>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Remover documento do escopo de trabalho. O valor será descontado e ficará como crédito/reembolso pendente.
+                            </p>
+
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                                <p className="text-sm font-bold text-amber-800">
+                                    {order.documents.find(d => d.id === scopeReductionDocId)?.exactNameOnDoc || `Doc #${scopeReductionDocId}`}
+                                </p>
+                                <p className="text-xs text-amber-600 mt-1">
+                                    {order.documents.find(d => d.id === scopeReductionDocId)?.billablePages ?? '?'} página(s) cobrável(is)
+                                </p>
+                            </div>
+
+                            <div className="space-y-4 mb-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Motivo</label>
+                                    <select
+                                        value={scopeReductionReason}
+                                        onChange={(e) => setScopeReductionReason(e.target.value as ScopeReductionReason)}
+                                        className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                                    >
+                                        {Object.entries(SCOPE_REDUCTION_REASON_LABELS).map(([key, label]) => (
+                                            <option key={key} value={key}>{label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Observações (opcional)</label>
+                                    <textarea
+                                        value={scopeReductionNotes}
+                                        onChange={(e) => setScopeReductionNotes(e.target.value)}
+                                        placeholder="Ex: Cliente avisou por telefone que o documento foi enviado por engano..."
+                                        className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none resize-none h-20"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-6">
+                                <p className="text-xs font-bold text-red-700">
+                                    ⚠️ Esta ação remove o documento do escopo de trabalho e registra um crédito financeiro. Não pode ser desfeita.
+                                </p>
+                            </div>
+
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={() => setShowScopeReductionModal(false)}
+                                    className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-medium transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleApplyScopeReduction}
+                                    disabled={isApplyingScopeReduction}
+                                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-xl font-bold transition-colors flex items-center gap-2"
+                                >
+                                    {isApplyingScopeReduction ? (
+                                        <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
+                                    ) : (
+                                        <><Ban className="h-4 w-4" /> Confirmar Exclusão</>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </ModalPortal>
+            )}
         </div>
     )
 }

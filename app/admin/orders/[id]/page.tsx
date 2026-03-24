@@ -49,6 +49,10 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                         isReviewed: true,
                         externalTranslationUrl: true,
                         pageRotations: true,
+                        billablePages: true,
+                        totalPages: true,
+                        excludedFromScope: true,
+                        approvedKitUrl: true,
                     },
                     orderBy: { id: 'asc' }, // P6: deterministic order (matches workbench/[orderId]/page.tsx)
                 }

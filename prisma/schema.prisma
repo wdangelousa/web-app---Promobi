@@ -62,6 +62,12 @@ model Document {
   externalTranslationUrl String?
   pageRotations          Json?
   sourceLanguage         SourceLanguage?
+  // ── Scope fields (cotejo financeiro) ──────────────────────────────────────
+  billablePages          Int?            // Pages included in the quote (client pays for these)
+  totalPages             Int?            // Total pages in the original uploaded document
+  excludedFromScope      Boolean         @default(false) // Present for transparency, NOT to be translated
+  approvedKitUrl         String?         // Frozen preview kit URL (approved by translator)
+  // ──────────────────────────────────────────────────────────────────────────
   order                  Order           @relation(fields: [orderId], references: [id])
 }
 

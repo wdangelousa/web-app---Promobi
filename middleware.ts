@@ -65,7 +65,7 @@ export async function middleware(request: NextRequest) {
 
     // 1. PUBLIC ROUTES (LIVRES)
     // Matches: /, /api/auth/callback, /pay, /proposta and public assets (handled by matcher)
-    if (pathname === '/' || pathname.startsWith('/api/auth') || pathname.startsWith('/pay') || pathname.startsWith('/proposta')) {
+    if (pathname === '/' || pathname.startsWith('/api/auth') || pathname.startsWith('/pay') || pathname.startsWith('/proposta') || pathname.startsWith('/api/webhooks')) {
         return response
     }
 
