@@ -64,6 +64,8 @@ export interface ProposalFinancialSummary {
   totalPayable: number;
 }
 
+type ProposalBreakdownLike = Record<string, any>;
+
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -89,6 +91,37 @@ function safeMetadata(raw: unknown): Record<string, any> {
     }
   }
   return typeof raw === 'object' ? (raw as Record<string, any>) : {};
+}
+
+export function sanitizeProposalBreakdown(rawBreakdown: unknown): ProposalBreakdownLike {
+  const breakdown = safeMetadata(rawBreakdown);
+
+  return {
+    ...breakdown,
+    manualDiscountAmount: 0,
+  };
+}
+
+export function calculateCanonicalProposalTotal(input: {
+  breakdown?: unknown;
+  operationalAdjustmentAmount?: number | null;
+}): number {
+  const breakdown = sanitizeProposalBreakdown(input.breakdown);
+  const basePrice = roundCurrency(asNumber(breakdown.basePrice));
+  const urgencyFee = roundCurrency(asNumber(breakdown.urgencyFee));
+  const notaryFee = roundCurrency(asNumber(breakdown.notaryFee));
+  const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
+  const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
+  const operationalAdjustmentAmount = roundCurrency(asNumber(input.operationalAdjustmentAmount));
+
+  return roundCurrency(
+    basePrice +
+      urgencyFee +
+      notaryFee -
+      volumeDiscountAmount -
+      paymentDiscountAmount -
+      operationalAdjustmentAmount,
+  );
 }
 
 function summarizeDocument(doc: PricedDocument, basePricePerPage: number) {
@@ -216,10 +249,9 @@ export function deriveProposalFinancialSummary(
   input: DeriveProposalFinancialSummaryInput,
 ): ProposalFinancialSummary {
   const metadata = safeMetadata(input.metadata);
-  const breakdown = safeMetadata(metadata.breakdown);
+  const breakdown = sanitizeProposalBreakdown(metadata.breakdown);
   const documents = Array.isArray(metadata.documents) ? metadata.documents : [];
 
-  const totalPayable = roundCurrency(asNumber(input.totalAmount));
   const totalSavings = roundCurrency(
     asNumber(breakdown.totalSavings) || deriveSavingsFromDocuments(documents),
   );
@@ -228,8 +260,12 @@ export function deriveProposalFinancialSummary(
   const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
   const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
   const operationalAdjustmentAmount = roundCurrency(asNumber(input.extraDiscount));
-  const manualDiscountAmount = roundCurrency(asNumber(breakdown.manualDiscountAmount));
+  const manualDiscountAmount = 0;
   const volumeDiscountPercentage = asNumber(breakdown.volumeDiscountPercentage);
+  const totalPayable = calculateCanonicalProposalTotal({
+    breakdown,
+    operationalAdjustmentAmount,
+  });
 
   const derivedFullBasePrice = roundCurrency(
     totalPayable +
@@ -237,7 +273,6 @@ export function deriveProposalFinancialSummary(
       volumeDiscountAmount +
       paymentDiscountAmount +
       operationalAdjustmentAmount +
-      manualDiscountAmount -
       urgencyFee -
       notaryFee,
   );

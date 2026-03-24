@@ -328,7 +328,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
   });
 
   const totalDocs = docs.length;
-  const totalAmt = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
+  const totalAmt = financialSummary.totalPayable;
   const clientName = order?.user?.fullName || order?.clientName || 'Cliente Promobidocs';
   const clientEmail = order?.user?.email || order?.clientEmail || '';
 
@@ -535,12 +535,6 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                   <View style={S.totalDiscountRow}>
                     <Text style={S.totalDiscountLbl}>DESCONTO PAGAMENTO INTEGRAL (5%)</Text>
                     <Text style={S.totalDiscountVal}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
-                  </View>
-                )}
-                {financialSummary.manualDiscountAmount > 0 && (
-                  <View style={S.totalDiscountRow}>
-                    <Text style={S.totalDiscountLbl}>DESCONTO ESPECIAL</Text>
-                    <Text style={S.totalDiscountVal}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
                   </View>
                 )}
                 {financialSummary.volumeDiscountAmount > 0 && (

@@ -415,12 +415,12 @@ export default function OrcamentoManual() {
     }, [documents, urgency, serviceType, globalSettings])
 
     // --- ORDER CREATION ---
-    const handleGenerateProposal = async (finalTotalOverride?: number, manualDiscountAmount?: number, discountType?: 'nominal' | 'percent') => {
+    const handleGenerateProposal = async () => {
         const selectedDocs = documents.filter(d => d.isSelected)
         if (!clientName || !clientEmail) { toast.error('Preencha pelo menos Nome e Email do cliente.'); return }
         if (selectedDocs.length === 0) { toast.error('Selecione pelo menos um documento.'); return }
 
-        const effectiveTotal = finalTotalOverride !== undefined ? finalTotalOverride : totalPrice;
+        const effectiveTotal = totalPrice;
 
         setLoading(true); setUploadProgress(null)
         try {
@@ -477,10 +477,6 @@ export default function OrcamentoManual() {
                 }
             })
 
-            const isNominalDiscount = discountType === 'nominal' && manualDiscountAmount && manualDiscountAmount > 0;
-            // For nominal discounts, the admin saw `subtotal` as base; replace basePrice with that
-            // so the proposal shows: Base $subtotal → Desconto -$X → Total $final
-            const nominalSubtotal = isNominalDiscount ? effectiveTotal + manualDiscountAmount : undefined;
             const payload: any = {
                 user: { fullName: clientName, email: clientEmail, phone: clientPhone },
                 documents: orderDocuments,
@@ -489,12 +485,7 @@ export default function OrcamentoManual() {
                 breakdown: {
                     ...breakdown,
                     serviceType,
-                    ...(isNominalDiscount
-                        ? { basePrice: nominalSubtotal, volumeDiscountPercentage: 0, volumeDiscountAmount: 0, manualDiscountAmount: 0 }
-                        : { manualDiscountAmount: manualDiscountAmount }
-                    ),
                 },
-                extraDiscount: isNominalDiscount ? manualDiscountAmount : 0,
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT'
@@ -961,7 +952,7 @@ export default function OrcamentoManual() {
                                             subtotal={totalPrice}
                                             totalDocs={breakdown.totalDocs}
                                             totalPages={breakdown.totalCount}
-                                            onGenerateProposal={(final, disc, type) => handleGenerateProposal(final, disc, type)}
+                                            onGenerateProposal={handleGenerateProposal}
                                         />
                                     </div>
                                 )}

@@ -3,6 +3,7 @@
 import { PaymentProvider } from '@prisma/client'
 import prisma from '../../lib/prisma'
 import { getGlobalSettings } from './settings'
+import { calculateCanonicalProposalTotal, sanitizeProposalBreakdown } from '../../lib/proposalPricingSummary'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type UploadedFile = {
@@ -78,6 +79,7 @@ function extractDocumentScope(doc: DocumentItem) {
 export async function createOrder(data: CreateOrderInput) {
     try {
         console.log('[createOrder] Starting for:', data.user.email);
+        const sanitizedBreakdown = sanitizeProposalBreakdown(data.breakdown)
 
         const settings = await getGlobalSettings();
         const PRICE_PER_PAGE = settings.basePrice || 9.00;
@@ -95,9 +97,12 @@ export async function createOrder(data: CreateOrderInput) {
         let discountAmount = 0;
 
         if (data.grandTotalOverride) {
-            totalAmount = data.grandTotalOverride;
-            discountPercentage = data.breakdown?.volumeDiscountPercentage || 0;
-            discountAmount = (data.breakdown?.volumeDiscountAmount || 0) + (data.breakdown?.manualDiscountAmount || 0);
+            totalAmount = calculateCanonicalProposalTotal({
+                breakdown: sanitizedBreakdown,
+                operationalAdjustmentAmount: 0,
+            });
+            discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
+            discountAmount = (sanitizedBreakdown?.volumeDiscountAmount || 0) + (sanitizedBreakdown?.totalDiscountApplied || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
@@ -144,14 +149,14 @@ export async function createOrder(data: CreateOrderInput) {
                     sourceLanguage: data.sourceLanguage || 'PT_BR',
                     metadata: JSON.stringify({
                         documents: data.documents,
-                        breakdown: data.breakdown,
+                        breakdown: sanitizedBreakdown,
                         urgency: data.urgency,
                         serviceType: data.serviceType,
                         sourceLanguage: data.sourceLanguage,
                     }),
                     discountPercentage,
                     discountAmount,
-                    extraDiscount: data.extraDiscount || 0,
+                    extraDiscount: 0,
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);
@@ -181,6 +186,7 @@ export async function createOrder(data: CreateOrderInput) {
 export async function updateOrder(orderId: number, data: CreateOrderInput) {
     try {
         console.log('[updateOrder] Starting for Order #', orderId);
+        const sanitizedBreakdown = sanitizeProposalBreakdown(data.breakdown)
 
         const settings = await getGlobalSettings();
         const PRICE_PER_PAGE = settings.basePrice || 9.00;
@@ -198,9 +204,12 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
         let discountAmount = 0;
 
         if (data.grandTotalOverride) {
-            totalAmount = data.grandTotalOverride;
-            discountPercentage = data.breakdown?.volumeDiscountPercentage || 0;
-            discountAmount = (data.breakdown?.volumeDiscountAmount || 0) + (data.breakdown?.manualDiscountAmount || 0);
+            totalAmount = calculateCanonicalProposalTotal({
+                breakdown: sanitizedBreakdown,
+                operationalAdjustmentAmount: 0,
+            });
+            discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
+            discountAmount = (sanitizedBreakdown?.volumeDiscountAmount || 0) + (sanitizedBreakdown?.totalDiscountApplied || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
@@ -244,14 +253,14 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     hasNotary,
                     metadata: JSON.stringify({
                         documents: data.documents,
-                        breakdown: data.breakdown,
+                        breakdown: sanitizedBreakdown,
                         urgency: data.urgency,
                         serviceType: data.serviceType,
                         sourceLanguage: data.sourceLanguage,
                     }),
                     discountPercentage,
                     discountAmount,
-                    extraDiscount: data.extraDiscount || 0,
+                    extraDiscount: 0,
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);

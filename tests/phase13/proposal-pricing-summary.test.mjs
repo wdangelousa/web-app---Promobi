@@ -10,16 +10,17 @@ test('shared proposal pricing helper tracks full base, savings, and reduced-base
   const helper = read('lib/proposalPricingSummary.ts')
 
   assert.match(helper, /export function calculateProposalBreakdown/)
+  assert.match(helper, /export function calculateCanonicalProposalTotal/)
+  assert.match(helper, /export function sanitizeProposalBreakdown/)
   assert.match(helper, /fullBasePrice/)
   assert.match(helper, /totalSavings: roundCurrency\(fullBasePrice - basePrice\)/)
   assert.match(helper, /const volumeDiscountAmount = roundCurrency\(\s*baseWithUrgency \* \(volumeDiscountPercentage \/ 100\)/)
-  assert.match(helper, /totalPayable \+/)
-  assert.match(helper, /totalSavings \+/)
-  assert.match(helper, /volumeDiscountAmount \+/)
-  assert.match(helper, /operationalAdjustmentAmount \+/)
-  assert.match(helper, /manualDiscountAmount \-/)
-  assert.match(helper, /urgencyFee \-/)
-  assert.match(helper, /notaryFee/)
+  assert.match(helper, /manualDiscountAmount: 0/)
+  assert.match(helper, /basePrice \+/)
+  assert.match(helper, /urgencyFee \+/)
+  assert.match(helper, /notaryFee -/)
+  assert.match(helper, /volumeDiscountAmount -/)
+  assert.match(helper, /operationalAdjustmentAmount/)
 })
 
 test('manual proposal flow persists full base and savings into breakdown metadata', () => {
@@ -48,16 +49,19 @@ test('public proposal page reads the shared financial summary instead of recompu
   assert.match(proposalClient, /const financialSummary = deriveProposalFinancialSummary/)
   assert.match(proposalClient, /Valor Cheio/)
   assert.match(proposalClient, /Economia \(Páginas Excluídas\)/)
+  assert.doesNotMatch(proposalClient, /Desconto Especial/)
   assert.doesNotMatch(proposalClient, /const optimizationSavings =/)
 })
 
-test('proposal PDF uses the shared financial summary and no longer mixes extraDiscount into memorial savings', () => {
+test('proposal PDF uses the shared financial summary and excludes manual proposal discounts from rendering', () => {
   const proposalPdf = read('components/ProposalPDF.tsx')
 
   assert.match(proposalPdf, /deriveProposalFinancialSummary/)
   assert.match(proposalPdf, /const totalSavings = financialSummary\.totalSavings/)
+  assert.match(proposalPdf, /const totalAmt = financialSummary\.totalPayable/)
   assert.match(proposalPdf, /financialSummary\.paymentDiscountAmount/)
   assert.match(proposalPdf, /financialSummary\.operationalAdjustmentAmount/)
+  assert.doesNotMatch(proposalPdf, /DESCONTO ESPECIAL/)
   assert.doesNotMatch(proposalPdf, /\+ \(order\.extraDiscount \|\| 0\)/)
 })
 
@@ -70,4 +74,16 @@ test('admin order detail modal uses the shared financial summary for internal re
   assert.match(orderDetailModal, /Economia por Exclusão/)
   assert.match(orderDetailModal, /Desconto de Volume/)
   assert.match(orderDetailModal, /Total a Pagar/)
+  assert.doesNotMatch(orderDetailModal, /Desconto Especial/)
+})
+
+test('proposal creation flow sanitizes manual special discounts before persisting new orders', () => {
+  const createOrder = read('app/actions/create-order.ts')
+  const budgetCard = read('components/Budget/BudgetSummaryCard.tsx')
+
+  assert.match(createOrder, /sanitizeProposalBreakdown/)
+  assert.match(createOrder, /calculateCanonicalProposalTotal/)
+  assert.match(createOrder, /extraDiscount: 0/)
+  assert.doesNotMatch(budgetCard, /Aplicar Desconto/)
+  assert.doesNotMatch(budgetCard, /discountType/)
 })
