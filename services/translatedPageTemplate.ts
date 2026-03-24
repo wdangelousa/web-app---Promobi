@@ -176,7 +176,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     body {
       font-family: Arial, sans-serif;
-      font-size: 10px;
+      font-size: 11.5px;
       color: #000;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -191,7 +191,8 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
        (higher specificity, centred margin).  Header paragraphs (.header-titulos p)
        override via their own rule defined below. */
     p {
-      margin: 2pt 0;
+      margin: 3pt 0;
+      line-height: 1.4;
     }
 
     /* Translator-note blocks: compact, muted — preserve the note but do not
@@ -334,7 +335,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     /* Stamps block — bracketed [Stamp: ...] [Seal: ...] descriptions */
     .block-stamps {
-      font-size: 8px;
+      font-size: 9px;
       color: #555;
       font-style: italic;
       margin: 2pt 0;
@@ -350,7 +351,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     /* Footer block — registry data, validation codes, electronic signature */
     .block-footer {
-      font-size: 8px;
+      font-size: 9px;
       color: #555;
       margin-top: 4pt;
       padding-top: 2pt;
@@ -407,7 +408,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     }
 
     td, th {
-      font-size: 9.5px;
+      font-size: 10.5px;
       line-height: 1.35;
       vertical-align: top;
     }
