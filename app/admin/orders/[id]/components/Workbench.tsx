@@ -7,7 +7,15 @@ import { Save, FileText, CheckCircle, Eye, Loader2, Zap, Square, CheckSquare, Th
 import ManualApprovalButton from './ManualApprovalButton'
 import FinancialAdjustmentModal from '@/components/Order/FinancialAdjustmentModal'
 import { applyFinancialAdjustment } from '@/app/actions/adminOrders'
-import { applyScopeReduction, SCOPE_REDUCTION_REASON_LABELS, type ScopeReductionReason } from '@/app/actions/scope-reduction'
+import { applyScopeReduction, type ScopeReductionReason } from '@/app/actions/scope-reduction'
+
+const SCOPE_REDUCTION_REASON_LABELS: Record<ScopeReductionReason, string> = {
+    already_in_english: 'Documento já em inglês',
+    sent_by_mistake: 'Enviado por engano pelo cliente',
+    duplicate_document: 'Documento duplicado',
+    client_requested_removal: 'Remoção solicitada pelo cliente',
+    other: 'Outro motivo',
+}
 import { readDocumentDeliveryStatusRegistry, readTranslationModeRegistry, type TranslationModeSelected } from '@/lib/translationArtifactSource'
 import { readFinancialLedger } from '@/lib/manualPayment'
 import ModalPortal from '@/components/ui/ModalPortal'

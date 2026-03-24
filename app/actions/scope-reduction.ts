@@ -37,13 +37,9 @@ interface ScopeAdjustmentEntry {
 
 // ── Reason labels (for audit/display) ──────────────────────────────────────────
 
-export const SCOPE_REDUCTION_REASON_LABELS: Record<ScopeReductionReason, string> = {
-    already_in_english: 'Documento já em inglês',
-    sent_by_mistake: 'Enviado por engano pelo cliente',
-    duplicate_document: 'Documento duplicado',
-    client_requested_removal: 'Remoção solicitada pelo cliente',
-    other: 'Outro motivo',
-}
+// NOTE: Reason labels live in Workbench.tsx (client component) because
+// 'use server' files can only export async functions.
+
 
 // ── Calculate document value ───────────────────────────────────────────────────
 
