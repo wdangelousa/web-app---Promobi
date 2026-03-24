@@ -24,6 +24,7 @@ export type DetailOrder = KanbanOrder & {
     email: string
     phone?: string | null
     address?: string | null
+    extraDiscount?: number | null
     uspsTracking?: string | null
     deliveryUrl?: string | null
     metadata?: string | null // JSON payload
