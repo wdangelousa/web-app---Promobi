@@ -544,7 +544,9 @@ export async function saveAndGenerateIAPromobiTranslation(
     })
     lockAcquired = true
 
-    const endpoint = `${resolveApiBaseUrl()}/api/translate/claude`
+    const { FEATURE_FLAGS } = await import('@/lib/featureFlags')
+    const translatePath = FEATURE_FLAGS.USE_TRANSLATION_V2 ? '/api/translate/v2' : '/api/translate/claude'
+    const endpoint = `${resolveApiBaseUrl()}${translatePath}`
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

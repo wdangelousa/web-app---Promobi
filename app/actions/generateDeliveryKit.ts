@@ -381,10 +381,17 @@ export async function generateDeliveryKit(
           );
         }
 
+        // V2 pipeline produces clean deterministic HTML — skip re-sanitization.
+        // V1 pipeline needs sanitizer to clean up Claude's raw HTML output.
+        const isV2Html = faithfulText.includes('<div class="translated-document">');
+        const sanitizedHtml = isV2Html
+          ? faithfulText
+          : compactTranslatorNoteParagraphs(
+              compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+            );
+
         const htmlForKit = buildTranslatedPageHtml({
-          translatedHtml: compactTranslatorNoteParagraphs(
-            compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
-          ),
+          translatedHtml: sanitizedHtml,
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
           layoutHint,

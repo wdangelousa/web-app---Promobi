@@ -32,4 +32,8 @@ export const FEATURE_FLAGS = {
    * services/structuredDocumentRenderer.ts.
    */
   ENABLE_STRUCTURED_PREVIEW_KIT: process.env.ENABLE_STRUCTURED_PREVIEW_KIT === 'true',
+
+  /** When true, translation uses the V2 pipeline (XML semantic prompt + deterministic HTML).
+   *  When false, uses the legacy V1 pipeline (Claude produces HTML directly). */
+  USE_TRANSLATION_V2: process.env.USE_TRANSLATION_V2 === 'true',
 } as const;

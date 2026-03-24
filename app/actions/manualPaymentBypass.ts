@@ -90,7 +90,9 @@ async function triggerAnthropicTranslationForOrder(orderId: number): Promise<{
     }
 
     const apiBase = resolveApiBaseUrl()
-    const endpoint = `${apiBase}/api/translate/claude`
+    const { FEATURE_FLAGS } = await import('@/lib/featureFlags')
+    const translatePath = FEATURE_FLAGS.USE_TRANSLATION_V2 ? '/api/translate/v2' : '/api/translate/claude'
+    const endpoint = `${apiBase}${translatePath}`
 
     const eligibleDocs = order.documents.filter((doc) => {
         if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') return false
