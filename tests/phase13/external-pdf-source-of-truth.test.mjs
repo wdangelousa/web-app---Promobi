@@ -29,8 +29,13 @@ test('delivery action persists source-of-truth record for generated artifact', (
 
   assert.match(deliveryAction, /resolveTranslationArtifactSelection/)
   assert.match(deliveryAction, /upsertDeliveryArtifactRegistryRecord/)
+  assert.match(deliveryAction, /getApprovedPreviewArtifactRegistryRecord/)
+  assert.match(deliveryAction, /approvedPreviewSourceMatchesSelection/)
+  assert.match(deliveryAction, /approved preview reuse skipped/)
   assert.match(deliveryAction, /selectedTranslationArtifactSource/)
+  assert.match(deliveryAction, /persistedSourceValue/)
   assert.match(deliveryAction, /deliveryUsedExternalPdf/)
+  assert.doesNotMatch(deliveryAction, /approved_frozen_kit/)
 })
 
 test('release action blocks stale delivery artifacts when source-of-truth mismatches', () => {
@@ -38,7 +43,27 @@ test('release action blocks stale delivery artifacts when source-of-truth mismat
 
   assert.match(releaseAction, /getDeliveryArtifactRegistryRecord/)
   assert.match(releaseAction, /resolveTranslationArtifactSelection/)
+  assert.match(releaseAction, /recordedTranslationArtifactSource/)
+  assert.match(releaseAction, /sourceConsistencyPass/)
   assert.match(releaseAction, /Release blocked by translation artifact source-of-truth rule/)
   assert.match(releaseAction, /sendToClientUsedExternalPdf/)
+})
+
+test('approve preview action persists preview source metadata for future delivery reuse', () => {
+  const approveAction = read('app/actions/approvePreviewKit.ts')
+
+  assert.match(approveAction, /resolveTranslationArtifactSelection/)
+  assert.match(approveAction, /upsertApprovedPreviewArtifactRegistryRecord/)
+  assert.match(approveAction, /selectedTranslationArtifactSource/)
+  assert.match(approveAction, /selectedArtifactUrlOrPath/)
+})
+
+test('delivery action regenerates when approved preview source no longer matches current selection', () => {
+  const deliveryAction = read('app/actions/generateDeliveryKit.ts')
+
+  assert.match(deliveryAction, /approvedPreviewArtifactRecord\.source === artifactSelection\.source/)
+  assert.match(deliveryAction, /approvedPreviewArtifactRecord\.selectedArtifactUrl/)
+  assert.match(deliveryAction, /approved preview reuse skipped/)
+  assert.match(deliveryAction, /source: artifactSelection\.source/)
 })
 

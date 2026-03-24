@@ -23,6 +23,7 @@ import { OrderStatus } from '@prisma/client'
 import { getLogoBase64 } from '../../actions/get-logo-base64'
 import { ConfirmPaymentButton } from '@/components/admin/ConfirmPaymentButton'
 import { getCurrentUser } from '@/app/actions/auth'
+import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary'
 
 type Props = {
     order: DetailOrder | null
@@ -160,6 +161,12 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
             }
         }
     }
+
+    const financialSummary = deriveProposalFinancialSummary({
+        totalAmount: order.totalAmount,
+        extraDiscount: order.extraDiscount,
+        metadata: order.metadata,
+    })
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -415,26 +422,54 @@ export default function OrderDetailModal({ order, onClose, onUpdate }: Props) {
                                 {orderMetadata && (
                                     <div className="bg-slate-900 text-slate-300 rounded-2xl p-6 space-y-3 shadow-xl">
                                         <div className="flex justify-between text-xs">
-                                            <span className="text-slate-500 font-bold uppercase tracking-wider">Subtotal Itens</span>
-                                            <span className="font-mono font-bold text-slate-200">${(orderMetadata.breakdown?.basePrice || 0).toFixed(2)}</span>
+                                            <span className="text-slate-500 font-bold uppercase tracking-wider">Valor Cheio</span>
+                                            <span className="font-mono font-bold text-slate-200">${financialSummary.fullBasePrice.toFixed(2)}</span>
                                         </div>
-                                        <div className="flex justify-between text-xs">
-                                            <span className="text-slate-500 font-bold uppercase tracking-wider">Taxas Notariais</span>
-                                            <span className="font-mono font-bold text-slate-200">${(orderMetadata.breakdown?.notaryFee || 0).toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between text-xs">
-                                            <span className="text-orange-400 font-bold uppercase tracking-wider">Taxa de Urgência ({orderMetadata.urgency})</span>
-                                            <span className="font-mono font-bold text-orange-300">${(orderMetadata.breakdown?.urgencyFee || 0).toFixed(2)}</span>
-                                        </div>
-                                        {orderMetadata.breakdown?.minOrderAdjustment > 0 && (
+                                        {financialSummary.totalSavings > 0 && (
                                             <div className="flex justify-between text-xs">
-                                                <span className="text-yellow-500 font-bold uppercase tracking-wider">Ajuste Mínimo</span>
-                                                <span className="font-mono font-bold text-yellow-400">${(orderMetadata.breakdown?.minOrderAdjustment || 0).toFixed(2)}</span>
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Economia por Exclusão</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.totalSavings.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.urgencyFee > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-orange-400 font-bold uppercase tracking-wider">Taxa de Urgência ({orderMetadata.urgency})</span>
+                                                <span className="font-mono font-bold text-orange-300">+${financialSummary.urgencyFee.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.notaryFee > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-sky-400 font-bold uppercase tracking-wider">Taxas Notariais</span>
+                                                <span className="font-mono font-bold text-sky-300">+${financialSummary.notaryFee.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.paymentDiscountAmount > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Desconto Pagamento Integral</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.paymentDiscountAmount.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.manualDiscountAmount > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Desconto Especial</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.manualDiscountAmount.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.volumeDiscountAmount > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Desconto de Volume ({financialSummary.volumeDiscountPercentage}%)</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.volumeDiscountAmount.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {financialSummary.operationalAdjustmentAmount > 0 && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-emerald-400 font-bold uppercase tracking-wider">Cortesia Operacional</span>
+                                                <span className="font-mono font-bold text-emerald-300">-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</span>
                                             </div>
                                         )}
                                         <div className="border-t border-slate-800 pt-4 flex justify-between items-center mt-2">
-                                            <span className="text-sm font-bold text-white uppercase tracking-widest">Total Pago</span>
-                                            <span className="font-mono text-2xl font-bold text-white">${order.totalAmount.toFixed(2)}</span>
+                                            <span className="text-sm font-bold text-white uppercase tracking-widest">Total a Pagar</span>
+                                            <span className="font-mono text-2xl font-bold text-white">${financialSummary.totalPayable.toFixed(2)}</span>
                                         </div>
                                     </div>
                                 )}

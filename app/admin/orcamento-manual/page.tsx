@@ -31,6 +31,7 @@ import { analyzeDocument, DocumentAnalysis } from '../../../lib/documentAnalyzer
 import { PDFDocument } from 'pdf-lib'
 import { searchCustomers, CustomerSearchResult } from '../../actions/search-customers'
 import { getOrderForConcierge } from '../../actions/adminOrders'
+import { calculateProposalBreakdown } from '../../../lib/proposalPricingSummary'
 
 
 // --- TYPES ---
@@ -107,6 +108,7 @@ export default function OrcamentoManual() {
         basePrice: 0, urgencyFee: 0, notaryFee: 0,
         totalDocs: 0, totalCount: 0,
         minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0,
+        totalSavings: 0, excludedPages: 0, fullBasePrice: 0,
         volumeDiscountPercentage: 0, volumeDiscountAmount: 0
     })
 
@@ -399,49 +401,16 @@ export default function OrcamentoManual() {
     // --- PRICE CALC ---
     useEffect(() => {
         const sel = documents.filter(d => d.isSelected)
-        let base = 0, totalPages = 0, notary = 0
-
-        if (serviceType === 'translation') {
-            sel.forEach(doc => {
-                let docPrice = 0
-                if (doc.analysis) {
-                    docPrice = calcDocPrice(doc.analysis.pages)
-                    totalPages += doc.analysis.pages.filter(p => p.included).length
-                } else {
-                    const b = globalSettings?.basePrice || 9.00
-                    docPrice = (doc.count || 1) * b
-                    totalPages += doc.count || 1
-                }
-                if (doc.handwritten) docPrice *= 1.25
-                base += docPrice
-                notary += doc.notarized ? NOTARY_FEE_PER_DOC : 0
-            })
-        } else if (serviceType === 'notarization') {
-            notary = sel.length * NOTARY_FEE_PER_DOC
-            totalPages = sel.length
-        }
-
-        const baseWithUrgency = base * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
-        const urgencyFee = baseWithUrgency - base
-
-        let volumeDiscountPercentage = 0;
-        let volumeDiscountAmount = 0;
-        if (serviceType === 'translation') {
-            if (totalPages >= 51) volumeDiscountPercentage = 15;
-            else if (totalPages >= 31) volumeDiscountPercentage = 10;
-            else if (totalPages >= 16) volumeDiscountPercentage = 5;
-
-            volumeDiscountAmount = baseWithUrgency * (volumeDiscountPercentage / 100);
-        }
-
-        const total = baseWithUrgency - volumeDiscountAmount + notary
-
-        setBreakdown({
-            basePrice: base, urgencyFee, notaryFee: notary,
-            totalDocs: sel.length, totalCount: totalPages,
-            minOrderApplied: false, totalMinimumAdjustment: 0, totalDiscountApplied: 0,
-            volumeDiscountPercentage, volumeDiscountAmount
+        const { breakdown: nextBreakdown, total } = calculateProposalBreakdown({
+            documents: sel,
+            serviceType: (serviceType ?? 'translation') as 'translation' | 'notarization',
+            urgency,
+            basePricePerPage: globalSettings?.basePrice || 9.0,
+            notaryFeePerDoc: NOTARY_FEE_PER_DOC,
+            urgencyMultiplier: URGENCY_MULTIPLIER[urgency] ?? 1.0,
         })
+
+        setBreakdown(nextBreakdown)
         setTotalPrice(total)
     }, [documents, urgency, serviceType, globalSettings])
 

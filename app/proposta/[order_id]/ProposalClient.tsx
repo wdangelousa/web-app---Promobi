@@ -11,6 +11,7 @@ import { Download } from 'lucide-react'
 import { getLogoBase64 } from '@/app/actions/get-logo-base64'
 import { generatePremiumProposalPDF } from '@/app/actions/generate-proposal-pdf'
 import { useEffect } from 'react'
+import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary'
 
 export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
     const metadata = order.metadata ? JSON.parse(order.metadata) : null;
@@ -30,6 +31,11 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     }, [])
 
     const breakdown = metadata?.breakdown || {};
+    const financialSummary = deriveProposalFinancialSummary({
+        totalAmount: order.totalAmount,
+        extraDiscount: order.extraDiscount,
+        metadata: order.metadata,
+    })
     const { toast } = useUIFeedback()
 
     const urgencyLabels: Record<string, string> = {
@@ -126,12 +132,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
             </div>
         )
     }
-
-    const optimizationSavings = metadata?.documents?.reduce((acc: number, doc: any) => {
-        return acc + (doc.analysis?.pages?.reduce((pAcc: number, p: any) => {
-            return pAcc + (p.included === false ? (p.price || 0) : 0);
-        }, 0) || 0);
-    }, 0) || 0;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
@@ -345,43 +345,49 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
                     <div className="space-y-3 mb-6 font-mono text-sm border-b border-slate-700 pb-6">
                         <div className="flex justify-between text-slate-300">
-                            <span>Base (Cálculo de Densidade)</span>
-                            <span>${(breakdown.basePrice || ((order.totalAmount || 0) + optimizationSavings + (order.extraDiscount || 0))).toFixed(2)}</span>
+                            <span>Valor Cheio</span>
+                            <span>${financialSummary.fullBasePrice.toFixed(2)}</span>
                         </div>
-                        {optimizationSavings > 0 && (
+                        {financialSummary.totalSavings > 0 && (
                             <div className="flex justify-between text-green-400">
-                                <span>Economia (Páginas Otimizadas)</span>
-                                <span>-${optimizationSavings.toFixed(2)}</span>
+                                <span>Economia (Páginas Excluídas)</span>
+                                <span>-${financialSummary.totalSavings.toFixed(2)}</span>
                             </div>
                         )}
-                        {breakdown.urgencyFee > 0 && (
+                        {financialSummary.urgencyFee > 0 && (
                             <div className="flex justify-between text-[#C9956B]">
                                 <span>Taxa de Urgência ({urgencyLabels[order.urgency]})</span>
-                                <span>+${breakdown.urgencyFee.toFixed(2)}</span>
+                                <span>+${financialSummary.urgencyFee.toFixed(2)}</span>
                             </div>
                         )}
-                        {breakdown.notaryFee > 0 && (
+                        {financialSummary.notaryFee > 0 && (
                             <div className="flex justify-between text-blue-300">
                                 <span>Notarização Oficial</span>
-                                <span>+${breakdown.notaryFee.toFixed(2)}</span>
+                                <span>+${financialSummary.notaryFee.toFixed(2)}</span>
                             </div>
                         )}
-                        {order.extraDiscount > 0 && (
-                            <div className="flex justify-between text-green-400 font-bold border-t border-slate-800 pt-2 mt-2">
-                                <span>Cortesia Operacional / Ajuste de Tarifa</span>
-                                <span>-${(order.extraDiscount || 0).toFixed(2)}</span>
+                        {financialSummary.paymentDiscountAmount > 0 && (
+                            <div className="flex justify-between text-green-400">
+                                <span>Desconto Pagamento Integral (5%)</span>
+                                <span>-${financialSummary.paymentDiscountAmount.toFixed(2)}</span>
                             </div>
                         )}
-                        {breakdown.totalDiscountApplied > 0 && !(order.extraDiscount > 0) && optimizationSavings === 0 && (
+                        {financialSummary.manualDiscountAmount > 0 && (
                             <div className="flex justify-between text-green-400">
                                 <span>Desconto Especial</span>
-                                <span>-${breakdown.totalDiscountApplied.toFixed(2)}</span>
+                                <span>-${financialSummary.manualDiscountAmount.toFixed(2)}</span>
                             </div>
                         )}
-                        {breakdown.volumeDiscountAmount > 0 && (
+                        {financialSummary.operationalAdjustmentAmount > 0 && (
+                            <div className="flex justify-between text-green-400 font-bold border-t border-slate-800 pt-2 mt-2">
+                                <span>Cortesia Operacional / Ajuste de Tarifa</span>
+                                <span>-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {financialSummary.volumeDiscountAmount > 0 && (
                             <div className="flex justify-between text-green-400 font-bold">
-                                <span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%)</span>
-                                <span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span>
+                                <span>Desconto de Volume ({financialSummary.volumeDiscountPercentage}%)</span>
+                                <span>-${financialSummary.volumeDiscountAmount.toFixed(2)}</span>
                             </div>
                         )}
                     </div>
@@ -400,7 +406,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             )}
                         </div>
                         <div className="text-4xl font-black text-white">
-                            ${(order.totalAmount || 0).toFixed(2)}
+                            ${financialSummary.totalPayable.toFixed(2)}
                         </div>
                     </div>
                 </section>

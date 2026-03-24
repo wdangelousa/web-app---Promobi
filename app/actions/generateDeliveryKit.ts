@@ -12,6 +12,7 @@ import { isCertificateGenreDocumentType } from "@/lib/singlePageSafeguard";
 import { sanitizeTranslationHtml, compactParagraphsForContinuousText, compactTranslatorNoteParagraphs } from "@/lib/translationHtmlSanitizer";
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
+  getApprovedPreviewArtifactRegistryRecord,
   getPageParityRegistryRecord,
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
@@ -32,6 +33,12 @@ interface DeliveryKitResult {
 interface GenerateOptions {
   preview?: boolean;
   coverLanguage?: string;
+}
+
+function normalizeComparableUrl(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function buildExternalOverrideLanguageIntegrity(
@@ -103,88 +110,9 @@ export async function generateDeliveryKit(
 
     const doc = order.documents[0];
     const logPrefix = `[generateDeliveryKit] Order #${orderId} Doc #${documentId}`;
-
-    // ── Short-circuit: use approved (frozen) kit if available ──────────────
-    if (!preview && doc.approvedKitUrl) {
-      console.log(
-        `${logPrefix} — using approved (frozen) kit: ${doc.approvedKitUrl}`
-      );
-
-      // Copy from previews/ to completed/ path in storage
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-
-      const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
-      const completedPath = `orders/completed/${fileName}`;
-
-      // Fetch the approved kit PDF
-      const approvedRes = await fetch(doc.approvedKitUrl);
-      if (!approvedRes.ok) {
-        console.warn(
-          `${logPrefix} — approved kit fetch failed (${approvedRes.status}), falling through to regeneration`
-        );
-      } else {
-        const approvedBuffer = Buffer.from(await approvedRes.arrayBuffer());
-
-        const { error: uploadError } = await supabase.storage
-          .from("translations")
-          .upload(completedPath, approvedBuffer, {
-            contentType: "application/pdf",
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.warn(
-            `${logPrefix} — approved kit upload to completed/ failed: ${uploadError.message}, falling through`
-          );
-        } else {
-          const { data: urlData } = supabase.storage
-            .from("translations")
-            .getPublicUrl(completedPath);
-
-          // Persist delivery URL
-          const parsedOrderMetadata = parseOrderMetadata(
-            order.metadata as string | null | undefined,
-          );
-          const nextMetadata = upsertDeliveryArtifactRegistryRecord(
-            parsedOrderMetadata,
-            documentId,
-            {
-              source: 'approved_frozen_kit' as any,
-              selectedArtifactUrl: doc.approvedKitUrl,
-              deliveryPdfUrl: urlData.publicUrl,
-              generatedAt: new Date().toISOString(),
-            },
-          );
-
-          await prisma.$transaction([
-            prisma.document.update({
-              where: { id: documentId },
-              data: { delivery_pdf_url: urlData.publicUrl },
-            }),
-            prisma.order.update({
-              where: { id: orderId },
-              data: { metadata: JSON.stringify(nextMetadata) },
-            }),
-          ]);
-
-          revalidatePath(`/admin/orders/${orderId}`);
-          revalidatePath("/admin/orders");
-
-          return {
-            success: true,
-            deliveryUrl: urlData.publicUrl,
-            pdfUrl: urlData.publicUrl,
-            fileName,
-            isPreview: false,
-          };
-        }
-      }
-    }
-
+    const parsedOrderMetadata = parseOrderMetadata(
+      order.metadata as string | null | undefined,
+    );
     const artifactSelection = resolveTranslationArtifactSelection({
       externalTranslationUrl: doc.externalTranslationUrl,
       translatedText: doc.translatedText,
@@ -206,6 +134,137 @@ export async function generateDeliveryKit(
       })}`,
     );
 
+    // ── Short-circuit: use approved (frozen) kit if available ──────────────
+    if (!preview && doc.approvedKitUrl) {
+      const approvedPreviewArtifactRecord = getApprovedPreviewArtifactRegistryRecord(
+        parsedOrderMetadata,
+        documentId,
+      );
+      const approvedPreviewSourceMatchesSelection =
+        approvedPreviewArtifactRecord !== null &&
+        approvedPreviewArtifactRecord.source === artifactSelection.source;
+      const approvedPreviewArtifactMatchesSelection =
+        approvedPreviewArtifactRecord !== null &&
+        normalizeComparableUrl(approvedPreviewArtifactRecord.selectedArtifactUrl) ===
+          normalizeComparableUrl(artifactSelection.selectedArtifactUrl);
+      const approvedPreviewUrlMatchesDocument =
+        approvedPreviewArtifactRecord !== null &&
+        normalizeComparableUrl(approvedPreviewArtifactRecord.previewPdfUrl) ===
+          normalizeComparableUrl(doc.approvedKitUrl);
+
+      if (
+        approvedPreviewSourceMatchesSelection &&
+        approvedPreviewArtifactMatchesSelection &&
+        approvedPreviewUrlMatchesDocument
+      ) {
+        console.log(
+          `${logPrefix} — using approved (frozen) kit: ${JSON.stringify({
+            approvedKitUrl: doc.approvedKitUrl,
+            selectedTranslationArtifactSource: artifactSelection.source,
+            selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+            approvedPreviewPersistedSource: approvedPreviewArtifactRecord?.source ?? null,
+          })}`
+        );
+
+        // Copy from previews/ to completed/ path in storage
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
+        const fileName = `promobidocs-order-${orderId}-doc-${documentId}.pdf`;
+        const completedPath = `orders/completed/${fileName}`;
+
+        // Fetch the approved kit PDF
+        const approvedRes = await fetch(doc.approvedKitUrl);
+        if (!approvedRes.ok) {
+          console.warn(
+            `${logPrefix} — approved kit fetch failed (${approvedRes.status}), falling through to regeneration`
+          );
+        } else {
+          const approvedBuffer = Buffer.from(await approvedRes.arrayBuffer());
+
+          const { error: uploadError } = await supabase.storage
+            .from("translations")
+            .upload(completedPath, approvedBuffer, {
+              contentType: "application/pdf",
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.warn(
+              `${logPrefix} — approved kit upload to completed/ failed: ${uploadError.message}, falling through`
+            );
+          } else {
+            const { data: urlData } = supabase.storage
+              .from("translations")
+              .getPublicUrl(completedPath);
+
+            // Persist delivery URL with the current selected source-of-truth.
+            const nextMetadata = upsertDeliveryArtifactRegistryRecord(
+              parsedOrderMetadata,
+              documentId,
+              {
+                source: artifactSelection.source,
+                selectedArtifactUrl: artifactSelection.selectedArtifactUrl,
+                deliveryPdfUrl: urlData.publicUrl,
+                generatedAt: new Date().toISOString(),
+              },
+            );
+
+            await prisma.$transaction([
+              prisma.document.update({
+                where: { id: documentId },
+                data: { delivery_pdf_url: urlData.publicUrl },
+              }),
+              prisma.order.update({
+                where: { id: orderId },
+                data: { metadata: JSON.stringify(nextMetadata) },
+              }),
+            ]);
+
+            console.log(
+              `${logPrefix} — delivery artifact persisted from approved preview: ${JSON.stringify({
+                persistenceRan: "yes",
+                persistedSourceValue: artifactSelection.source,
+                selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+                deliveryPdfUrl: urlData.publicUrl,
+              })}`,
+            );
+            revalidatePath(`/admin/orders/${orderId}`);
+            revalidatePath("/admin/orders");
+
+            return {
+              success: true,
+              deliveryUrl: urlData.publicUrl,
+              pdfUrl: urlData.publicUrl,
+              fileName,
+              isPreview: false,
+            };
+          }
+        }
+      } else {
+        console.warn(
+          `${logPrefix} — approved preview reuse skipped: ${JSON.stringify({
+            approvedKitUrl: doc.approvedKitUrl,
+            selectedTranslationArtifactSource: artifactSelection.source,
+            selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
+            approvedPreviewRecordFound: approvedPreviewArtifactRecord ? "yes" : "no",
+            approvedPreviewPersistedSource: approvedPreviewArtifactRecord?.source ?? null,
+            approvedPreviewSelectedArtifactUrl:
+              approvedPreviewArtifactRecord?.selectedArtifactUrl ?? null,
+            approvedPreviewSourceMatchesSelection:
+              approvedPreviewSourceMatchesSelection ? "yes" : "no",
+            approvedPreviewArtifactMatchesSelection:
+              approvedPreviewArtifactMatchesSelection ? "yes" : "no",
+            approvedPreviewUrlMatchesDocument:
+              approvedPreviewUrlMatchesDocument ? "yes" : "no",
+          })}`,
+        );
+      }
+    }
+
     if (
       artifactSelection.source !== "external_pdf" &&
       !doc.translatedText
@@ -219,9 +278,6 @@ export async function generateDeliveryKit(
     }
 
     // ── Steps 1–2: Fetch file, detect orientation, resolve page count ──────────
-    const parsedOrderMetadata = parseOrderMetadata(
-      order.metadata as string | null | undefined,
-    );
     const storedPageParityDecision = buildStoredPageParityDecision(
       parsedOrderMetadata,
       documentId,
@@ -518,12 +574,14 @@ export async function generateDeliveryKit(
 
       console.log(
         `${logPrefix} — delivery artifact persisted: ${JSON.stringify({
+          persistenceRan: "yes",
           orderId,
           docId: documentId,
           externalTranslationUrlPresent: artifactSelection.externalTranslationUrlPresent
             ? "yes"
             : "no",
           selectedTranslationArtifactSource: artifactSelection.source,
+          persistedSourceValue: artifactSelection.source,
           selectedArtifactUrlOrPath: artifactSelection.selectedArtifactUrl,
           selectedDeliveryArtifactUrl: urlData.publicUrl,
           deliveryUsedExternalPdf:

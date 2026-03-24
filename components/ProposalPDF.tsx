@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -320,6 +321,11 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
   const meta = safeMeta(order?.metadata);
   const docs = meta?.documents ?? [];
   const base = globalSettings?.basePrice || 9;
+  const financialSummary = deriveProposalFinancialSummary({
+    totalAmount: order?.totalAmount,
+    extraDiscount: order?.extraDiscount,
+    metadata: order?.metadata,
+  });
 
   const totalDocs = docs.length;
   const totalAmt = typeof order?.totalAmount === 'number' ? order.totalAmount : 0;
@@ -339,10 +345,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
     s + ((d.analysis?.pages?.length) || d.count || 0), 0);
   const totalExcluded = docs.reduce((s: number, d: any) =>
     s + (d.analysis?.pages || []).filter((p: any) => p.included === false).length, 0);
-  const totalSavings = (docs.reduce((s: number, d: any) =>
-    s + (d.analysis?.pages || [])
-      .filter((p: any) => p.included === false)
-      .reduce((acc: number, p: any) => acc + (p.price || 0), 0), 0)) + (order.extraDiscount || 0);
+  const totalSavings = financialSummary.totalSavings;
   const hasSavings = totalSavings > 0.005;
 
   // Pagination — FIRST=3 (page 1 has tall hero), REST=5
@@ -528,16 +531,28 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalVal}>${totalAmt.toFixed(2)}</Text>
                   </View>
                 </View>
-                {meta?.breakdown?.volumeDiscountAmount > 0 && (
+                {financialSummary.paymentDiscountAmount > 0 && (
                   <View style={S.totalDiscountRow}>
-                    <Text style={S.totalDiscountLbl}>DESCONTO DE VOLUME ({meta.breakdown.volumeDiscountPercentage}%)</Text>
-                    <Text style={S.totalDiscountVal}>-${meta.breakdown.volumeDiscountAmount.toFixed(2)}</Text>
+                    <Text style={S.totalDiscountLbl}>DESCONTO PAGAMENTO INTEGRAL (5%)</Text>
+                    <Text style={S.totalDiscountVal}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
                   </View>
                 )}
-                {order.extraDiscount > 0 && (
+                {financialSummary.manualDiscountAmount > 0 && (
+                  <View style={S.totalDiscountRow}>
+                    <Text style={S.totalDiscountLbl}>DESCONTO ESPECIAL</Text>
+                    <Text style={S.totalDiscountVal}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
+                  </View>
+                )}
+                {financialSummary.volumeDiscountAmount > 0 && (
+                  <View style={S.totalDiscountRow}>
+                    <Text style={S.totalDiscountLbl}>DESCONTO DE VOLUME ({financialSummary.volumeDiscountPercentage}%)</Text>
+                    <Text style={S.totalDiscountVal}>-${financialSummary.volumeDiscountAmount.toFixed(2)}</Text>
+                  </View>
+                )}
+                {financialSummary.operationalAdjustmentAmount > 0 && (
                   <View style={S.totalDiscountRow}>
                     <Text style={S.totalDiscountLbl}>CORTESIA OPERACIONAL (AJUSTE DE TARIFA)</Text>
-                    <Text style={S.totalDiscountVal}>-${order.extraDiscount.toFixed(2)}</Text>
+                    <Text style={S.totalDiscountVal}>-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</Text>
                   </View>
                 )}
                 <View style={S.totalDiv} />

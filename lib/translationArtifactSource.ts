@@ -34,6 +34,13 @@ export interface DeliveryArtifactRegistryRecord {
   generatedAt: string;
 }
 
+export interface ApprovedPreviewArtifactRegistryRecord {
+  source: TranslationArtifactSource;
+  selectedArtifactUrl: string | null;
+  previewPdfUrl: string | null;
+  approvedAt: string;
+}
+
 export interface DocumentDeliveryStatusRecord {
   deliveryStatus: 'sent';
   sentAt: string;
@@ -94,6 +101,7 @@ export interface PageParityRegistryRecord {
 type JsonObject = Record<string, unknown>;
 
 const REGISTRY_KEY = 'translationArtifactRegistryV1';
+const APPROVED_PREVIEW_ARTIFACT_REGISTRY_KEY = 'approvedPreviewArtifactRegistryV1';
 const DELIVERY_STATUS_REGISTRY_KEY = 'deliveryDocumentStatusV1';
 const PAGE_PARITY_REGISTRY_KEY = 'pageParityRegistryV1';
 const TRANSLATION_MODE_REGISTRY_KEY = 'translationModeRegistryV1';
@@ -293,6 +301,64 @@ export function getDeliveryArtifactRegistryRecord(
   docId: number,
 ): DeliveryArtifactRegistryRecord | null {
   const registry = readDeliveryArtifactRegistry(metadata);
+  return registry[String(docId)] ?? null;
+}
+
+export function readApprovedPreviewArtifactRegistry(
+  metadata: JsonObject,
+): Record<string, ApprovedPreviewArtifactRegistryRecord> {
+  const container = metadata[APPROVED_PREVIEW_ARTIFACT_REGISTRY_KEY];
+  if (!container || typeof container !== 'object') return {};
+
+  const out: Record<string, ApprovedPreviewArtifactRegistryRecord> = {};
+  for (const [docKey, value] of Object.entries(container as JsonObject)) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonObject;
+    const source = normalizeOptionalString(record.source as string | null | undefined);
+    const approvedAt = normalizeOptionalString(record.approvedAt as string | null | undefined);
+
+    if (
+      (source === 'external_pdf' ||
+        source === 'translated_html' ||
+        source === 'missing' ||
+        source === 'structured_internal' ||
+        source === 'faithful_light_internal' ||
+        source === 'legacy_internal') &&
+      approvedAt
+    ) {
+      out[docKey] = {
+        source,
+        selectedArtifactUrl: normalizeOptionalString(
+          record.selectedArtifactUrl as string | null | undefined,
+        ),
+        previewPdfUrl: normalizeOptionalString(
+          record.previewPdfUrl as string | null | undefined,
+        ),
+        approvedAt,
+      };
+    }
+  }
+
+  return out;
+}
+
+export function upsertApprovedPreviewArtifactRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+  record: ApprovedPreviewArtifactRegistryRecord,
+): JsonObject {
+  const nextMetadata: JsonObject = { ...metadata };
+  const registry = readApprovedPreviewArtifactRegistry(nextMetadata);
+  registry[String(docId)] = record;
+  nextMetadata[APPROVED_PREVIEW_ARTIFACT_REGISTRY_KEY] = registry;
+  return nextMetadata;
+}
+
+export function getApprovedPreviewArtifactRegistryRecord(
+  metadata: JsonObject,
+  docId: number,
+): ApprovedPreviewArtifactRegistryRecord | null {
+  const registry = readApprovedPreviewArtifactRegistry(metadata);
   return registry[String(docId)] ?? null;
 }
 

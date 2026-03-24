@@ -47,6 +47,9 @@ test('preview and delivery actions short-circuit to external translation overrid
   assert.match(deliveryAction, /artifactSelection\.source === "external_pdf"/)
   assert.match(deliveryAction, /externalTranslatedPdfBuffer/)
   assert.match(deliveryAction, /external translation override applied for/)
+  assert.match(deliveryAction, /approvedPreviewArtifactMatchesSelection/)
+  assert.match(deliveryAction, /approvedPreviewUrlMatchesDocument/)
+  assert.match(deliveryAction, /delivery artifact persisted from approved preview/)
 
   assert.match(kitService, /externalTranslatedPdfBuffer\?: ArrayBuffer;/)
   assert.match(kitService, /translated section source: external PDF override/)
