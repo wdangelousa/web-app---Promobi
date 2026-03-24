@@ -241,9 +241,9 @@ export async function applyScopeReduction(
 
 // ── Read scope adjustments (for display) ───────────────────────────────────────
 
-export function readScopeAdjustments(
+export async function readScopeAdjustments(
     metadata: Record<string, unknown> | null | undefined,
-): ScopeAdjustmentEntry[] {
+): Promise<ScopeAdjustmentEntry[]> {
     if (!metadata || typeof metadata !== 'object') return []
     const adjustments = (metadata as any).scopeAdjustments
     if (!Array.isArray(adjustments)) return []
