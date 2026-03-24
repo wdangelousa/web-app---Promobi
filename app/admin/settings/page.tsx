@@ -18,7 +18,6 @@ export default function SettingsPage() {
         notaryFee: 0,
         stripeKey: '',
         openaiKey: '',
-        deeplKey: '',
         emailSender: ''
     });
 
@@ -218,30 +217,6 @@ export default function SettingsPage() {
                                     className="ml-2 px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
                                 >
                                     {showKeys['openai'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* DeepL */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">DeepL API Key</label>
-                            <div className="flex rounded-md shadow-sm">
-                                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
-                                    <Globe className="w-4 h-4" />
-                                </span>
-                                <input
-                                    type={showKeys['deepl'] ? 'text' : 'password'}
-                                    name="deeplKey"
-                                    value={settings.deeplKey || ''}
-                                    onChange={handleChange}
-                                    className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm border-gray-300 border"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => toggleKeyVisibility('deepl')}
-                                    className="ml-2 px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
-                                >
-                                    {showKeys['deepl'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
                             </div>
                         </div>

@@ -122,7 +122,7 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                         <option value="PENDING">Pendente</option>
                         <option value="PENDING_PAYMENT">Aguardando Pagamento</option>
                         <option value="PAID">Pago</option>
-                        <option value="TRANSLATING">Em Tradução (DeepL)</option>
+                        <option value="TRANSLATING">Em Tradução</option>
                         <option value="MANUAL_TRANSLATION_NEEDED">⚠️ Tradução Manual</option>
                         <option value="READY_FOR_REVIEW">✅ Pronto p/ Revisão</option>
                         <option value="NOTARIZING">Notarizando</option>

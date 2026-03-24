@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Server actions for the Workbench (Isabele's translation desk).
 //
-//   saveTranslationDraft(docId, text)  → save edited DeepL text to DB
+//   saveTranslationDraft(docId, text)  → save edited translation text to DB
 //   approveDocument(docId, finalText) → mark doc as approved
 //   releaseToClient(orderId, by)      → mark order COMPLETED + email client
 // ─────────────────────────────────────────────────────────────────────────────

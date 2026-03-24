@@ -10,7 +10,6 @@ export type GlobalSettings = {
     deadlineUrgent: number
     stripeKey?: string
     openaiKey?: string
-    deeplKey?: string
     emailSender?: string
     notaryFee: number
 }

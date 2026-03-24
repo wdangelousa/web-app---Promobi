@@ -40,7 +40,7 @@ export default async function PixSuccessPage({
                             <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 transition-colors shadow-lg animate-pulse">
                                 Simular "Pagamento Confirmado"
                             </button>
-                            <p className="text-xs text-gray-400 mt-2">Isso disparará o Webhook e a IA do DeepL.</p>
+                            <p className="text-xs text-gray-400 mt-2">Isso disparará o Webhook e a IA de tradução.</p>
                         </form>
                     )}
 

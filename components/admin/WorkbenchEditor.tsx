@@ -40,9 +40,9 @@ interface WorkbenchEditorProps {
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
   pending: { label: 'Aguardando', color: 'text-slate-500', bg: 'bg-slate-100', icon: '⏳' },
-  ai_draft: { label: 'Rascunho DeepL', color: 'text-orange-600', bg: 'bg-orange-100', icon: '🤖' },
+  ai_draft: { label: 'Rascunho IA', color: 'text-orange-600', bg: 'bg-orange-100', icon: '🤖' },
   needs_manual: { label: 'Manual', color: 'text-amber-700', bg: 'bg-amber-100', icon: '✍️' },
-  error: { label: 'Erro DeepL', color: 'text-red-600', bg: 'bg-red-100', icon: '❌' },
+  error: { label: 'Erro Tradução', color: 'text-red-600', bg: 'bg-red-100', icon: '❌' },
   reviewed: { label: 'Revisado', color: 'text-blue-600', bg: 'bg-blue-100', icon: '👁️' },
   approved: { label: 'Aprovado', color: 'text-green-700', bg: 'bg-green-100', icon: '✅' },
 }
@@ -185,7 +185,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                 className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-700 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Tentar Novamente (DeepL)
+                Tentar Novamente
               </button>
             )}
             <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -323,7 +323,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                     <span className="text-xs font-bold text-orange-600 tracking-wider">TRADUÇÃO (EN-US)</span>
                     {selected.translation_status === 'ai_draft' && (
                       <span className="text-[10px] bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded">
-                        rascunho DeepL
+                        rascunho IA
                       </span>
                     )}
                   </div>
@@ -342,7 +342,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center text-slate-400">
                       <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-orange-400" />
-                      <p className="font-medium text-sm">DeepL processando...</p>
+                      <p className="font-medium text-sm">IA processando...</p>
                       <p className="text-xs mt-1">O rascunho aparecerá aqui em breve</p>
                     </div>
                   </div>
@@ -352,7 +352,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                       <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
                       <h3 className="text-lg font-bold text-slate-800">Falha na Tradução Automática</h3>
                       <p className="text-sm text-slate-500 max-w-sm mx-auto mt-2">
-                        Houve um erro técnico ao processar este documento via DeepL.
+                        Houve um erro técnico ao processar este documento via IA.
                         Clique em "Tentar Novamente" no cabeçalho ou digite a tradução manualmente.
                       </p>
                     </div>
@@ -366,7 +366,7 @@ export function WorkbenchEditor({ order, currentUserName }: WorkbenchEditorProps
                           <div>
                             <p className="text-sm font-bold text-amber-800">Tradução manual necessária</p>
                             <p className="text-xs text-amber-700 mt-0.5">
-                              Documento escaneado — DeepL não extraiu texto. Digite a tradução abaixo.
+                              Documento escaneado — IA não extraiu texto. Digite a tradução abaixo.
                             </p>
                           </div>
                         </div>
