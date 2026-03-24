@@ -246,7 +246,10 @@ Structure:
 <translated-document source-pages="N">
   <page number="1">
     <block type="title">DOCUMENT TITLE IN ENGLISH</block>
-    <block type="institution">Name of Issuing Institution</block>
+    <block type="institution">Name of Issuing Institution
+CNPJ [National Registry of Legal Entities]: 12.345.678/0001-99
+Address: Av. Example, 123 – City, State, ZIP 01234-000
+Phone: (11) 1234-5678</block>
     <block type="recipient">Person's Name</block>
     <block type="content">
       <field label="Date of Birth">March 15, 1990</field>
@@ -257,7 +260,15 @@ Structure:
       <row><cell>Header 1</cell><cell>Header 2</cell></row>
       <row><cell>Value 1</cell><cell>Value 2</cell></row>
     </block>
-    <block type="prose">Continuous paragraph text goes here as-is.</block>
+    <block type="prose">First paragraph of continuous text goes here.
+
+Second paragraph of text continues here.
+
+• Bullet point item one.
+• Bullet point item two.
+• Bullet point item three.
+
+Final paragraph after the list.</block>
     <block type="signatures">[Signature: Name of Signatory, Title]</block>
     <block type="stamps">[Seal: Civil Registry Office of São Paulo]</block>
   </page>
@@ -269,6 +280,37 @@ Structure:
       <field label="Seal/Stamp">[Seal: Hague Apostille]</field>
     </block>
     <block type="footer">Electronic validation: XYZABC-123 — validate at sei.gov.br</block>
+  </page>
+</translated-document>
+
+Example for letter/declaration documents:
+<translated-document source-pages="1">
+  <page number="1">
+    <block type="institution">BlueCoop – Health and Home Care Workers Cooperative
+CNPJ [National Registry of Legal Entities]: 21.552.891/0001-69
+Address: Av. Brig. Luís Antônio, 4,856 – Jardim Paulista, São Paulo-SP, ZIP Code 01402-002
+Phone: (11) 3892-4907</block>
+    <block type="content">
+      <field label="City/Date">São Paulo, October 20, 2025</field>
+      <field label="To">Mr. Full Name, Street Address – City – State</field>
+      <field label="Subject">Provision of Services in the period October 19, 2019 to July 13, 2021</field>
+    </block>
+    <block type="prose">Dear Sir/Madam, by means of this letter, we declare that...
+
+During this period, Mr./Ms. Name performed the following activities:
+
+• Practice in home physical therapy, patient follow-up.
+• Analysis of clinical condition, medical history, and physical limitations.
+• Focus on geriatric care – restoration of movements, strength, and balance.
+
+The parties declare that all contractual obligations were fulfilled.
+
+With nothing further for the moment, we renew our regards and consideration.</block>
+    <block type="signatures">Sincerely,
+[Handwritten Signature: Name of Signatory]
+[Stamped text: Name of Signatory / Administrative]
+Name of Signatory – Administrative Assistant
+Company Name</block>
   </page>
 </translated-document>`;
 
@@ -283,6 +325,9 @@ const XML_RULES = `XML RULES
 8. If a field is empty, use <field label="X">--</field>
 9. Omit block types that have no content for the given page.
 10. Do NOT invent content, sections, headings, or values not present in the source.
+11. For bullet point lists in the source: preserve them as lines starting with "•" inside <block type="prose">. Do NOT flatten bullet points into a single continuous paragraph. Each bullet item must be on its own line.
+12. For institutional headers with multiple lines (name, CNPJ/tax ID, address, phone): include ALL lines inside <block type="institution">, separated by newlines. Do NOT omit address, phone, or registration numbers.
+13. For letter-style documents: use <block type="content"> with <field> tags for the header fields (To:, Subject:, City/Date:), then <block type="prose"> for the letter body, then <block type="signatures"> for the closing/signature.
 
 DO NOT HALLUCINATE
 Do not invent:

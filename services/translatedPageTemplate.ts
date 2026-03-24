@@ -323,8 +323,13 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     /* Signatures block — signature lines, signatory names and titles */
     .block-signatures {
-      margin-top: 5pt;
-      padding-top: 2pt;
+      margin-top: 10pt;
+      padding-top: 6pt;
+      border-top: 0.5pt solid #999;
+    }
+
+    .block-signatures p {
+      margin: 2pt 0;
     }
 
     /* Stamps block — bracketed [Stamp: ...] [Seal: ...] descriptions */
@@ -353,10 +358,58 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       line-height: 1.3;
     }
 
+    /* ── V2 enriched layout styles ──────────────────────────────────────── */
+
+    .block-prose p {
+      margin: 6pt 0;
+      line-height: 1.45;
+    }
+
+    .doc-list {
+      margin: 4pt 0 6pt 14pt;
+      padding: 0;
+      list-style-type: disc;
+    }
+
+    .doc-list li {
+      margin: 2pt 0;
+      line-height: 1.4;
+    }
+
+    .inst-detail {
+      font-size: 9px;
+      margin: 1pt 0;
+      color: #333;
+    }
+
+    .field-grid {
+      margin: 4pt 0;
+    }
+
+    .field-item {
+      margin: 2pt 0;
+      line-height: 1.4;
+    }
+
+    .field-label {
+      font-weight: bold;
+    }
+
+    .block-content p {
+      margin: 4pt 0;
+      line-height: 1.4;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
+    }
+
+    td, th {
+      font-size: 9.5px;
+      line-height: 1.35;
+      vertical-align: top;
     }
 
     th, td {

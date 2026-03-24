@@ -40,6 +40,49 @@ function textContent(node: any): string {
   return String(node);
 }
 
+function extractBulletText(line: string): string | null {
+  const match = line.trim().match(/^(?:[•\-*]|\d+[.)])\s*(.+)/);
+  return match ? match[1] : null;
+}
+
+function renderBulletAwareParagraphs(raw: string): string {
+  const paragraphs = raw.split(/\n\n+/).filter(Boolean);
+  const htmlParts: string[] = [];
+  let currentList: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    const lines = paragraph.split(/\n/).map((line) => line.trim()).filter(Boolean);
+
+    for (const line of lines) {
+      const bulletText = extractBulletText(line);
+
+      if (bulletText) {
+        currentList.push(bulletText);
+        continue;
+      }
+
+      if (currentList.length > 0) {
+        const listItems = currentList
+          .map((item) => `<li>${escapeHtml(item)}</li>`)
+          .join('\n');
+        htmlParts.push(`<ul class="doc-list">${listItems}</ul>`);
+        currentList = [];
+      }
+
+      htmlParts.push(`<p>${escapeHtml(line)}</p>`);
+    }
+  }
+
+  if (currentList.length > 0) {
+    const listItems = currentList
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join('\n');
+    htmlParts.push(`<ul class="doc-list">${listItems}</ul>`);
+  }
+
+  return htmlParts.join('\n');
+}
+
 // ── Block renderers ────────────────────────────────────────────────────────────
 
 function renderField(field: any): string {
@@ -64,8 +107,19 @@ function renderBlockChildren(block: any): string {
 
   // Render <field> children
   const fields = toArray(block?.field);
-  for (const f of fields) {
-    parts.push(renderField(f));
+  if (fields.length >= 3) {
+    const fieldsHtml = fields
+      .map((field) => {
+        const label = field?.['@_label'] ?? '';
+        const value = textContent(field);
+        return `<div class="field-item"><span class="field-label">${escapeHtml(label)}:</span> <span class="field-value">${escapeHtml(value)}</span></div>`;
+      })
+      .join('\n');
+    parts.push(`<div class="field-grid">${fieldsHtml}</div>`);
+  } else {
+    for (const field of fields) {
+      parts.push(renderField(field));
+    }
   }
 
   // Render <row> children (table content inside non-table blocks)
@@ -79,7 +133,14 @@ function renderBlockChildren(block: any): string {
   if (parts.length === 0) {
     const text = textContent(block);
     if (text.trim()) {
-      parts.push(`<p>${escapeHtml(text.trim())}</p>`);
+      const lines = text.trim().split(/\n/).filter(Boolean);
+      const hasBullets = lines.some((line) => extractBulletText(line) !== null);
+
+      if (hasBullets) {
+        parts.push(renderBulletAwareParagraphs(text.trim()));
+      } else {
+        parts.push(`<p>${escapeHtml(text.trim())}</p>`);
+      }
     }
   }
 
@@ -96,7 +157,22 @@ function renderBlock(block: any): string {
       return `<div class="${cssClass}"><p><strong>${escapeHtml(text)}</strong></p></div>`;
     }
 
-    case 'institution':
+    case 'institution': {
+      const text = textContent(block).trim();
+      const lines = text.split(/\n/).map((line) => line.trim()).filter(Boolean);
+
+      if (lines.length <= 1) {
+        return `<div class="${cssClass}"><p><strong>${escapeHtml(text)}</strong></p></div>`;
+      }
+
+      const [mainLine, ...detailLines] = lines;
+      const detailsHtml = detailLines
+        .map((line) => `<p class="inst-detail">${escapeHtml(line)}</p>`)
+        .join('\n');
+
+      return `<div class="${cssClass}"><p><strong>${escapeHtml(mainLine)}</strong></p>\n${detailsHtml}</div>`;
+    }
+
     case 'recipient': {
       const text = textContent(block).trim();
       return `<div class="${cssClass}"><p><strong>${escapeHtml(text)}</strong></p></div>`;
@@ -104,9 +180,7 @@ function renderBlock(block: any): string {
 
     case 'prose': {
       const raw = textContent(block).trim();
-      const paragraphs = raw.split(/\n\n+/).filter(Boolean);
-      const pTags = paragraphs.map((p) => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
-      return `<div class="block-content">${pTags}</div>`;
+      return `<div class="block-content block-prose">${renderBulletAwareParagraphs(raw)}</div>`;
     }
 
     case 'table': {
@@ -124,14 +198,44 @@ function renderBlock(block: any): string {
       return `<div class="${cssClass}">${children}</div>`;
     }
 
-    case 'signatures':
-    case 'stamps':
     case 'footer': {
       const text = textContent(block).trim();
       if (text) {
         return `<div class="${cssClass}"><p>${escapeHtml(text)}</p></div>`;
       }
       // May have structured children
+      const children = renderBlockChildren(block);
+      return `<div class="${cssClass}">${children}</div>`;
+    }
+
+    case 'signatures': {
+      const raw = textContent(block).trim();
+      if (raw) {
+        const linesHtml = raw
+          .split(/\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => `<p>${escapeHtml(line)}</p>`)
+          .join('\n');
+        return `<div class="${cssClass}">${linesHtml}</div>`;
+      }
+
+      const children = renderBlockChildren(block);
+      return `<div class="${cssClass}">${children}</div>`;
+    }
+
+    case 'stamps': {
+      const raw = textContent(block).trim();
+      if (raw) {
+        const itemsHtml = raw
+          .split(/(?=\[)/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => `<p>${escapeHtml(item)}</p>`)
+          .join('\n');
+        return `<div class="${cssClass}">${itemsHtml}</div>`;
+      }
+
       const children = renderBlockChildren(block);
       return `<div class="${cssClass}">${children}</div>`;
     }
