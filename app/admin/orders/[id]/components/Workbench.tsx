@@ -855,7 +855,7 @@ export default function Workbench({ order }: { order: Order }) {
                                 <button
                                     onClick={(e) => { e.stopPropagation(); openScopeReductionModal(doc.id) }}
                                     title="Remover do escopo (gera crédito)"
-                                    className="mt-0.5 shrink-0 text-gray-600 hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100"
+                                    className="mt-0.5 shrink-0 text-amber-600/50 hover:text-amber-400 transition-colors"
                                 >
                                     <Ban className="h-3.5 w-3.5" />
                                 </button>
