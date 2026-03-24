@@ -852,15 +852,13 @@ export default function Workbench({ order }: { order: Order }) {
                                         {isDeletingDocId === doc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                                     </button>
                                 )}
-                                {isPaid && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); openScopeReductionModal(doc.id) }}
-                                        title="Remover do escopo (gera crédito)"
-                                        className="mt-0.5 shrink-0 text-gray-600 hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100"
-                                    >
-                                        <Ban className="h-3.5 w-3.5" />
-                                    </button>
-                                )}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); openScopeReductionModal(doc.id) }}
+                                    title="Remover do escopo (gera crédito)"
+                                    className="mt-0.5 shrink-0 text-gray-600 hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100"
+                                >
+                                    <Ban className="h-3.5 w-3.5" />
+                                </button>
                             </div>
                         )
                     })}
