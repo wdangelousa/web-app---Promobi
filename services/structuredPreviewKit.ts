@@ -1792,6 +1792,24 @@ export async function buildStructuredKitBuffer(
         if (isParityRecoveryNeeded(probePageCount, input.sourcePageCount, 'faithful')) {
           recoveryWasNeeded = true;
 
+          // V2 pipeline: deterministic HTML produces predictable pagination.
+          // If first render achieved parity, skip recovery entirely.
+          const isV2Pipeline = input.rendererName === 'mirror_html_v2';
+          if (isV2Pipeline && probePageCount <= input.sourcePageCount) {
+            log(
+              `parity recovery: skipped (V2 pipeline, first render achieved parity) ` +
+              `translated=${probePageCount} source=${input.sourcePageCount}`
+            );
+            recoveryWasNeeded = false;
+          } else if (isV2Pipeline && probePageCount > input.sourcePageCount) {
+            log(
+              `parity recovery: V2 pipeline but overflow detected — ` +
+              `translated=${probePageCount} source=${input.sourcePageCount} — ` +
+              `falling through to recovery loop as safety net`
+            );
+          }
+
+          if (recoveryWasNeeded) {
           const budget = buildPageLayoutBudget(
             input.sourcePageCount,
             isLandscape ? 'landscape' : 'portrait',
@@ -1872,6 +1890,7 @@ export async function buildStructuredKitBuffer(
           }
 
           translatedPdfBuffer = bestBuffer;
+          } // end if (recoveryWasNeeded)
         }
 
         // ── Profile effectiveness telemetry and render quality tier ────────────
@@ -1891,6 +1910,7 @@ export async function buildStructuredKitBuffer(
         );
         log(
           `profile_telemetry: ` +
+          `v2_pipeline=${input.rendererName === 'mirror_html_v2'} ` +
           `profile=${firstRenderProfile?.name ?? 'none'} ` +
           `first_render_resolved_parity=${!recoveryWasNeeded} ` +
           `recovery_was_needed=${recoveryWasNeeded} ` +

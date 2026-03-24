@@ -423,7 +423,7 @@ export async function generateDeliveryKit(
           originalFileUrl: doc.originalFileUrl,
           originalContentType: contentType,
           documentFamily: classification.documentType,
-          rendererName: 'mirror_html',
+          rendererName: isV2Html ? 'mirror_html_v2' : 'mirror_html',
           modality: 'faithful',
           surface: preview ? 'preview-kit' : 'delivery-kit',
           compactionAttempted: false,
