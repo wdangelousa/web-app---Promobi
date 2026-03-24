@@ -63,6 +63,71 @@ export async function updateOrderStatus(orderId: number, status: string, deliver
     }
 }
 
+export async function markOrderCompleted(orderId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+        const currentUser = await getCurrentUser()
+        if (!currentUser) {
+            return { success: false, error: 'Usuário não autenticado.' }
+        }
+
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { status: true, sentAt: true, metadata: true },
+        })
+
+        if (!order) {
+            return { success: false, error: 'Pedido não encontrado.' }
+        }
+
+        if (!order.sentAt) {
+            return {
+                success: false,
+                error: 'O pedido precisa ter sido enviado ao cliente antes de ser marcado como concluído.'
+            }
+        }
+
+        if (order.status === 'COMPLETED') {
+            return { success: false, error: 'Pedido já está concluído.' }
+        }
+        if (order.status === 'CANCELLED') {
+            return { success: false, error: 'Pedido cancelado não pode ser concluído.' }
+        }
+
+        const metadata = parseOrderMetadata(order.metadata as string | null | undefined)
+        const completedAt = new Date().toISOString()
+        const completedBy = currentUser.email ?? String(currentUser.id)
+
+        const nextMetadata = {
+            ...metadata,
+            manualCompletion: {
+                completedAt,
+                completedBy,
+                reason: 'manual_operator_action',
+                note: 'Marcado como concluído manualmente pelo operador (webhook de entrega não confirmou automaticamente).',
+            },
+        }
+
+        await prisma.order.update({
+            where: { id: orderId },
+            data: {
+                status: 'COMPLETED',
+                metadata: JSON.stringify(nextMetadata),
+            },
+        })
+
+        revalidatePath('/admin/orders')
+        revalidatePath('/admin/orders/concluidos')
+        revalidatePath(`/admin/orders/${orderId}`)
+
+        console.log(`[markOrderCompleted] ✅ Order #${orderId} → COMPLETED (manual) by ${completedBy}`)
+
+        return { success: true }
+    } catch (error) {
+        console.error('[markOrderCompleted] Error:', error)
+        return { success: false, error: 'Falha ao concluir pedido.' }
+    }
+}
+
 export async function applyFinancialAdjustment(orderId: number, extraDiscount: number) {
     try {
         const order = await prisma.order.findUnique({

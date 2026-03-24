@@ -202,6 +202,7 @@ export default function Workbench({ order }: { order: Order }) {
     )
     const [editorContent, setEditorContent] = useState('')
     const [isResending, setIsResending] = useState(false)
+    const [isMarkingCompleted, setIsMarkingCompleted] = useState(false)
 
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isTranslating, setIsTranslating] = useState(false)
@@ -797,6 +798,30 @@ export default function Workbench({ order }: { order: Order }) {
         }
     }
 
+    const handleMarkCompleted = async () => {
+        const confirmed = confirm(
+            'Confirma que este pedido foi entregue ao cliente e pode ser movido para "Concluídos"?\n\n' +
+            'Use isso quando o email de entrega já foi enviado mas a confirmação automática não chegou.'
+        )
+        if (!confirmed) return
+
+        setIsMarkingCompleted(true)
+        try {
+            const { markOrderCompleted } = await import('../../../../actions/adminOrders')
+            const result = await markOrderCompleted(order.id)
+            if (result.success) {
+                alert('✅ Pedido marcado como concluído!')
+                router.refresh()
+            } else {
+                alert('❌ ' + (result.error || 'Erro ao concluir pedido.'))
+            }
+        } catch (err: any) {
+            alert('❌ Erro: ' + err.message)
+        } finally {
+            setIsMarkingCompleted(false)
+        }
+    }
+
     if (!selectedDoc) return <div className="p-4 text-sm text-gray-500">Nenhum documento encontrado.</div>
 
     return (
@@ -815,6 +840,16 @@ export default function Workbench({ order }: { order: Order }) {
                             <button onClick={handleResendEmail} disabled={isResending} className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50">
                                 {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Reenviar E-mail
                             </button>
+                            {order.status !== 'COMPLETED' && (
+                                <button
+                                    onClick={handleMarkCompleted}
+                                    disabled={isMarkingCompleted}
+                                    className="flex items-center gap-1.5 px-2 py-1.5 bg-emerald-900/40 border border-emerald-700/50 rounded text-[10px] font-bold text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-200 transition-colors disabled:opacity-50 w-full"
+                                >
+                                    {isMarkingCompleted ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                                    Marcar como Concluído
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

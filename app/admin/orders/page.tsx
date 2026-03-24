@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { Eye, FileText, Calendar, User, Plus, Search } from 'lucide-react';
+import { Eye, FileText, Calendar, User, Plus, Search, Send } from 'lucide-react';
 import Link from 'next/link';
 import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
@@ -87,6 +87,7 @@ export default async function AdminOrdersPage({
         status: true,
         totalAmount: true,
         createdAt: true,
+        sentAt: true,
         urgency: true,
         metadata: true,
         user: { select: { fullName: true, email: true } },
@@ -103,7 +104,11 @@ export default async function AdminOrdersPage({
   const normalizedOrders = (rawOrders || [])
     .map((order) => {
       try {
-        return normalizeOrder(order);
+        const normalizedOrder = normalizeOrder(order)
+        return {
+          ...normalizedOrder,
+          sentAt: order.sentAt instanceof Date ? order.sentAt.toISOString() : order.sentAt ?? null,
+        }
       } catch (error) {
         console.error(`Failed to normalize order #${order?.id}:`, error);
         return null;
@@ -114,6 +119,7 @@ export default async function AdminOrdersPage({
       status: string;
       totalAmount: number;
       createdAt: string;
+      sentAt?: string | null;
       user: { fullName?: string; email?: string };
       documents: Array<{ id: number; docType?: string; exactNameOnDoc?: string | null }>;
     }>;
@@ -247,12 +253,20 @@ export default async function AdminOrdersPage({
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}`}
-                        title={statusVisual.description}
-                      >
-                        {statusVisual.label}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}`}
+                          title={statusVisual.description}
+                        >
+                          {statusVisual.label}
+                        </span>
+                        {order.sentAt && order.status !== 'COMPLETED' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <Send className="h-2.5 w-2.5" />
+                            Enviado
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600">
                       <div className="flex items-center gap-2">
