@@ -19,7 +19,7 @@
  *                              Gotenberg request.
  *
  * Layout:
- *   .letterhead-bg      position:fixed full-page background (z-index -1)
+ *   .letterhead-bg      position:fixed full-page background (z-index 0)
  *   .conteudo-principal scrolling content area (z-index 2, always above background)
  *
  * No text overlays are rendered on internal translated pages — the letterhead
@@ -187,6 +187,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       font-family: Arial, sans-serif;
       font-size: 11.5px;
       color: #000;
+      background: transparent;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -223,10 +224,10 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     /* ── Letterhead full-page background ────────────────────────────────────
        The official letterhead PNG spans the entire physical page (including
-       margins) as a fixed background at z-index -1.  The @page margins
-       defined by the safe-area policy keep all translated content inside the
-       central reading zone.  The letterhead's decorative elements (logo,
-       borders, footer artwork) occupy the margin areas by design.
+       margins) as a fixed background at z-index 0.  z-index must be 0 (not
+       -1) because Chromium print renders z-index:-1 elements behind the
+       canvas background, making them invisible.  body background is set to
+       transparent so the white canvas does not occlude the letterhead.
        Content is always above via z-index 2 on .conteudo-principal. */
     .letterhead-bg {
       position: fixed;
@@ -234,7 +235,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       left: calc(-1 * var(--safe-left));
       width: calc(100% + var(--safe-left) + var(--safe-right));
       height: calc(100% + var(--safe-top) + var(--safe-bottom));
-      z-index: -1;
+      z-index: 0;
       pointer-events: none;
     }
 
