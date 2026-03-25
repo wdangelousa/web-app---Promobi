@@ -1309,8 +1309,16 @@ html {
   background: url('${lhFile}') top left / ${bgSize} no-repeat !important;
 }
 body {
+  background: #fff !important;
   -webkit-print-color-adjust: exact !important;
   print-color-adjust: exact !important;
+}
+@page {
+  size: ${isLandscape ? 'letter landscape' : 'letter portrait'} !important;
+  margin-top: 1.85in !important;
+  margin-right: 0.7in !important;
+  margin-bottom: 0.75in !important;
+  margin-left: 1.0in !important;
 }`;
 
   if (/<\/style>/i.test(html)) {
