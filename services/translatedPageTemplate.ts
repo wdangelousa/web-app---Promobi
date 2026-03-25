@@ -4,9 +4,13 @@
  * Standalone HTML template for the translated document page.
  *
  * Produces a single self-contained HTML file (index.html) ready to be sent
- * directly to the Gotenberg Chromium endpoint.  The official Promobidocs
- * letterhead is rendered as a position:fixed full-page background image
- * that repeats on every printed page.
+ * directly to the Gotenberg Chromium endpoint.
+ *
+ * The official Promobidocs letterhead PNG is rendered as a position:fixed
+ * full-page background (z-index -1) that repeats on every printed page.
+ * The @page margins (safe-area policy) keep translated content inside the
+ * central reading zone so it never overlaps the letterhead decorative
+ * elements in the margins.  Content has z-index 2 for guaranteed layering.
  *
  * Assets referenced:
  *   letterhead.png           — official letterhead (portrait), must be attached
@@ -15,17 +19,17 @@
  *                              Gotenberg request.
  *
  * Layout:
- *   .letterhead-bg      position:fixed full-page background (official letterhead)
+ *   .letterhead-bg      position:fixed full-page background (z-index -1)
  *   .header-timbrado    position:fixed top zone (optional document title)
- *   .footer-timbrado    position:fixed bottom zone (promobidocs.com | Certified Translation)
- *   .conteudo-principal scrolling content area (receives the translated HTML)
+ *   .footer-timbrado    position:fixed bottom zone (faint branding text, z-index 1)
+ *   .conteudo-principal scrolling content area (z-index 2, always above background)
  *
  * @page US Letter with global translated safe-area margins
  *
  * Usage:
  *   const html = buildTranslatedPageHtml(translatedHtml, { documentTitle: 'Marriage Certificate' });
- *   // Attach html as 'index.html' and letterhead.png (or letterhead-landscape.png)
- *   // in Gotenberg FormData.
+ *   // Attach html as 'index.html' and the orientation-correct letterhead
+ *   // (letterhead.png or letterhead-landscape.png) in Gotenberg FormData.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -217,10 +221,12 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     ${isCertLayout ? buildCertificateLayoutCss(isLandscape) : ''}
 
     /* ── Letterhead full-page background ────────────────────────────────────
-       The official Promobidocs letterhead asset is rendered as a fixed
-       full-page background behind all content.  It provides the butterfly
-       logo, corner accents, and institutional border — no separate logo
-       image or CSS border is needed. */
+       The official letterhead PNG spans the entire physical page (including
+       margins) as a fixed background at z-index -1.  The @page margins
+       defined by the safe-area policy keep all translated content inside the
+       central reading zone.  The letterhead's decorative elements (logo,
+       borders, footer artwork) occupy the margin areas by design.
+       Content is always above via z-index 2 on .conteudo-principal. */
     .letterhead-bg {
       position: fixed;
       top: calc(-1 * var(--safe-top));
@@ -237,16 +243,20 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       display: block;
     }
 
+    /* ── Header zone: optional document title over the letterhead ────────── */
     .header-timbrado {
       position: fixed;
       top: calc(-1 * var(--safe-top));
       left: 0;
       right: 0;
       height: var(--safe-top);
-      z-index: 1000;
+      z-index: 1;
+      pointer-events: none;
     }
 
     .header-titulos {
+      position: relative;
+      z-index: 2;
       text-align: center;
       width: 100%;
       padding-top: 0.34in;
@@ -264,6 +274,9 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       text-transform: uppercase;
     }
 
+    /* ── Footer zone: compact branding text over the letterhead ────────────
+       Small, faint text that sits inside the bottom safe area on top of
+       whatever footer artwork the letterhead image provides. */
     .footer-timbrado {
       position: fixed;
       bottom: calc(-1 * var(--safe-bottom));
@@ -273,14 +286,22 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      padding-bottom: 0.16in;
+      padding: 0 0.5in 0.14in;
       color: #C4A265;
-      font-size: 11px;
+      font-size: 8px;
       font-weight: bold;
-      z-index: 1000;
+      opacity: 0.6;
+      z-index: 1;
+      pointer-events: none;
     }
 
+    /* ── Content area ───────────────────────────────────────────────────────
+       Rendered above the letterhead background so translated text is never
+       obscured by decorative elements.  The @page margins guarantee the
+       content box does not overlap the letterhead header/footer artwork. */
     .conteudo-principal {
+      position: relative;
+      z-index: 2;
       width: 100%;
     }
 
