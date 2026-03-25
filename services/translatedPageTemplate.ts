@@ -6,11 +6,13 @@
  * Produces a single self-contained HTML file (index.html) ready to be sent
  * directly to the Gotenberg Chromium endpoint.
  *
- * The official Promobidocs letterhead PNG is rendered as a position:fixed
- * full-page background (z-index -1) that repeats on every printed page.
- * The @page margins (safe-area policy) keep translated content inside the
- * central reading zone so it never overlaps the letterhead decorative
- * elements in the margins.  Content has z-index 2 for guaranteed layering.
+ * The official Promobidocs letterhead PNG is applied as a CSS background
+ * on the root html element.  Per CSS spec, the root element background
+ * propagates to the canvas, painting the full physical page including
+ * @page margins.  This is the only approach that reliably paints behind
+ * Chromium headless print margins (position:fixed gets clipped).
+ * The @page margins keep translated content inside the central reading
+ * zone so it never overlaps the letterhead decorative elements.
  *
  * Assets referenced:
  *   letterhead.png           — official letterhead (portrait), must be attached
@@ -19,12 +21,11 @@
  *                              Gotenberg request.
  *
  * Layout:
- *   .letterhead-bg      position:fixed full-page background (z-index 0)
- *   .conteudo-principal scrolling content area (z-index 2, always above background)
+ *   html background     CSS canvas background (letterhead image, full page)
+ *   .conteudo-principal  content area (inside @page margins, above background)
  *
  * No text overlays are rendered on internal translated pages — the letterhead
  * image provides all institutional branding (logo, borders, footer artwork).
- * Document title / branding text were removed to prevent crossing the body.
  *
  * @page US Letter with global translated safe-area margins
  *
@@ -177,17 +178,27 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       --safe-left: ${safeArea.marginLeftIn}in;
     }
 
-    html, body {
+    /* ── Letterhead full-page background ────────────────────────────────────
+       The root element's background propagates to the CSS canvas, which
+       covers the ENTIRE physical page including @page margins.  This is
+       the only reliable way to paint behind margin areas in Chromium
+       headless print — position:fixed elements get clipped at the content
+       area boundary.  Gotenberg attaches the letterhead file alongside
+       index.html so url('letterhead.png') resolves correctly. */
+    html {
       margin: 0;
       padding: 0;
       width: 100%;
+      background: url('${isLandscape ? 'letterhead-landscape.png' : 'letterhead.png'}') top left / ${isLandscape ? '11in 8.5in' : '8.5in 11in'} no-repeat;
     }
 
     body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
       font-family: Arial, sans-serif;
       font-size: 11.5px;
       color: #000;
-      background: transparent;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -222,38 +233,11 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     ${isCertLayout ? buildCertificateLayoutCss(isLandscape) : ''}
 
-    /* ── Letterhead full-page background ────────────────────────────────────
-       The official letterhead PNG spans the entire physical page (including
-       margins) as a fixed background at z-index 0.  z-index must be 0 (not
-       -1) because Chromium print renders z-index:-1 elements behind the
-       canvas background, making them invisible.  body background is set to
-       transparent so the white canvas does not occlude the letterhead.
-       Content is always above via z-index 2 on .conteudo-principal. */
-    .letterhead-bg {
-      position: fixed;
-      top: calc(-1 * var(--safe-top));
-      left: calc(-1 * var(--safe-left));
-      width: calc(100% + var(--safe-left) + var(--safe-right));
-      height: calc(100% + var(--safe-top) + var(--safe-bottom));
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    .letterhead-bg img {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
     /* ── Content area ───────────────────────────────────────────────────────
-       Rendered above the letterhead background so translated text is never
-       obscured by decorative elements.  The @page margins guarantee the
-       content box does not overlap the letterhead header/footer artwork.
-       No text overlays (title, branding) are rendered on internal translated
-       pages — the letterhead image provides all institutional framing. */
+       The @page margins guarantee the content box does not overlap the
+       letterhead header/footer artwork.  No text overlays are rendered —
+       the letterhead image (via html background) provides all framing. */
     .conteudo-principal {
-      position: relative;
-      z-index: 2;
       width: 100%;
     }
 
@@ -401,10 +385,6 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
   </style>
 </head>
 <body${isCertLayout ? ' class="cert-layout"' : ''}>
-  <div class="letterhead-bg">
-    <img src="${isLandscape ? 'letterhead-landscape.png' : 'letterhead.png'}" alt="">
-  </div>
-
   <div class="conteudo-principal">
     ${translatedHtml}
   </div>
