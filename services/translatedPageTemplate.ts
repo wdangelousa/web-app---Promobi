@@ -20,9 +20,11 @@
  *
  * Layout:
  *   .letterhead-bg      position:fixed full-page background (z-index -1)
- *   .header-timbrado    position:fixed top zone (optional document title)
- *   .footer-timbrado    position:fixed bottom zone (faint branding text, z-index 1)
  *   .conteudo-principal scrolling content area (z-index 2, always above background)
+ *
+ * No text overlays are rendered on internal translated pages — the letterhead
+ * image provides all institutional branding (logo, borders, footer artwork).
+ * Document title / branding text were removed to prevent crossing the body.
  *
  * @page US Letter with global translated safe-area margins
  *
@@ -154,12 +156,11 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
   const safeArea = getTranslatedPageSafeArea(resolvedOrientation);
   const safeAreaPageCss = buildTranslatedSafeAreaPageCss(resolvedOrientation);
 
-  const titleBlock = documentTitle
-    ? `<div class="header-titulos">
-        ${documentTitle ? `<h1>${documentTitle}</h1>` : ''}
-        ${registrationNumber ? `<p>Registration No.: ${registrationNumber}</p>` : ''}
-      </div>`
-    : '';
+  // Document title and registration number are intentionally NOT rendered
+  // on internal translated pages.  The letterhead provides institutional
+  // branding; the filename/title overlay was crossing the content area for
+  // long document names.  Title is still available in the cover page and
+  // workbench metadata.
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -243,62 +244,12 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       display: block;
     }
 
-    /* ── Header zone: optional document title over the letterhead ────────── */
-    .header-timbrado {
-      position: fixed;
-      top: calc(-1 * var(--safe-top));
-      left: 0;
-      right: 0;
-      height: var(--safe-top);
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .header-titulos {
-      position: relative;
-      z-index: 2;
-      text-align: center;
-      width: 100%;
-      padding-top: 0.34in;
-    }
-
-    .header-titulos p {
-      margin: 2px 0;
-      font-size: 11px;
-    }
-
-    .header-titulos h1 {
-      margin: 5px 0;
-      font-size: 16px;
-      font-weight: bold;
-      text-transform: uppercase;
-    }
-
-    /* ── Footer zone: compact branding text over the letterhead ────────────
-       Small, faint text that sits inside the bottom safe area on top of
-       whatever footer artwork the letterhead image provides. */
-    .footer-timbrado {
-      position: fixed;
-      bottom: calc(-1 * var(--safe-bottom));
-      left: 0;
-      right: 0;
-      height: var(--safe-bottom);
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      padding: 0 0.5in 0.14in;
-      color: #C4A265;
-      font-size: 8px;
-      font-weight: bold;
-      opacity: 0.6;
-      z-index: 1;
-      pointer-events: none;
-    }
-
     /* ── Content area ───────────────────────────────────────────────────────
        Rendered above the letterhead background so translated text is never
        obscured by decorative elements.  The @page margins guarantee the
-       content box does not overlap the letterhead header/footer artwork. */
+       content box does not overlap the letterhead header/footer artwork.
+       No text overlays (title, branding) are rendered on internal translated
+       pages — the letterhead image provides all institutional framing. */
     .conteudo-principal {
       position: relative;
       z-index: 2;
@@ -451,15 +402,6 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 <body${isCertLayout ? ' class="cert-layout"' : ''}>
   <div class="letterhead-bg">
     <img src="${isLandscape ? 'letterhead-landscape.png' : 'letterhead.png'}" alt="">
-  </div>
-
-  <div class="header-timbrado">
-    ${titleBlock}
-  </div>
-
-  <div class="footer-timbrado">
-    <span>promobidocs.com</span>
-    <span>Certified Translation</span>
   </div>
 
   <div class="conteudo-principal">
