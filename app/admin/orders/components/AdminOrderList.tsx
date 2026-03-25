@@ -184,19 +184,17 @@ export default function AdminOrderList({ initialOrders }: { initialOrders: any[]
                                 </td>
                                 <td className="p-4 text-right">
                                     <div className="flex justify-end items-center gap-2">
-                                        {order.status === 'PENDING_PAYMENT' && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleCopyLink(order.id);
-                                                }}
-                                                className="bg-orange-500/10 text-[#f58220] hover:bg-[#f58220] hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 border border-[#f58220]/20"
-                                                title="Copiar Link da Proposta"
-                                            >
-                                                <Copy className="w-3.5 h-3.5" />
-                                                Link
-                                            </button>
-                                        )}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopyLink(order.id);
+                                            }}
+                                            className="bg-orange-500/10 text-[#f58220] hover:bg-[#f58220] hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 border border-[#f58220]/20"
+                                            title="Copiar Link da Proposta"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                            Proposta
+                                        </button>
                                         <button
                                             onClick={() => handleOpenModal(order)}
                                             className="bg-slate-900 border border-slate-700 hover:border-slate-500 hover:text-white text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"

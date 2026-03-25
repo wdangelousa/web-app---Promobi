@@ -1,8 +1,9 @@
 import prisma from '@/lib/prisma'
 import Workbench from './components/Workbench'
+import ProposalSummary from './components/ProposalSummary'
 import CancelOrderButton from './components/CancelOrderModal'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { getCurrentUser } from '@/app/actions/auth'
 import { Role } from '@prisma/client'
@@ -85,6 +86,14 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Link
+                        href={`/proposta/${sanitizedOrder.id}`}
+                        target="_blank"
+                        className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Ver Proposta
+                    </Link>
                     <CancelOrderButton
                         orderId={sanitizedOrder.id}
                         isCancelled={sanitizedOrder.status === 'CANCELLED'}
@@ -99,6 +108,11 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                         {statusVisual.label}
                     </span>
                 </div>
+            </div>
+
+            {/* Proposal summary — compact read-only block for translator reference */}
+            <div className="px-6 py-2 bg-gray-100 border-b border-gray-200">
+                <ProposalSummary order={sanitizedOrder as any} />
             </div>
 
             {/* Workbench Client Component */}

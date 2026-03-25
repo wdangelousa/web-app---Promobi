@@ -51,6 +51,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
     }
 
     const requires100Upfront = order.urgency === 'urgent' || order.urgency === 'flash';
+    const isAwaitingPayment = order.status === 'PENDING_PAYMENT';
 
     const toggleDocExpand = (id: number) => {
         setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id])
@@ -114,23 +115,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         } finally {
             setIsGeneratingPDF(false);
         }
-    }
-
-    if (order.status !== 'PENDING_PAYMENT') {
-        return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-                <div className="bg-white rounded-3xl shadow-xl p-10 max-w-md w-full">
-                    <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <CheckCircle className="w-10 h-10" />
-                    </div>
-                    <h2 className="text-3xl font-black text-slate-800 mb-2">Proposta Atualizada</h2>
-                    <p className="text-slate-500 mb-8">Esta proposta já foi aprovada ou seu status foi atualizado pelo nosso time.</p>
-                    <a href="https://promobidocs.com" className="bg-[#B8763E] hover:bg-[#A36636] text-white font-bold py-3 px-8 rounded-full transition-all block w-full text-center">
-                        Voltar ao Site
-                    </a>
-                </div>
-            </div>
-        )
     }
 
     return (
@@ -207,6 +191,18 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </div>
             </header>
+
+            {/* ── Read-only banner: shown when proposal is no longer awaiting payment ── */}
+            {!isAwaitingPayment && (
+                <div className="bg-green-50 border-b border-green-200">
+                    <div className="max-w-3xl mx-auto px-6 py-3 flex items-center gap-3">
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        <p className="text-sm text-green-800 font-medium">
+                            Esta proposta já foi aprovada e está em produção. Os dados abaixo são o registro comercial original — disponível para consulta permanente.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <main className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
 
@@ -413,7 +409,8 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                     </div>
                 </section>
 
-                {/* Pagamento */}
+                {/* Pagamento — only shown when awaiting payment */}
+                {isAwaitingPayment && (
                 <section className="bg-white rounded-2xl shadow-lg p-6 md:p-8 border border-slate-100">
                     <h2 className="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">
                         <Lock className="w-5 h-5 text-[#B8763E]" /> Pagamento Seguro
@@ -529,12 +526,15 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                         </div>
                     </div>
                 </section>
+                )}
 
                 <footer className="pt-8 pb-12 text-center border-t border-slate-200 mt-12">
+                    {isAwaitingPayment && (
                     <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed mb-4">
                         Ao prosseguir com o pagamento, você atesta a veracidade dos documentos originais e concorda com nossos{' '}
                         <a href="#" className="underline">Termos de Serviço</a>.
                     </p>
+                    )}
                     <p className="text-xs text-slate-500 font-medium">
                         Promobi Corporate Services LLC<br />
                         13550 Village Park Dr. Unit 250 - Orlando, FL – 32837<br />

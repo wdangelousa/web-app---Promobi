@@ -23,6 +23,8 @@ export interface NormalizedOrder {
     hasNotary: boolean;
     finalPaidAmount?: number | null;
     paymentMethod?: string | null;
+    extraDiscount?: number | null;
+    sourceLanguage?: string | null;
 }
 
 /**
@@ -105,5 +107,7 @@ export function normalizeOrder(order: any): NormalizedOrder {
         hasNotary: order.hasNotary !== undefined ? !!order.hasNotary : false,
         finalPaidAmount: typeof order.finalPaidAmount === 'number' ? order.finalPaidAmount : null,
         paymentMethod: order.paymentMethod ? String(order.paymentMethod) : null,
+        extraDiscount: typeof order.extraDiscount === 'number' ? order.extraDiscount : null,
+        sourceLanguage: order.sourceLanguage ? String(order.sourceLanguage) : null,
     };
 }
