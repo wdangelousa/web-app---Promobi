@@ -1276,6 +1276,55 @@ export function buildTranslatedDocumentHtml(
 </html>`;
 }
 
+// ── Letterhead CSS injection helper ──────────────────────────────────────────
+/**
+ * Injects letterhead CSS background into an existing full HTML document
+ * when the document does not already reference the letterhead image.
+ *
+ * The structured renderers produce standalone HTML without letterhead
+ * references.  The `buildTranslatedPageHtml` template (used by the
+ * mirror_html path) bakes the letterhead into `html { background }`.
+ * When `buildStructuredKitBuffer` receives renderer HTML (the structured
+ * pipeline path), this function bridges the gap by injecting the same
+ * CSS so that the Gotenberg-attached letterhead file resolves correctly.
+ *
+ * Safe to call on HTML that already includes the reference — it
+ * short-circuits immediately.
+ */
+function injectLetterheadCssBackground(
+  html: string,
+  orientation: 'portrait' | 'landscape',
+): string {
+  if (html.includes('letterhead.png') || html.includes('letterhead-landscape.png')) {
+    return html;
+  }
+
+  const isLandscape = orientation === 'landscape';
+  const lhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
+  const bgSize = isLandscape ? '11in 8.5in' : '8.5in 11in';
+
+  const letterheadCss = `
+/* ── Letterhead full-page background (injected by buildStructuredKitBuffer) ── */
+html {
+  background: url('${lhFile}') top left / ${bgSize} no-repeat !important;
+}
+body {
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}`;
+
+  if (/<\/style>/i.test(html)) {
+    return html.replace(/<\/style>/i, `${letterheadCss}\n</style>`);
+  }
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `<style>${letterheadCss}</style>\n</head>`);
+  }
+  if (/<body\b/i.test(html)) {
+    return html.replace(/<body\b/i, `<style>${letterheadCss}</style>\n<body`);
+  }
+  return html;
+}
+
 // ── PDF overlay helper ────────────────────────────────────────────────────────
 
 function loadLetterheadBuffer(path: string): Buffer | null {
@@ -1557,8 +1606,11 @@ export async function buildStructuredKitBuffer(
         blockingReason: 'none',
       });
     } else {
-      const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
-        input.structuredHtml,
+      const safeAreaStructuredHtml = injectLetterheadCssBackground(
+        injectTranslatedPageSafeArea(
+          input.structuredHtml,
+          translatedOrientation,
+        ),
         translatedOrientation,
       );
       const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
@@ -1858,7 +1910,7 @@ export async function buildStructuredKitBuffer(
               paperSettings,
               logPrefix,
               `parity-recovery-l${level}`,
-              [],
+              translatedExtraFiles,
             );
 
             if (recoveredResult.buffer) {
