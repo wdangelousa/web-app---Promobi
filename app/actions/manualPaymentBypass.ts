@@ -90,8 +90,8 @@ async function triggerAnthropicTranslationForOrder(orderId: number): Promise<{
     }
 
     const apiBase = resolveApiBaseUrl()
-    const { FEATURE_FLAGS } = await import('@/lib/featureFlags')
-    const translatePath = FEATURE_FLAGS.USE_TRANSLATION_V2 ? '/api/translate/v2' : '/api/translate/claude'
+    // Canonical pipeline — always use the Anthropic mirror-HTML route.
+    const translatePath = '/api/translate/claude'
     const endpoint = `${apiBase}${translatePath}`
 
     const eligibleDocs = order.documents.filter((doc) => {

@@ -366,3 +366,127 @@ function stripTags(html: string): string {
     .replace(/&nbsp;/g, ' ');
   return text;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANONICAL ARTIFACT VALIDATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validation outcome for a finalized canonical translated artifact.
+ *
+ * `status`:
+ *   - 'pass'  — artifact is structurally sound, safe to persist.
+ *   - 'warn'  — artifact is usable but has suspicious signals; logged for operator review.
+ *   - 'fail'  — artifact is clearly broken; must NOT be persisted.
+ *
+ * `warnings` and `failReasons` are human-readable strings for structured logging.
+ */
+export interface ArtifactValidationResult {
+  status: 'pass' | 'warn' | 'fail';
+  warnings: string[];
+  failReasons: string[];
+  textLength: number;
+  tagCount: number;
+  sectionCount: number;
+}
+
+/** Minimum stripped text length for a usable artifact. */
+const MIN_TEXT_LENGTH = 30;
+
+/**
+ * Patterns that indicate Claude returned a conversational preamble instead of
+ * a clean translation.  Matched against the first 200 chars of stripped text.
+ */
+const PREAMBLE_PATTERNS = [
+  /^here\s+is\s+(the|a|my)\s+translat/i,
+  /^below\s+is\s+(the|a|my)\s+translat/i,
+  /^i\s+have\s+translated/i,
+  /^the\s+following\s+is\s+(the|a|my)\s+translat/i,
+  /^translation\s+of\s+the/i,
+];
+
+/**
+ * Validates a finalized canonical translated artifact before persistence.
+ *
+ * Call this AFTER all sanitization/compaction/finalization steps so the
+ * artifact is in its final form.
+ *
+ * @param html          The finalized translated HTML.
+ * @param sourcePageCount  Source PDF page count (if known) — used for section mismatch warnings.
+ * @param stopReason    Claude API stop_reason — 'max_tokens' triggers a truncation warning.
+ */
+export function validateCanonicalArtifact(
+  html: string,
+  sourcePageCount?: number | null,
+  stopReason?: string | null,
+): ArtifactValidationResult {
+  const warnings: string[] = [];
+  const failReasons: string[] = [];
+
+  const trimmed = html.trim();
+  const strippedText = stripTags(trimmed).replace(/\s+/g, ' ').trim();
+  const textLength = strippedText.length;
+  const tagCount = (trimmed.match(/<[a-z][a-z0-9]*[\s>]/gi) ?? []).length;
+  const sectionCount =
+    (trimmed.match(/<section\b[^>]*class="[^"]*\bpage\b/gi) ?? []).length;
+
+  // ── Hard-fail checks ────────────────────────────────────────────────────
+
+  if (trimmed.length === 0) {
+    failReasons.push('artifact is empty');
+  } else if (textLength < MIN_TEXT_LENGTH) {
+    failReasons.push(`artifact text content too short (${textLength} chars, min ${MIN_TEXT_LENGTH})`);
+  }
+
+  if (trimmed.length > 0 && tagCount === 0) {
+    failReasons.push('artifact contains no HTML tags (plain text or malformed output)');
+  }
+
+  // Markdown fences should have been stripped by the sanitizer.  If they
+  // survived, the sanitizer failed to process the response correctly.
+  if (/^```/m.test(trimmed)) {
+    failReasons.push('artifact still contains markdown fences after sanitization');
+  }
+
+  // ── Warning checks ──────────────────────────────────────────────────────
+
+  if (stopReason === 'max_tokens') {
+    warnings.push('Claude hit max_tokens — output may be truncated');
+  }
+
+  // Preamble detection: Claude sometimes prepends "Here is the translation…"
+  const firstChunk = strippedText.slice(0, 200);
+  if (PREAMBLE_PATTERNS.some((p) => p.test(firstChunk))) {
+    warnings.push('artifact starts with conversational preamble');
+  }
+
+  // Section/page underflow: source has N pages but artifact has fewer sections.
+  if (
+    sourcePageCount &&
+    sourcePageCount > 1 &&
+    sectionCount > 0 &&
+    sectionCount < sourcePageCount
+  ) {
+    warnings.push(
+      `section underflow: source=${sourcePageCount} sections=${sectionCount}`,
+    );
+  }
+
+  // Section/page overflow: more sections than source pages is unusual.
+  if (
+    sourcePageCount &&
+    sourcePageCount > 0 &&
+    sectionCount > sourcePageCount * 2
+  ) {
+    warnings.push(
+      `section overflow: source=${sourcePageCount} sections=${sectionCount}`,
+    );
+  }
+
+  // ── Determine status ────────────────────────────────────────────────────
+
+  const status: ArtifactValidationResult['status'] =
+    failReasons.length > 0 ? 'fail' : warnings.length > 0 ? 'warn' : 'pass';
+
+  return { status, warnings, failReasons, textLength, tagCount, sectionCount };
+}

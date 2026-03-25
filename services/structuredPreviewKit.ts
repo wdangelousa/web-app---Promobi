@@ -15,9 +15,11 @@
  *
  *   Part 2:  Translated document              — generated via Gotenberg from
  *                                               structured HTML with calibrated
- *                                               print margins, then letterhead.png
- *                                               is applied as a full-page PDF overlay
- *                                               ONLY on translated pages.
+ *                                               print margins.  The HTML template
+ *                                               provides all visual branding (logo,
+ *                                               gold border, footer chrome).
+ *                                               PDF letterhead overlay is applied
+ *                                               ONLY for external PDF overrides.
  *
  *   Part 3:  Original source document         — original PDF appended as-is
  *                                               (skipped if source is not PDF)
@@ -93,6 +95,7 @@ const STORAGE_BUCKET = 'documents';
 
 const LETTERHEAD_PATH = join(process.cwd(), 'public', 'letterhead.png');
 const LETTERHEAD_LANDSCAPE_PATH = join(process.cwd(), 'public', 'letterhead-landscape.png');
+const LOGO_PATH = join(process.cwd(), 'public', 'logo.png');
 
 // Local fallback: .artifacts/structured-preview-kits/ at project root.
 const LOCAL_ARTIFACTS_DIR = join(process.cwd(), '.artifacts', 'structured-preview-kits');
@@ -1709,12 +1712,22 @@ export async function buildStructuredKitBuffer(
         );
       }
 
+      // Attach logo.png so the HTML template's <img src="logo.png"> resolves.
+      // This is the canonical visual layer — no PDF overlay needed afterward.
+      const translatedExtraFiles: GotenbergExtraFile[] = [];
+      try {
+        const logoBuf = readFileSync(LOGO_PATH);
+        translatedExtraFiles.push({ filename: 'logo.png', buffer: logoBuf, mimeType: 'image/png' });
+      } catch {
+        log(`logo.png not found at ${LOGO_PATH} — header logo will be absent`);
+      }
+
       const translatedPdfBase = await callGotenberg(
         firstRenderHtml,
         paperSettings,
         logPrefix,
         'translated-section',
-        [],
+        translatedExtraFiles,
       );
 
       if (!translatedPdfBase.buffer) {
@@ -1925,21 +1938,13 @@ export async function buildStructuredKitBuffer(
         );
       }
 
-      if (letterheadBuffer) {
-        const overlayBuffer = await applyLetterheadOverlayToPdf(
-          translatedPdfBuffer,
-          letterheadBuffer,
-          logPrefix,
-        );
-        if (overlayBuffer) {
-          translatedPdfBuffer = overlayBuffer;
-          log(`letterhead overlay applied: yes`);
-        } else {
-          log(`letterhead overlay applied: no (overlay failed)`);
-        }
-      } else {
-        log(`letterhead overlay applied: no (file not found)`);
-      }
+      // Letterhead PDF overlay is SKIPPED for canonical internal rendering.
+      // The HTML template (translatedPageTemplate.ts) already provides all
+      // visual branding via CSS: logo, gold border, footer chrome.  Applying
+      // letterhead.png as an additional PDF overlay caused duplicate logos,
+      // margin conflicts, and page-count parity drift.
+      // The overlay is preserved only for external PDF overrides (see above).
+      log(`letterhead overlay skipped: canonical internal path uses HTML chrome`);
 
       log(`translated section generated: yes`);
       translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
@@ -2304,7 +2309,12 @@ export async function assembleStructuredPreviewKit(
     result.coverGenerated = true;
     result.coverMetadataApplied = true;
     result.translatedSectionGenerated = true;
-    result.letterheadInjected = result.letterheadDetected;
+    // PDF overlay is only injected for external PDF overrides.
+    // Canonical internal path uses HTML chrome — no PDF overlay.
+    const hasExternalOverride =
+      input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
+      input.externalTranslatedPdfBuffer.byteLength > 0;
+    result.letterheadInjected = hasExternalOverride && result.letterheadDetected;
     result.originalAppended =
       (input.isOriginalPdf ||
         ['image/jpeg', 'image/jpg', 'image/png'].includes(input.originalContentType ?? '')) &&

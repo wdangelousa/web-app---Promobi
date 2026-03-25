@@ -9,7 +9,8 @@ import {
 } from "@/services/structuredPreviewKit";
 import { type StructuredRenderLanguageIntegrity } from "@/services/structuredDocumentRenderer";
 import { isCertificateGenreDocumentType } from "@/lib/singlePageSafeguard";
-import { sanitizeTranslationHtml, compactParagraphsForContinuousText, compactTranslatorNoteParagraphs } from "@/lib/translationHtmlSanitizer";
+// Sanitizer imports removed — translatedText is now a finalized canonical artifact.
+// All cleanup is applied BEFORE persistence in /api/translate/claude.
 import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
   getApprovedPreviewArtifactRegistryRecord,
@@ -437,17 +438,11 @@ export async function generateDeliveryKit(
           );
         }
 
-        // V2 pipeline produces clean deterministic HTML — skip re-sanitization.
-        // V1 pipeline needs sanitizer to clean up Claude's raw HTML output.
-        const isV2Html = faithfulText.includes('<div class="translated-document">');
-        const sanitizedHtml = isV2Html
-          ? faithfulText
-          : compactTranslatorNoteParagraphs(
-              compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
-            );
-
+        // translatedText is a finalized canonical artifact — render as-is.
+        // All sanitization, compaction, and translator-note styling is applied
+        // BEFORE persistence in /api/translate/claude.
         const htmlForKit = buildTranslatedPageHtml({
-          translatedHtml: sanitizedHtml,
+          translatedHtml: faithfulText,
           documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
           orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
           layoutHint,
@@ -479,7 +474,7 @@ export async function generateDeliveryKit(
           originalFileUrl: doc.originalFileUrl,
           originalContentType: contentType,
           documentFamily: classification.documentType,
-          rendererName: isV2Html ? 'mirror_html_v2' : 'mirror_html',
+          rendererName: 'mirror_html',
           modality: 'faithful',
           surface: preview ? 'preview-kit' : 'delivery-kit',
           compactionAttempted: false,

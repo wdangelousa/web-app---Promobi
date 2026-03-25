@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful, compactParagraphsForContinuousText } from "@/lib/translationHtmlSanitizer";
+import { sanitizeTranslationHtml, sanitizeTranslationHtmlFaithful, compactParagraphsForContinuousText, compactTranslatorNoteParagraphs, validateCanonicalArtifact } from "@/lib/translationHtmlSanitizer";
 import { buildTranslationPrompt, buildFaithfulTranslationPrompt, buildContinuousTextTranslationPrompt, buildUserMessage, type TranslationLanguage } from "@/lib/translationPrompt";
 import { classifyDocument } from "@/services/documentClassifier";
 // Used as a prompt-quality hint only — NOT a rendering gate.
@@ -282,6 +282,44 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── Canonical finalization ──────────────────────────────────────────────
+    // Apply all remaining cleanup BEFORE persistence so that translatedText
+    // is a fully-finalized artifact.  Preview and delivery render it as-is.
+    translatedText = compactParagraphsForContinuousText(translatedText);
+    translatedText = compactTranslatorNoteParagraphs(translatedText);
+
+    // ── Canonical artifact validation ─────────────────────────────────────────
+    // Catch clearly broken artifacts before persistence.  Hard-fail returns a
+    // 422 so the caller records a generation_error instead of saving junk.
+    const validation = validateCanonicalArtifact(
+      translatedText,
+      pageCount,
+      response.stop_reason,
+    );
+
+    console.log(
+      `[artifactValidation] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+      `status=${validation.status} textLength=${validation.textLength} ` +
+      `tagCount=${validation.tagCount} sectionCount=${validation.sectionCount}` +
+      (validation.warnings.length > 0 ? ` warnings=[${validation.warnings.join('; ')}]` : '') +
+      (validation.failReasons.length > 0 ? ` failReasons=[${validation.failReasons.join('; ')}]` : ''),
+    );
+
+    if (validation.status === 'fail') {
+      console.error(
+        `[artifactValidation] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
+        `HARD FAIL: artifact rejected before persistence. Reasons: ${validation.failReasons.join('; ')}`,
+      );
+      return NextResponse.json(
+        {
+          error: `Tradução gerada com formato inválido. Tente novamente. (${validation.failReasons[0]})`,
+          validationStatus: validation.status,
+          failReasons: validation.failReasons,
+        },
+        { status: 422 },
+      );
+    }
+
     // ── Page count chain diagnostic ──────────────────────────────────────────
     // Count <section class="page"> elements in raw and sanitized output so we
     // can trace exactly where a page count drop occurs without guessing.
@@ -358,6 +396,8 @@ export async function POST(req: Request) {
       continuousTextPathUsed: isContinuousTextPath,
       structuralElementCount,
       pageDivergenceFlag,
+      validationStatus: validation.status,
+      validationWarnings: validation.warnings,
     });
   } catch (error: any) {
     console.error("[/api/translate/claude] Error:", error);

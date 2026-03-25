@@ -35,7 +35,8 @@ import type { DocumentOrientation } from '@/lib/documentOrientationDetector';
 import { classifyDocument } from '@/services/documentClassifier';
 import { type StructuredRenderLanguageIntegrity } from '@/services/structuredDocumentRenderer';
 import { isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
-import { sanitizeTranslationHtml, compactParagraphsForContinuousText } from '@/lib/translationHtmlSanitizer';
+// Sanitizer imports removed — translatedText is now a finalized canonical artifact.
+// All cleanup is applied BEFORE persistence in /api/translate/claude.
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
   getPageParityRegistryRecord,
@@ -515,8 +516,9 @@ export async function previewStructuredKit(
       );
     }
 
+    // translatedText is a finalized canonical artifact — render as-is.
     const mirrorHtml = buildTranslatedPageHtml({
-      translatedHtml: compactParagraphsForContinuousText(sanitizeTranslationHtml(faithfulText)),
+      translatedHtml: faithfulText,
       documentTitle: doc.exactNameOnDoc ?? doc.docType ?? undefined,
       orientation: detectedOrientation === 'landscape' ? 'landscape' : 'portrait',
       layoutHint,

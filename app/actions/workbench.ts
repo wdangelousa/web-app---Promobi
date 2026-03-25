@@ -544,8 +544,10 @@ export async function saveAndGenerateIAPromobiTranslation(
     })
     lockAcquired = true
 
-    const { FEATURE_FLAGS } = await import('@/lib/featureFlags')
-    const translatePath = FEATURE_FLAGS.USE_TRANSLATION_V2 ? '/api/translate/v2' : '/api/translate/claude'
+    // Canonical pipeline — always use the Anthropic mirror-HTML route.
+    // V2 (XML-semantic) route is retained for standalone testing but is not
+    // part of the operational flow.
+    const translatePath = '/api/translate/claude'
     const endpoint = `${resolveApiBaseUrl()}${translatePath}`
     const response = await fetch(endpoint, {
       method: 'POST',
