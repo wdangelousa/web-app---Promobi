@@ -4,25 +4,28 @@
  * Standalone HTML template for the translated document page.
  *
  * Produces a single self-contained HTML file (index.html) ready to be sent
- * directly to the Gotenberg Chromium endpoint.  The letterhead chrome is
- * implemented with position:fixed elements so it repeats on every printed
- * page — no separate header.html / footer.html files needed.
+ * directly to the Gotenberg Chromium endpoint.  The official Promobidocs
+ * letterhead is rendered as a position:fixed full-page background image
+ * that repeats on every printed page.
  *
  * Assets referenced:
- *   logo.png   — Promobidocs logo (must be attached as a FormData file
- *                alongside index.html in the Gotenberg request)
+ *   letterhead.png           — official letterhead (portrait), must be attached
+ *   letterhead-landscape.png — official letterhead (landscape), must be attached
+ *                              as FormData files alongside index.html in the
+ *                              Gotenberg request.
  *
  * Layout:
- *   .header-timbrado   position:fixed top zone (logo + optional document title)
- *   .moldura-dourada   position:fixed right/top copper border accent
- *   .footer-timbrado   position:fixed bottom zone (promobidocs.com | Certified Translation)
+ *   .letterhead-bg      position:fixed full-page background (official letterhead)
+ *   .header-timbrado    position:fixed top zone (optional document title)
+ *   .footer-timbrado    position:fixed bottom zone (promobidocs.com | Certified Translation)
  *   .conteudo-principal scrolling content area (receives the translated HTML)
  *
  * @page US Letter with global translated safe-area margins
  *
  * Usage:
  *   const html = buildTranslatedPageHtml(translatedHtml, { documentTitle: 'Marriage Certificate' });
- *   // Attach html as 'index.html' and logo as 'logo.png' in Gotenberg FormData.
+ *   // Attach html as 'index.html' and letterhead.png (or letterhead-landscape.png)
+ *   // in Gotenberg FormData.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -130,7 +133,8 @@ function buildCertificateLayoutCss(isLandscape: boolean): string {
  * Builds the complete translated-page HTML document.
  *
  * Pass the result directly to Gotenberg as `index.html`.
- * Attach `logo.png` as a companion FormData file.
+ * Attach the orientation-correct letterhead as a companion FormData file
+ * (letterhead.png for portrait, letterhead-landscape.png for landscape).
  */
 export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions): string {
   const {
@@ -212,6 +216,27 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
 
     ${isCertLayout ? buildCertificateLayoutCss(isLandscape) : ''}
 
+    /* ── Letterhead full-page background ────────────────────────────────────
+       The official Promobidocs letterhead asset is rendered as a fixed
+       full-page background behind all content.  It provides the butterfly
+       logo, corner accents, and institutional border — no separate logo
+       image or CSS border is needed. */
+    .letterhead-bg {
+      position: fixed;
+      top: calc(-1 * var(--safe-top));
+      left: calc(-1 * var(--safe-left));
+      width: calc(100% + var(--safe-left) + var(--safe-right));
+      height: calc(100% + var(--safe-top) + var(--safe-bottom));
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .letterhead-bg img {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
     .header-timbrado {
       position: fixed;
       top: calc(-1 * var(--safe-top));
@@ -219,13 +244,6 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       right: 0;
       height: var(--safe-top);
       z-index: 1000;
-    }
-
-    .logo-borboleta {
-      position: absolute;
-      top: 0.22in;
-      left: 0;
-      width: 100px;
     }
 
     .header-titulos {
@@ -244,17 +262,6 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       font-size: 16px;
       font-weight: bold;
       text-transform: uppercase;
-    }
-
-    .moldura-dourada {
-      position: fixed;
-      top: calc(-1 * var(--safe-top));
-      right: calc(-1 * var(--safe-right));
-      bottom: calc(-1 * var(--safe-bottom));
-      width: 20px;
-      border-right: 3px solid #C4A265;
-      border-top: 3px solid #C4A265;
-      z-index: 999;
     }
 
     .footer-timbrado {
@@ -421,10 +428,11 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
   </style>
 </head>
 <body${isCertLayout ? ' class="cert-layout"' : ''}>
-  <div class="moldura-dourada"></div>
+  <div class="letterhead-bg">
+    <img src="${isLandscape ? 'letterhead-landscape.png' : 'letterhead.png'}" alt="">
+  </div>
 
   <div class="header-timbrado">
-    <img src="logo.png" alt="Promobidocs" class="logo-borboleta">
     ${titleBlock}
   </div>
 

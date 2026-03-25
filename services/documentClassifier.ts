@@ -1613,8 +1613,13 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
   // Handles certs where the event is named without standard keywords (e.g. "II FÓRUM DE...")
   // but the role marker "in the capacity of PARTICIPANT" is present.
   const comboRule4 = hasCertifyLang && hasCapacityDesignation;
+  // Rule 5: cert title + completion language (no "we certify" needed)
+  // Handles online-learning certificates (LinkedIn Learning, Coursera, Udemy) where the
+  // issuing platform says "Certificate of Completion" + "has completed the course" but
+  // never uses formal "we certify" attestation language.
+  const comboRule5 = hasCertTitle && hasParticipation;
 
-  const matchesCombinationRule = comboRule1 || comboRule2 || comboRule3 || comboRule4;
+  const matchesCombinationRule = comboRule1 || comboRule2 || comboRule3 || comboRule4 || comboRule5;
 
   // ── Logging ─────────────────────────────────────────────────────────────────
   if (certLandscapeHits > 0 || matchesCombinationRule) {
@@ -1623,6 +1628,7 @@ function classifyFromTranslatedText(rawText: string): ClassificationResult {
       comboRule2 && 'title+certify+load',
       comboRule3 && 'title+load+role',
       comboRule4 && 'certify+capacity',
+      comboRule5 && 'title+completion',
     ].filter(Boolean);
     console.log(
       `[documentClassifier] certificate landscape signals matched: ${certLandscapeHits}` +
@@ -1826,9 +1832,11 @@ function classifyFromUrl(fileUrl: string): ClassificationResult {
     return { documentType: 'employment_record', confidence: 'heuristic-low' };
   }
   // Landscape/participation certificates — common filename patterns from Brazilian institutions
-  // E.g. "EINSTEIN - CIRURGIA BARIATRICA.pdf", "CRN - NUTRICIONISTAS.pdf", "CERTIFICATE.pdf"
+  // and online learning platforms (LinkedIn Learning, Coursera, Udemy, etc.).
+  // E.g. "EINSTEIN - CIRURGIA BARIATRICA.pdf", "CRN - NUTRICIONISTAS.pdf", "CERTIFICATE.pdf",
+  //      "CertificateOfCompletion_LinkedIn Learning.pdf"
   // These are lower-confidence hints only; translated text is always preferred.
-  if (/certif[io]cat[eo]|certifica[cç][aã]o|participac[aã]o|conclus[aã]o[-_ ]curso/i.test(fileUrl)) {
+  if (/certif[io]cat[eo]|certifica[cç][aã]o|participac[aã]o|conclus[aã]o[-_ ]curso|linkedin[-_ ]?learning|coursera|udemy/i.test(fileUrl)) {
     return { documentType: 'course_certificate_landscape', confidence: 'heuristic-low' };
   }
   if (/eb[-_ ]?1|evidence[-_ ]?\d+|evid[eê]ncia[-_ ]?\d+|imagens?[-_ ]do[-_ ]recebimento|photo[-_ ]sheet|photo[-_ ]evidence|trof[eé]u|medalha|honraria|colar[-_ ]evocativo/i.test(fileUrl)) {

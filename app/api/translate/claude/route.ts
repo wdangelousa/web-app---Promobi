@@ -242,18 +242,26 @@ export async function POST(req: Request) {
       `[documentClassifier] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `detected document type: ${classification.documentType} (confidence: ${classification.confidence}) ` +
       `mode=${normalizedTranslationMode} selectionSource=${translationSelectionSource ?? "unknown"} ` +
-      `faithfulPromptUsed=${useFaithfulPrompt ? "yes" : "no"}`
+      `faithfulPromptUsed=${useFaithfulPrompt ? "yes" : "no"} ` +
+      `postClassifiedAsStructured=${isDocumentTypeInImplementedStructuredFamily(classification.documentType)}`
     );
 
     // ── Layer 3: Sanitize for Gotenberg ──
     // Continuous-text path: standard sanitizer (flattens spurious tables, compacts layout).
     //   Faithful sanitizer is intentionally NOT used here — it preserves tables, which
     //   inflates page count for flowing prose documents.
-    // Faithful path (forceBlueprintPipeline OR pre-classified as structured form): faithful
-    //   sanitizer — preserves table structure for civil-registry forms.
-    // Standard path: standard sanitizer.
+    // Faithful path: faithful sanitizer — preserves table structure.
+    //   Triggered by EITHER pre-classification (prompt hint) OR post-classification
+    //   (translated content confirms structured form).  This ensures certificates
+    //   with generic filenames still get table-preserving sanitization when the
+    //   post-classification detects them as structured documents.
+    // Standard path: standard sanitizer (all other cases).
     const isContinuousTextPath = CONTINUOUS_TEXT_DOCUMENT_TYPES.has(classification.documentType);
-    let translatedText = useFaithfulPrompt && !isContinuousTextPath
+    const postClassifiedAsStructured =
+      isDocumentTypeInImplementedStructuredFamily(classification.documentType);
+    const useFaithfulSanitizer =
+      !isContinuousTextPath && (useFaithfulPrompt || postClassifiedAsStructured);
+    let translatedText = useFaithfulSanitizer
       ? sanitizeTranslationHtmlFaithful(rawTranslation)
       : sanitizeTranslationHtml(rawTranslation);
 
@@ -332,7 +340,8 @@ export async function POST(req: Request) {
       `[/api/translate/claude] Order #${orderId ?? "?"} Doc #${documentId ?? "?"} — ` +
       `Raw: ${rawTranslation.length} chars → Sanitized: ${translatedText.length} chars ` +
       `(${Math.round((1 - translatedText.length / rawTranslation.length) * 100)}% reduction) ` +
-      `faithfulPromptUsed=${useFaithfulPrompt} continuousTextPath=${isContinuousTextPath} ` +
+      `faithfulPromptUsed=${useFaithfulPrompt} faithfulSanitizerUsed=${useFaithfulSanitizer} ` +
+      `continuousTextPath=${isContinuousTextPath} ` +
       `structuralElements=${structuralElementCount} pageDivergenceFlag=${pageDivergenceFlag}`
     );
 

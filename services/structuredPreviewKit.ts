@@ -95,7 +95,6 @@ const STORAGE_BUCKET = 'documents';
 
 const LETTERHEAD_PATH = join(process.cwd(), 'public', 'letterhead.png');
 const LETTERHEAD_LANDSCAPE_PATH = join(process.cwd(), 'public', 'letterhead-landscape.png');
-const LOGO_PATH = join(process.cwd(), 'public', 'logo.png');
 
 // Local fallback: .artifacts/structured-preview-kits/ at project root.
 const LOCAL_ARTIFACTS_DIR = join(process.cwd(), '.artifacts', 'structured-preview-kits');
@@ -1712,14 +1711,18 @@ export async function buildStructuredKitBuffer(
         );
       }
 
-      // Attach logo.png so the HTML template's <img src="logo.png"> resolves.
-      // This is the canonical visual layer — no PDF overlay needed afterward.
+      // Attach the official Promobidocs letterhead so the HTML template's
+      // <img src="letterhead.png"> (or letterhead-landscape.png) resolves.
+      // The letterhead is the canonical full-page background for translated pages.
       const translatedExtraFiles: GotenbergExtraFile[] = [];
+      const targetLhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
+      const targetLhFullPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
       try {
-        const logoBuf = readFileSync(LOGO_PATH);
-        translatedExtraFiles.push({ filename: 'logo.png', buffer: logoBuf, mimeType: 'image/png' });
+        const lhBuf = readFileSync(targetLhFullPath);
+        translatedExtraFiles.push({ filename: targetLhFile, buffer: lhBuf, mimeType: 'image/png' });
+        log(`letterhead attached for translated section: ${targetLhFile}`);
       } catch {
-        log(`logo.png not found at ${LOGO_PATH} — header logo will be absent`);
+        log(`${targetLhFile} not found at ${targetLhFullPath} — letterhead background will be absent`);
       }
 
       const translatedPdfBase = await callGotenberg(
@@ -2309,12 +2312,10 @@ export async function assembleStructuredPreviewKit(
     result.coverGenerated = true;
     result.coverMetadataApplied = true;
     result.translatedSectionGenerated = true;
-    // PDF overlay is only injected for external PDF overrides.
-    // Canonical internal path uses HTML chrome — no PDF overlay.
-    const hasExternalOverride =
-      input.externalTranslatedPdfBuffer instanceof ArrayBuffer &&
-      input.externalTranslatedPdfBuffer.byteLength > 0;
-    result.letterheadInjected = hasExternalOverride && result.letterheadDetected;
+    // Letterhead is injected for both paths:
+    //   - Canonical internal: via HTML background image in the template
+    //   - External PDF override: via PDF overlay (applyLetterheadOverlayToPdf)
+    result.letterheadInjected = result.letterheadDetected;
     result.originalAppended =
       (input.isOriginalPdf ||
         ['image/jpeg', 'image/jpg', 'image/png'].includes(input.originalContentType ?? '')) &&
