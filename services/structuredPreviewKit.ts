@@ -1293,6 +1293,18 @@ function loadLetterheadBuffer(path: string): Buffer | null {
   }
 }
 
+function stripCssLetterheadBackground(html: string): string {
+  return html
+    .replace(
+      /background\s*:\s*url\(['"]letterhead(?:-landscape)?\.png['"]\)[^;]*;/gi,
+      'background: none;',
+    )
+    .replace(
+      /background-image\s*:\s*url\(['"]letterhead(?:-landscape)?\.png['"]\)[^;]*;/gi,
+      'background-image: none;',
+    );
+}
+
 async function applyLetterheadOverlayToPdf(
   pdfBuffer: Buffer,
   letterheadBuffer: Buffer,
@@ -1599,8 +1611,11 @@ export async function buildStructuredKitBuffer(
         blockingReason: 'none',
       });
     } else {
+      const renderStructuredHtml = input.forceLetterheadOverlay
+        ? stripCssLetterheadBackground(input.structuredHtml)
+        : input.structuredHtml;
       const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
-        input.structuredHtml,
+        renderStructuredHtml,
         translatedOrientation,
       );
       const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
@@ -1759,8 +1774,11 @@ export async function buildStructuredKitBuffer(
       // may also be self-contained via data URI, which needs no extra file.
       const translatedExtraFiles: GotenbergExtraFile[] = [];
       const htmlReferencesLetterhead =
-        input.structuredHtml.includes('letterhead.png') ||
-        input.structuredHtml.includes('letterhead-landscape.png');
+        !input.forceLetterheadOverlay &&
+        (
+          input.structuredHtml.includes('letterhead.png') ||
+          input.structuredHtml.includes('letterhead-landscape.png')
+        );
       if (htmlReferencesLetterhead) {
         const targetLhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
         const targetLhFullPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
