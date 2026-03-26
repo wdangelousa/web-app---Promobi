@@ -37,6 +37,8 @@ model Order {
   hasTranslation       Boolean         @default(true)
   hasNotary            Boolean         @default(false)
   sentAt               DateTime?
+  paidAt               DateTime?
+  dueDate              DateTime?
   discountAmount       Float?          @default(0)
   discountPercentage   Float?          @default(0)
   extraDiscount        Float?          @default(0)
@@ -67,6 +69,7 @@ model Document {
   totalPages             Int?            // Total pages in the original uploaded document
   excludedFromScope      Boolean         @default(false) // Present for transparency, NOT to be translated
   approvedKitUrl         String?         // Frozen preview kit URL (approved by translator)
+  scopedFileUrl          String?         // PDF com apenas páginas cobráveis (gerado no pagamento)
   // ──────────────────────────────────────────────────────────────────────────
   order                  Order           @relation(fields: [orderId], references: [id])
 }

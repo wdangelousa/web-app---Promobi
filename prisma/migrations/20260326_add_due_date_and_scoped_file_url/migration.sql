@@ -1,0 +1,3 @@
+ALTER TABLE "Order" ADD COLUMN "paidAt" TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN "dueDate" TIMESTAMP(3);
+ALTER TABLE "Document" ADD COLUMN "scopedFileUrl" TEXT;

@@ -32,5 +32,12 @@ export default async function ProposalPage({ params }: { params: Promise<{ order
     // e evitar o erro "Only plain objects can be passed to Client Components" no Next.js
     const sanitizedOrder = JSON.parse(JSON.stringify(order))
 
-    return <ProposalClient order={sanitizedOrder} globalSettings={globalSettings} />
+    return (
+        <ProposalClient
+            order={sanitizedOrder}
+            globalSettings={globalSettings}
+            deadlineNormal={globalSettings.deadlineNormal}
+            deadlineUrgent={globalSettings.deadlineUrgent}
+        />
+    )
 }

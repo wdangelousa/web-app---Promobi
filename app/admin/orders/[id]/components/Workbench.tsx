@@ -20,6 +20,7 @@ import { readDocumentDeliveryStatusRegistry, readTranslationModeRegistry, type T
 import { readFinancialLedger } from '@/lib/manualPayment'
 import ModalPortal from '@/components/ui/ModalPortal'
 import { UI_Z_INDEX } from '@/lib/uiZIndex'
+import { resolveDocumentSourceFileUrl } from '@/lib/documentSource'
 
 import Editor from '@/components/Workbench/Editor'
 
@@ -27,6 +28,7 @@ type Document = {
     id: number
     docType: string
     originalFileUrl: string
+    scopedFileUrl?: string | null
     translatedFileUrl?: string | null
     translatedText: string | null
     externalTranslationUrl?: string | null
@@ -247,6 +249,10 @@ export default function Workbench({ order }: { order: Order }) {
     const addDocInputRef = useRef<HTMLInputElement>(null)
 
     const selectedDoc = order.documents.find((d) => d.id === selectedDocId)
+    const selectedSourceFileUrl = useMemo(
+        () => resolveDocumentSourceFileUrl(selectedDoc),
+        [selectedDoc],
+    )
     const deliveryStatusRegistry = useMemo(
         () => readDocumentDeliveryStatusRegistry((order.metadata ?? {}) as Record<string, unknown>),
         [order.metadata],
@@ -468,7 +474,7 @@ export default function Workbench({ order }: { order: Order }) {
 
     const handleOpenIAPromobiModal = () => {
         if (!selectedDoc) return
-        if (!selectedDoc.originalFileUrl) {
+        if (!selectedSourceFileUrl) {
             alert('Documento original indisponível.')
             return
         }
@@ -993,7 +999,7 @@ export default function Workbench({ order }: { order: Order }) {
                     <Editor
                         content={editorContent}
                         setContent={setEditorContent}
-                        pdfUrl={selectedDoc.originalFileUrl}
+                        pdfUrl={selectedSourceFileUrl ?? undefined}
                         onSave={handleSave}
                         onPreviewKit={handlePreviewKit}
                         isPreviewingKit={isPreviewingKit}

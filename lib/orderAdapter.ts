@@ -24,6 +24,8 @@ export interface NormalizedOrder {
     finalPaidAmount?: number | null;
     paymentMethod?: string | null;
     extraDiscount?: number | null;
+    dueDate?: string | null;
+    paidAt?: string | null;
     sourceLanguage?: string | null;
 }
 
@@ -84,6 +86,7 @@ export function normalizeOrder(order: any): NormalizedOrder {
             totalPages: typeof doc.totalPages === 'number' ? doc.totalPages : null,
             excludedFromScope: doc.excludedFromScope === true,
             approvedKitUrl: typeof doc.approvedKitUrl === 'string' ? doc.approvedKitUrl : null,
+            scopedFileUrl: typeof doc.scopedFileUrl === 'string' ? doc.scopedFileUrl : null,
         }))
         : [];
 
@@ -108,6 +111,8 @@ export function normalizeOrder(order: any): NormalizedOrder {
         finalPaidAmount: typeof order.finalPaidAmount === 'number' ? order.finalPaidAmount : null,
         paymentMethod: order.paymentMethod ? String(order.paymentMethod) : null,
         extraDiscount: typeof order.extraDiscount === 'number' ? order.extraDiscount : null,
+        dueDate: order.dueDate ? (order.dueDate instanceof Date ? order.dueDate : new Date(order.dueDate)).toISOString() : null,
+        paidAt: order.paidAt ? (order.paidAt instanceof Date ? order.paidAt : new Date(order.paidAt)).toISOString() : null,
         sourceLanguage: order.sourceLanguage ? String(order.sourceLanguage) : null,
     };
 }

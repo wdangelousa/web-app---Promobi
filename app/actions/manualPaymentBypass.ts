@@ -3,7 +3,11 @@
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/app/actions/auth'
+import { getGlobalSettings } from '@/app/actions/settings'
+import { calculateDueDate } from '@/lib/deadlineCalculator'
+import { materializeScopedDocuments } from '@/lib/scopeMaterialization'
 import { parseOrderMetadata } from '@/lib/translationArtifactSource'
+import { triggerAnthropicTranslationForOrder } from '@/lib/orderTranslationDispatch'
 import {
     applyManualPayment,
     isPreProductionOperationalStatus,
@@ -16,11 +20,15 @@ import {
     type ProductionReleasePolicy,
 } from '@/lib/manualPayment'
 
+// Canonical translation dispatch remains the Anthropic mirror-HTML route:
+// /api/translate/claude (invoked through the shared orderTranslationDispatch helper).
+
 interface RegisterManualPaymentPayload {
     amountReceived: number
     paymentDate: string
     paymentMethod?: string | null
     notes?: string | null
+    skipAutoTranslate?: boolean
 }
 
 interface RegisterManualPaymentResult {
@@ -53,128 +61,6 @@ function sanitizeOptionalText(value: unknown): string | null {
     return trimmed.length > 0 ? trimmed : null
 }
 
-function resolveApiBaseUrl(): string {
-    const envBase =
-        process.env.INTERNAL_APP_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-
-    return (envBase || 'http://localhost:3000').replace(/\/$/, '')
-}
-
-async function triggerAnthropicTranslationForOrder(orderId: number): Promise<{
-    success: boolean
-    translatedDocs: number
-    attemptedDocs: number
-    errorCount: number
-}> {
-    const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: {
-            id: true,
-            documents: {
-                select: {
-                    id: true,
-                    originalFileUrl: true,
-                    translatedText: true,
-                    externalTranslationUrl: true,
-                    sourceLanguage: true,
-                },
-                orderBy: { id: 'asc' },
-            },
-        },
-    })
-
-    if (!order) {
-        return { success: false, translatedDocs: 0, attemptedDocs: 0, errorCount: 1 }
-    }
-
-    const apiBase = resolveApiBaseUrl()
-    // Canonical pipeline — always use the Anthropic mirror-HTML route.
-    const translatePath = '/api/translate/claude'
-    const endpoint = `${apiBase}${translatePath}`
-
-    const eligibleDocs = order.documents.filter((doc) => {
-        if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') return false
-        if (doc.externalTranslationUrl) return false
-        if (doc.translatedText && doc.translatedText.trim().length > 0) return false
-        return true
-    })
-
-    let translatedDocs = 0
-    let errorCount = 0
-
-    for (const doc of eligibleDocs) {
-        try {
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fileUrl: doc.originalFileUrl,
-                    documentId: doc.id,
-                    orderId,
-                    sourceLanguage: doc.sourceLanguage || 'pt',
-                }),
-            })
-
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || typeof data?.translatedText !== 'string' || data.translatedText.trim().length === 0) {
-                errorCount += 1
-                await prisma.document.update({
-                    where: { id: doc.id },
-                    data: { translation_status: 'error' },
-                })
-                continue
-            }
-
-            await prisma.document.update({
-                where: { id: doc.id },
-                data: {
-                    translatedText: data.translatedText,
-                    translation_status: 'ai_draft',
-                },
-            })
-            translatedDocs += 1
-        } catch (error) {
-            console.error('[registerManualPayment] Anthropic dispatch failed for doc', doc.id, error)
-            errorCount += 1
-            await prisma.document.update({
-                where: { id: doc.id },
-                data: { translation_status: 'error' },
-            })
-        }
-    }
-
-    const readyDocCount = await prisma.document.count({
-        where: {
-            orderId,
-            OR: [
-                { externalTranslationUrl: { not: null } },
-                { translatedText: { not: null } },
-            ],
-        },
-    })
-
-    if (readyDocCount > 0) {
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'READY_FOR_REVIEW' as any },
-        })
-    } else if (eligibleDocs.length > 0) {
-        await prisma.order.update({
-            where: { id: orderId },
-            data: { status: 'MANUAL_TRANSLATION_NEEDED' as any },
-        })
-    }
-
-    return {
-        success: readyDocCount > 0,
-        translatedDocs,
-        attemptedDocs: eligibleDocs.length,
-        errorCount,
-    }
-}
-
 export async function registerManualPayment(
     orderId: number,
     payload: RegisterManualPaymentPayload,
@@ -202,9 +88,21 @@ export async function registerManualPayment(
                 status: true,
                 totalAmount: true,
                 hasTranslation: true,
+                urgency: true,
                 paymentMethod: true,
                 metadata: true,
                 finalPaidAmount: true,
+                documents: {
+                    select: {
+                        id: true,
+                        orderId: true,
+                        originalFileUrl: true,
+                        billablePages: true,
+                        totalPages: true,
+                        excludedFromScope: true,
+                    },
+                    orderBy: { id: 'asc' },
+                },
             },
         })
 
@@ -263,6 +161,41 @@ export async function registerManualPayment(
             productionReleasePolicy: releasePolicy,
         }
 
+        let paidAtValue: Date | undefined
+        let dueDateValue: Date | undefined
+        if (canStartWorkflow) {
+            paidAtValue = new Date()
+
+            try {
+                const docsForScoping = order.documents.map((d) => ({
+                    id: d.id,
+                    orderId: d.orderId ?? orderId,
+                    originalFileUrl: d.originalFileUrl,
+                    billablePages: d.billablePages,
+                    totalPages: d.totalPages,
+                    excludedFromScope: d.excludedFromScope ?? false,
+                }))
+                const scopeResults = await materializeScopedDocuments(orderId, docsForScoping, metadata)
+                for (const result of scopeResults) {
+                    if (result.action === 'scoped' && result.scopedFileUrl) {
+                        await prisma.document.update({
+                            where: { id: result.documentId },
+                            data: { scopedFileUrl: result.scopedFileUrl },
+                        })
+                    }
+                }
+            } catch (error) {
+                console.error('[registerManualPayment] scope materialization failed', error)
+            }
+
+            const settings = await getGlobalSettings()
+            const deadline = calculateDueDate(paidAtValue, order.urgency, {
+                deadlineNormal: settings.deadlineNormal,
+                deadlineUrgent: settings.deadlineUrgent,
+            })
+            dueDateValue = deadline.dueDate
+        }
+
         await prisma.order.update({
             where: { id: orderId },
             data: {
@@ -270,6 +203,8 @@ export async function registerManualPayment(
                 paymentMethod,
                 finalPaidAmount: nextSnapshot.amountReceived,
                 metadata: JSON.stringify(nextMetadata),
+                ...(paidAtValue ? { paidAt: paidAtValue } : {}),
+                ...(dueDateValue ? { dueDate: dueDateValue } : {}),
             },
         })
 
@@ -282,7 +217,7 @@ export async function registerManualPayment(
             }
             | null = null
 
-        if (canStartWorkflow && isPreProductionOperationalStatus(order.status)) {
+        if (canStartWorkflow && isPreProductionOperationalStatus(order.status) && payload?.skipAutoTranslate !== true) {
             anthropicResult = await triggerAnthropicTranslationForOrder(orderId)
         }
 

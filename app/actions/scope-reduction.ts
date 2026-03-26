@@ -146,7 +146,6 @@ export async function applyScopeReduction(
             select: {
                 totalAmount: true,
                 extraDiscount: true,
-                finalPaidAmount: true,
                 metadata: true,
                 status: true,
             },
@@ -193,6 +192,11 @@ export async function applyScopeReduction(
             meta.scopeAdjustments = []
         }
         meta.scopeAdjustments.push(adjustmentEntry)
+        meta.scopeReductionSummary = {
+            totalCreditApplied: newExtraDiscount,
+            effectiveTotal: newEffectiveTotal,
+            updatedAt: adjustmentEntry.performedAt,
+        }
 
         // 7. Apply changes in transaction
         await prisma.$transaction([
@@ -206,9 +210,13 @@ export async function applyScopeReduction(
                 where: { id: orderId },
                 data: {
                     extraDiscount: newExtraDiscount,
-                    finalPaidAmount: newEffectiveTotal,
                     metadata: JSON.stringify(meta),
                 },
+            }),
+            // Invalidar todos os scoped PDFs do pedido (escopo mudou)
+            prisma.document.updateMany({
+                where: { orderId, scopedFileUrl: { not: null } },
+                data: { scopedFileUrl: null },
             }),
         ])
 

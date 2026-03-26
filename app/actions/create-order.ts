@@ -4,6 +4,7 @@ import { PaymentProvider } from '@prisma/client'
 import prisma from '../../lib/prisma'
 import { getGlobalSettings } from './settings'
 import { calculateCanonicalProposalTotal, sanitizeProposalBreakdown } from '../../lib/proposalPricingSummary'
+import { calculateOrderDueDate } from '../../lib/orderDueDate'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type UploadedFile = {
@@ -53,6 +54,7 @@ type CreateOrderInput = {
     status?: any;
     sourceLanguage?: 'PT_BR' | 'ES';
     extraDiscount?: number;
+    dueDate?: string | null;
 }
 
 // ── Scope helper ───────────────────────────────────────────────────────────────
@@ -82,6 +84,13 @@ export async function createOrder(data: CreateOrderInput) {
         const sanitizedBreakdown = sanitizeProposalBreakdown(data.breakdown)
 
         const settings = await getGlobalSettings();
+        const dueDateCandidate = data.dueDate
+            ? new Date(data.dueDate)
+            : calculateOrderDueDate(new Date(), data.urgency, settings)
+        const dueDate =
+            dueDateCandidate && !Number.isNaN(dueDateCandidate.getTime())
+                ? dueDateCandidate
+                : null
         const PRICE_PER_PAGE = settings.basePrice || 9.00;
         const NOTARY_FEE_PER_DOC = settings.notaryFee || 25.00;
 
@@ -150,12 +159,14 @@ export async function createOrder(data: CreateOrderInput) {
                     hasTranslation,
                     hasNotary,
                     sourceLanguage: data.sourceLanguage || 'PT_BR',
+                    dueDate: dueDate ?? undefined,
                     metadata: JSON.stringify({
                         documents: data.documents,
                         breakdown: sanitizedBreakdown,
                         urgency: data.urgency,
                         serviceType: data.serviceType,
                         sourceLanguage: data.sourceLanguage,
+                        dueDate: dueDate?.toISOString() ?? null,
                     }),
                     discountPercentage,
                     discountAmount,
@@ -192,6 +203,13 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
         const sanitizedBreakdown = sanitizeProposalBreakdown(data.breakdown)
 
         const settings = await getGlobalSettings();
+        const dueDateCandidate = data.dueDate
+            ? new Date(data.dueDate)
+            : calculateOrderDueDate(new Date(), data.urgency, settings)
+        const dueDate =
+            dueDateCandidate && !Number.isNaN(dueDateCandidate.getTime())
+                ? dueDateCandidate
+                : null
         const PRICE_PER_PAGE = settings.basePrice || 9.00;
         const NOTARY_FEE_PER_DOC = settings.notaryFee || 25.00;
 
@@ -257,12 +275,14 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     urgency: data.urgency,
                     hasTranslation,
                     hasNotary,
+                    dueDate: dueDate ?? undefined,
                     metadata: JSON.stringify({
                         documents: data.documents,
                         breakdown: sanitizedBreakdown,
                         urgency: data.urgency,
                         serviceType: data.serviceType,
                         sourceLanguage: data.sourceLanguage,
+                        dueDate: dueDate?.toISOString() ?? null,
                     }),
                     discountPercentage,
                     discountAmount,

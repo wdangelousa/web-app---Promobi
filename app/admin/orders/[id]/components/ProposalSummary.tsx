@@ -8,6 +8,7 @@ interface ProposalSummaryProps {
     status: string;
     totalAmount: number;
     createdAt: string;
+    dueDate?: string | null;
     documents: { billablePages?: number | null; totalPages?: number | null; excludedFromScope?: boolean }[];
     metadata: any;
     finalPaidAmount?: number | null;
@@ -67,6 +68,14 @@ export default function ProposalSummary({ order }: ProposalSummaryProps) {
     : '—';
 
   const statusLabel = STATUS_LABELS[order.status] ?? order.status;
+  const dueDateLabel =
+    typeof order.dueDate === 'string' && order.dueDate.trim().length > 0
+      ? new Date(order.dueDate).toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        })
+      : '—';
   const paymentLabel = order.paymentMethod
     ? PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod
     : '—';
@@ -98,6 +107,10 @@ export default function ProposalSummary({ order }: ProposalSummaryProps) {
         <div>
           <span className="text-gray-400">Data</span>
           <p className="font-semibold">{proposalDate}</p>
+        </div>
+        <div>
+          <span className="text-gray-400">Prazo</span>
+          <p className="font-semibold">{dueDateLabel}</p>
         </div>
         <div>
           <span className="text-gray-400">Documentos</span>

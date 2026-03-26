@@ -20,6 +20,7 @@ import {
   upsertDeliveryArtifactRegistryRecord,
 } from "@/lib/translationArtifactSource";
 import { resolveKitSetup } from "@/services/structuredKitSetup";
+import { resolveDocumentSourceFileUrl } from "@/lib/documentSource";
 
 interface DeliveryKitResult {
   success: boolean;
@@ -110,6 +111,7 @@ export async function generateDeliveryKit(
     }
 
     const doc = order.documents[0];
+    const sourceFileUrl = resolveDocumentSourceFileUrl(doc);
     const logPrefix = `[generateDeliveryKit] Order #${orderId} Doc #${documentId}`;
     const parsedOrderMetadata = parseOrderMetadata(
       order.metadata as string | null | undefined,
@@ -285,7 +287,7 @@ export async function generateDeliveryKit(
     );
 
     const kitSetup = await resolveKitSetup({
-      originalFileUrl: doc.originalFileUrl,
+      originalFileUrl: sourceFileUrl,
       exactNameOnDoc: doc.exactNameOnDoc,
       documentId: doc.id,
       parsedOrderMetadata,
@@ -310,7 +312,7 @@ export async function generateDeliveryKit(
         error:
           `Original source file could not be fetched for document #${documentId}. ` +
           `Kit assembly requires the original to be appended as Part 3. ` +
-          `Verify that originalFileUrl is set and accessible.`,
+          `Verify that scopedFileUrl || originalFileUrl is set and accessible.`,
       };
     }
 
@@ -319,7 +321,7 @@ export async function generateDeliveryKit(
       [doc.exactNameOnDoc, doc.docType].filter(Boolean).join(" ").trim() || undefined;
 
     const classification = classifyDocument({
-      fileUrl: doc.originalFileUrl ?? undefined,
+      fileUrl: sourceFileUrl ?? undefined,
       documentLabel: documentLabelHint,
       translatedText: doc.translatedText,
       sourceLanguage: doc.sourceLanguage ?? undefined,
@@ -367,7 +369,7 @@ export async function generateDeliveryKit(
           sourceArtifactType,
           sourcePageCountStrategy,
           groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
-          originalFileUrl: doc.originalFileUrl,
+          originalFileUrl: sourceFileUrl,
           originalContentType: contentType,
           documentFamily: "external_translation",
           rendererName: "externalPdfOverride",
@@ -471,7 +473,7 @@ export async function generateDeliveryKit(
           sourceArtifactType,
           sourcePageCountStrategy,
           groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
-          originalFileUrl: doc.originalFileUrl,
+          originalFileUrl: sourceFileUrl,
           originalContentType: contentType,
           documentFamily: classification.documentType,
           rendererName: 'mirror_html',

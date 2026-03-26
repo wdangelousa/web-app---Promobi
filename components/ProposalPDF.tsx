@@ -6,6 +6,7 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary';
+import { resolveStoredOrCalculatedDueDate } from '@/lib/orderDueDate';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -331,6 +332,13 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
   const totalAmt = financialSummary.totalPayable;
   const clientName = order?.user?.fullName || order?.clientName || 'Cliente Promobidocs';
   const clientEmail = order?.user?.email || order?.clientEmail || '';
+  const resolvedDueDate = resolveStoredOrCalculatedDueDate({
+    dueDate: order?.dueDate ?? meta?.dueDate ?? null,
+    createdAt: order?.createdAt,
+    urgency: order?.urgency,
+    settings: globalSettings,
+  });
+  const dueDateLabel = resolvedDueDate ? safeDate(resolvedDueDate) : null;
 
   // Total included pages
   const totalPages = docs.reduce((s: number, d: any) => {
@@ -523,7 +531,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalLabel}>INVESTIMENTO TOTAL</Text>
                     <Text style={S.totalName}>{clientName}</Text>
                     <Text style={S.totalMeta}>
-                      {totalDocs} docs · {totalPages} pags · Traducao Certificada USCIS
+                      {totalDocs} docs · {totalPages} pags · Traducao Certificada USCIS{dueDateLabel ? ` · Prazo ${dueDateLabel}` : ''}
                     </Text>
                   </View>
                   <View style={S.totalRight}>

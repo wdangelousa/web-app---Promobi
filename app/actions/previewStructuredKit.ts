@@ -48,6 +48,7 @@ import {
 } from '@/lib/translationArtifactSource';
 import { resolveKitSetup } from '@/services/structuredKitSetup';
 import { getCurrentUser } from '@/app/actions/auth';
+import { resolveDocumentSourceFileUrl } from '@/lib/documentSource';
 
 interface PreviewPageParityDecisionInput {
   mode: PageParityMode;
@@ -268,6 +269,7 @@ export async function previewStructuredKit(
         translatedFileUrl: true,
         externalTranslationUrl: true,
         originalFileUrl: true,
+        scopedFileUrl: true,
         sourceLanguage: true,
         docType: true,
         exactNameOnDoc: true,
@@ -288,6 +290,7 @@ export async function previewStructuredKit(
       translatedText: doc.translatedText,
       translatedFileUrl: doc.translatedFileUrl,
     });
+    const sourceFileUrl = resolveDocumentSourceFileUrl(doc);
 
     console.log(
       `${logPrefix} — translation artifact selection: ${JSON.stringify({
@@ -368,7 +371,7 @@ export async function previewStructuredKit(
     // ── Steps 1–2: Fetch file, detect orientation, resolve page count ──────────
 
     const kitSetup = await resolveKitSetup({
-      originalFileUrl: doc.originalFileUrl,
+      originalFileUrl: sourceFileUrl,
       exactNameOnDoc: doc.exactNameOnDoc,
       documentId: doc.id,
       parsedOrderMetadata,
@@ -393,7 +396,7 @@ export async function previewStructuredKit(
         error:
           `Original source file could not be fetched for document #${documentId}. ` +
           `Kit assembly requires the original to be appended as Part 3. ` +
-          `Verify that originalFileUrl is set and accessible.`,
+          `Verify that scopedFileUrl || originalFileUrl is set and accessible.`,
       };
     }
 
@@ -416,7 +419,7 @@ export async function previewStructuredKit(
         sourceArtifactType,
         sourcePageCountStrategy,
         groupedSourceImageCountHint,
-        originalFileUrl: doc.originalFileUrl,
+        originalFileUrl: sourceFileUrl,
         originalContentType: contentType,
         orientation: detectedOrientation,
         pageParityDecision: effectivePageParityDecision,
@@ -468,7 +471,7 @@ export async function previewStructuredKit(
       [doc.exactNameOnDoc, doc.docType].filter(Boolean).join(' ').trim() || undefined;
 
     const classification = classifyDocument({
-      fileUrl: doc.originalFileUrl ?? undefined,
+      fileUrl: sourceFileUrl ?? undefined,
       documentLabel: documentLabelHint,
       translatedText: effectiveTranslatedText ?? '',
       sourceLanguage: doc.sourceLanguage ?? undefined,
@@ -562,7 +565,7 @@ export async function previewStructuredKit(
       sourceArtifactType,
       sourcePageCountStrategy,
       groupedSourceImageCount: groupedSourceImageCountHint ?? undefined,
-      originalFileUrl: doc.originalFileUrl,
+      originalFileUrl: sourceFileUrl,
       originalContentType: contentType,
       orientation: detectedOrientation === 'landscape' ? 'landscape' : undefined,
       documentFamily: classification.documentType,

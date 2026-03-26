@@ -9,8 +9,28 @@ import { getCurrentUser } from '@/app/actions/auth'
 import { Role } from '@prisma/client'
 import { normalizeOrder } from '@/lib/orderAdapter'
 import { getAdminOrderStatusVisual } from '@/lib/adminOrderStatus'
+import { getDeadlineStatus } from '@/lib/deadlineCalculator'
 
 export const dynamic = 'force-dynamic'
+
+const DEADLINE_BADGE = {
+    overdue: {
+        label: 'Atrasado',
+        className: 'bg-red-100 text-red-800 border-red-200 animate-pulse',
+    },
+    due_today: {
+        label: 'Vence hoje',
+        className: 'bg-orange-100 text-orange-800 border-orange-200',
+    },
+    due_tomorrow: {
+        label: 'Vence amanhã',
+        className: 'bg-amber-50 text-amber-800 border-amber-200',
+    },
+    upcoming: {
+        label: 'Prazo ativo',
+        className: 'bg-blue-50 text-blue-800 border-blue-200',
+    },
+} as const
 
 export default async function OrderWorkbenchPage({ params }: { params: Promise<{ id: string }> }) {
     const currentUser = await getCurrentUser()
@@ -54,6 +74,7 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                         totalPages: true,
                         excludedFromScope: true,
                         approvedKitUrl: true,
+                        scopedFileUrl: true,
                     },
                     orderBy: { id: 'asc' }, // P6: deterministic order (matches workbench/[orderId]/page.tsx)
                 }
@@ -69,6 +90,11 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
         throw err // Let nextjs error boundary handle it
     }
     const statusVisual = getAdminOrderStatusVisual(sanitizedOrder.status)
+    const deadlineStatus = sanitizedOrder.dueDate ? getDeadlineStatus(new Date(sanitizedOrder.dueDate)) : null
+    const deadlineBadge = deadlineStatus ? DEADLINE_BADGE[deadlineStatus] : null
+    const deadlineDateLabel = sanitizedOrder.dueDate
+        ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(sanitizedOrder.dueDate))
+        : null
 
     return (
         <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
@@ -107,6 +133,11 @@ export default async function OrderWorkbenchPage({ params }: { params: Promise<{
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold border tracking-wide ${statusVisual.badgeClass}`}>
                         {statusVisual.label}
                     </span>
+                    {deadlineBadge && (
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold border tracking-wide ${deadlineBadge.className}`}>
+                            {deadlineStatus === 'upcoming' && deadlineDateLabel ? deadlineDateLabel : deadlineBadge.label}
+                        </span>
+                    )}
                 </div>
             </div>
 

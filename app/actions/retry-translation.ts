@@ -2,9 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { triggerAnthropicTranslationForOrder } from '@/lib/orderTranslationDispatch'
 
 export async function retryTranslation(orderId: number) {
     try {
@@ -21,21 +19,10 @@ export async function retryTranslation(orderId: number) {
             }
         })
 
-        console.log(`[retryTranslation] Triggering translation for order #${orderId}`)
-
-        const edgeFnUrl = `${SUPABASE_URL}/functions/v1/translate-order`
-        const res = await fetch(edgeFnUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${SUPABASE_ANON}`,
-            },
-            body: JSON.stringify({ orderId }),
-        })
-
-        if (!res.ok) {
-            const txt = await res.text().catch(() => '')
-            throw new Error(`Translation edge function returned ${res.status}: ${txt}`)
+        console.log(`[retryTranslation] Triggering Anthropic translation for order #${orderId}`)
+        const result = await triggerAnthropicTranslationForOrder(orderId)
+        if (!result.success && result.attemptedDocs === 0) {
+            throw new Error('Nenhum documento elegível para reprocessamento.')
         }
 
         revalidatePath(`/admin/orders/${orderId}`)

@@ -29,14 +29,15 @@ BEGIN
     END IF;
 
     -- Update status back to PENDING (Draft/Internal Quoting phase)
-    -- Also clear delivery fields to ensure a clean slate
+    -- Preserve commercial pricing + financial ledger metadata.
     UPDATE "Order"
     SET 
         status = 'PENDING',
         "deliveryUrl" = NULL,
-        "finalPaidAmount" = NULL,
-        "extraDiscount" = 0,
-        "sentAt" = NULL
+        "sentAt" = NULL,
+        "paidAt" = NULL,
+        "dueDate" = NULL,
+        "cancellation_reason" = NULL
     WHERE id = p_order_id;
 
     -- Log transition (using a simple RAISE NOTICE for now, 

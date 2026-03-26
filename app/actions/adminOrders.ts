@@ -280,15 +280,35 @@ export async function updateCustomerDetails(userId: number, data: { fullName?: s
 }
 export async function reopenOrder(orderId: number) {
     try {
-        await prisma.order.update({
+        const existingOrder = await prisma.order.findUnique({
             where: { id: orderId },
-            data: {
-                status: 'AWAITING_VERIFICATION' as any,
-                deliveryUrl: null,
-                finalPaidAmount: null,
-                extraDiscount: 0,
-            }
+            select: { metadata: true },
         })
+
+        const metadata = parseOrderMetadata(existingOrder?.metadata as string | null | undefined)
+        const nextMetadata = { ...metadata }
+        delete (nextMetadata as any).delivery
+        delete (nextMetadata as any).manualCompletion
+        delete (nextMetadata as any).cancellation
+
+        await prisma.$transaction([
+            prisma.order.update({
+                where: { id: orderId },
+                data: {
+                    status: 'PENDING' as any,
+                    deliveryUrl: null,
+                    sentAt: null,
+                    paidAt: null,
+                    dueDate: null,
+                    cancellation_reason: null,
+                    metadata: JSON.stringify(nextMetadata),
+                }
+            }),
+            prisma.document.updateMany({
+                where: { orderId },
+                data: { scopedFileUrl: null },
+            }),
+        ])
 
         revalidatePath('/admin/orders')
         revalidatePath(`/admin/orders/${orderId}`)

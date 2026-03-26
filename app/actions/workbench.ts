@@ -38,6 +38,7 @@ import {
   resolveSourcePageCount,
   type SourcePageCountResolution,
 } from '@/lib/sourcePageCountResolver'
+import { resolveDocumentSourceFileUrl } from '@/lib/documentSource'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -410,6 +411,7 @@ export async function saveAndGenerateIAPromobiTranslation(
         id: true,
         orderId: true,
         originalFileUrl: true,
+        scopedFileUrl: true,
         sourceLanguage: true,
         externalTranslationUrl: true,
         translation_status: true,
@@ -502,7 +504,8 @@ export async function saveAndGenerateIAPromobiTranslation(
       }
     }
 
-    if (!doc.originalFileUrl || doc.originalFileUrl === 'PENDING_UPLOAD') {
+    const sourceFileUrl = resolveDocumentSourceFileUrl(doc)
+    if (!sourceFileUrl) {
       return {
         success: false,
         error: 'Documento original indisponível.',
@@ -553,7 +556,7 @@ export async function saveAndGenerateIAPromobiTranslation(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fileUrl: doc.originalFileUrl,
+        fileUrl: sourceFileUrl,
         documentId: docId,
         orderId,
         sourceLanguage: doc.sourceLanguage || 'pt',
@@ -747,6 +750,7 @@ export async function releaseToClient(
             exactNameOnDoc: true,
             docType: true,
             originalFileUrl: true,
+            scopedFileUrl: true,
             translatedText: true,
             translatedFileUrl: true,
             externalTranslationUrl: true,
@@ -917,8 +921,9 @@ export async function releaseToClient(
 
       const documentLabelHint =
         [d.exactNameOnDoc, d.docType].filter(Boolean).join(' ').trim() || undefined
+      const sourceFileUrl = resolveDocumentSourceFileUrl(d)
       const classification = classifyDocument({
-        fileUrl: d.originalFileUrl ?? undefined,
+        fileUrl: sourceFileUrl ?? undefined,
         documentLabel: documentLabelHint,
         translatedText: d.translatedText ?? undefined,
         sourceLanguage: d.sourceLanguage ?? undefined,
@@ -926,7 +931,7 @@ export async function releaseToClient(
       const family = detectDocumentFamily({
         documentType: classification.documentType,
         documentLabel: documentLabelHint,
-        fileUrl: d.originalFileUrl,
+        fileUrl: sourceFileUrl,
         translatedText: d.translatedText,
       }).family
       const rendererUsed = isSupportedStructuredDocumentType(classification.documentType)
@@ -941,12 +946,12 @@ export async function releaseToClient(
       const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
         orderMetadata: parsedOrderMetadata,
         documentId: d.id,
-        originalFileUrl: d.originalFileUrl,
+        originalFileUrl: sourceFileUrl,
         exactNameOnDoc: d.exactNameOnDoc ?? null,
       })
-      const sourcePageResolution = d.originalFileUrl
+      const sourcePageResolution = sourceFileUrl
         ? await resolveSourcePageCountFromUrl({
-            fileUrl: d.originalFileUrl,
+            fileUrl: sourceFileUrl,
             groupedSourceImageCountHint,
           })
         : {
@@ -1403,4 +1408,22 @@ async function sendDeliveryEmail(
   const resendMessageId = data?.id ?? null
   console.log(`[sendDeliveryEmail] ✅ Enviado! Resend ID: ${resendMessageId}`, JSON.stringify(data, null, 2))
   return { resendMessageId, recipients }
+}
+
+export async function approveDocumentQuick(
+  docId: number,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return { success: false, error: 'Não autorizado.' }
+
+    await prisma.document.update({
+      where: { id: docId },
+      data: { translation_status: 'approved', isReviewed: true },
+    })
+
+    return { success: true }
+  } catch (err: any) {
+    return { success: false, error: err.message ?? 'Erro ao aprovar.' }
+  }
 }

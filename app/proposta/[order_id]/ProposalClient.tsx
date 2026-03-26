@@ -11,8 +11,19 @@ import { getLogoBase64 } from '@/app/actions/get-logo-base64'
 import { generatePremiumProposalPDF } from '@/app/actions/generate-proposal-pdf'
 import { useEffect } from 'react'
 import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary'
+import { formatDueDateLabel, resolveStoredOrCalculatedDueDate } from '@/lib/orderDueDate'
 
-export default function ProposalClient({ order, globalSettings }: { order: any, globalSettings: any }) {
+export default function ProposalClient({
+    order,
+    globalSettings,
+    deadlineNormal,
+    deadlineUrgent,
+}: {
+    order: any
+    globalSettings: any
+    deadlineNormal?: number
+    deadlineUrgent?: number
+}) {
     const metadata = order.metadata ? JSON.parse(order.metadata) : null;
 
     const [expandedDocs, setExpandedDocs] = useState<number[]>(
@@ -35,12 +46,25 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         metadata: order.metadata,
     })
     const { toast } = useUIFeedback()
+    const dueDate = resolveStoredOrCalculatedDueDate({
+        dueDate: order.dueDate ?? metadata?.dueDate ?? null,
+        createdAt: order.createdAt,
+        urgency: order.urgency,
+        settings: globalSettings,
+    })
+    const dueDateLabel = formatDueDateLabel(dueDate)
 
     const urgencyLabels: Record<string, string> = {
-        standard: 'Standard (4-10 dias)',
-        urgent: 'Urgente (48h)',
-        flash: 'Flash (24h)'
+        standard: `Standard (${deadlineNormal || 10} dias úteis)`,
+        urgent: `Urgente (${deadlineUrgent || 2} dias úteis)`,
+        flash: 'Flash (1 dia útil)'
     }
+    const estimatedBusinessDays =
+        order.urgency === 'urgent'
+            ? (deadlineUrgent || 2)
+            : order.urgency === 'flash'
+                ? 1
+                : (deadlineNormal || 10)
 
     const urgencyColors: Record<string, string> = {
         standard: 'bg-blue-100 text-blue-800',
@@ -205,6 +229,11 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             <div className={`inline-block px-3 py-1 rounded-md text-sm font-bold ${urgencyColors[order.urgency] || 'bg-slate-200'}`}>
                                 {urgencyLabels[order.urgency] || order.urgency}
                             </div>
+                            {dueDateLabel && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Entrega estimada ate <span className="font-bold text-slate-700">{dueDateLabel}</span>
+                                </p>
+                            )}
                         </div>
 
                         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -388,6 +417,10 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                             ${financialSummary.totalPayable.toFixed(2)}
                         </div>
                     </div>
+
+                    <p className="relative z-10 text-sm text-slate-300 leading-relaxed">
+                        Prazo estimado de entrega: {estimatedBusinessDays} dia{estimatedBusinessDays === 1 ? '' : 's'} úteis após confirmação do pagamento.
+                    </p>
                 </section>
 
                 {/* Pagamento — only shown when awaiting payment */}

@@ -9,18 +9,19 @@
 //   • Walter (Zelle)     → confirmPayment(orderId, 'ZELLE', { ref, confirmedBy })
 //
 // Always does the same thing:
-//   1. Mark order TRANSLATING + record payment details
-//   2. Trigger translation edge function (non-blocking, Anthropic mirror HTML)
+//   1. Register the settlement through the shared manual-payment workflow
+//   2. Trigger post-payment auto translation when production is released
 //   3. Notify Isabele (badge counter + email)
 //   4. Send confirmation email to client
 
 import prisma from '@/lib/prisma'
 import { Resend } from 'resend'
-import { getCurrentUser } from '@/app/actions/auth'
+import { autoTranslateOrder } from '@/app/actions/autoTranslateOrder'
+import { registerManualPayment } from '@/app/actions/manualPaymentBypass'
+import { readFinancialLedger, roundMoney } from '@/lib/manualPayment'
+import { parseOrderMetadata } from '@/lib/translationArtifactSource'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,9 @@ export interface ConfirmPaymentResult {
   success: boolean
   orderId?: number
   error?: string
+  financialStatus?: string
+  operationalStatus?: string
+  productionReleased?: boolean
 }
 
 // ─── Main action ──────────────────────────────────────────────────────────────
@@ -48,7 +52,6 @@ export async function confirmPayment(
 ): Promise<ConfirmPaymentResult> {
 
   try {
-    // 1. Load order with user and documents
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -61,57 +64,118 @@ export async function confirmPayment(
       return { success: false, error: `Pedido #${orderId} não encontrado.` }
     }
 
-    // Guard: don't double-process
-    const terminalStatuses = ['READY_FOR_REVIEW', 'COMPLETED', 'DELIVERED', 'CANCELLED'];
-    if (terminalStatuses.includes(order.status)) {
-      return { success: false, error: `Pedido #${orderId} já está em status finalizado (${order.status}).` }
+    if (order.status === 'CANCELLED') {
+      return { success: false, error: `Pedido #${orderId} está cancelado.` }
     }
 
-    // 2. Parse existing metadata and add payment confirmation
-    let meta: Record<string, any> = {}
-    try { meta = typeof order.metadata === 'string' ? JSON.parse(order.metadata) : (order.metadata ?? {}) }
-    catch { /* keep empty */ }
+    const metadata = parseOrderMetadata(order.metadata as string | null | undefined)
+    const ledger = readFinancialLedger(
+      metadata,
+      order.totalAmount ?? 0,
+      typeof order.finalPaidAmount === 'number' ? order.finalPaidAmount : null,
+    )
+    const remainingBalance = roundMoney(Math.max((order.totalAmount ?? 0) - ledger.amountReceived, 0))
 
+    if (remainingBalance <= 0) {
+      return { success: false, error: `Pedido #${orderId} já está totalmente liquidado.` }
+    }
+
+    const confirmedAt = zelleDetails?.confirmedAt ?? new Date().toISOString()
+    const noteParts = [
+      `Auto-confirmed via ${method}`,
+      method === 'ZELLE' && zelleDetails?.reference ? `reference=${zelleDetails.reference}` : null,
+      method === 'ZELLE' && zelleDetails?.confirmedBy ? `confirmedBy=${zelleDetails.confirmedBy}` : null,
+      method === 'ZELLE' && zelleDetails?.notes ? zelleDetails.notes : null,
+    ].filter(Boolean)
+
+    const paymentResult = await registerManualPayment(orderId, {
+      amountReceived: remainingBalance,
+      paymentDate: confirmedAt,
+      paymentMethod: method,
+      notes: noteParts.join(' | ') || null,
+      skipAutoTranslate: true,
+    })
+
+    if (!paymentResult.success) {
+      return { success: false, error: paymentResult.message || 'Erro interno ao confirmar pagamento.' }
+    }
+
+    const refreshedOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        user: true,
+        documents: true,
+      },
+    })
+
+    if (!refreshedOrder) {
+      return { success: false, error: `Pedido #${orderId} não encontrado após confirmação.` }
+    }
+
+    const refreshedMetadata = parseOrderMetadata(refreshedOrder.metadata as string | null | undefined)
     const paymentRecord = {
       method,
-      confirmedAt: zelleDetails?.confirmedAt ?? new Date().toISOString(),
+      confirmedAt,
+      amountReceived: paymentResult.amountReceived ?? remainingBalance,
+      remainingBalance: paymentResult.remainingBalance ?? 0,
+      financialStatus: paymentResult.financialStatus ?? null,
+      operationalStatus: paymentResult.operationalStatus ?? refreshedOrder.status,
+      productionReleased: paymentResult.productionReleased === true,
       ...(method === 'ZELLE' && zelleDetails ? {
         zelleReference: zelleDetails.reference,
         confirmedBy: zelleDetails.confirmedBy,
         notes: zelleDetails.notes ?? null,
       } : {}),
     }
-    meta.paymentConfirmation = paymentRecord
 
-    // 3. Update order status → TRANSLATING
-    const updated = await prisma.order.update({
+    const confirmationHistory = Array.isArray(refreshedMetadata.paymentConfirmations)
+      ? [...refreshedMetadata.paymentConfirmations, paymentRecord]
+      : [paymentRecord]
+    const nextMetadata = {
+      ...refreshedMetadata,
+      paymentConfirmation: paymentRecord,
+      paymentConfirmations: confirmationHistory,
+    }
+
+    await prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: 'TRANSLATING',
-        paymentMethod: method,
-        metadata: JSON.stringify(meta),
-      },
+      data: { metadata: JSON.stringify(nextMetadata) },
     })
 
-    // 4. Trigger translation edge function (fire-and-forget, non-blocking)
-    triggerTranslation(orderId).catch(err =>
-      console.error(`[confirmPayment] Translation trigger failed for order ${orderId}:`, err)
+    if (paymentResult.productionReleased === true) {
+      autoTranslateOrder(orderId).catch(err =>
+        console.error('[confirmPayment] Auto-translate failed:', err)
+      )
+    }
+
+    notifyIsabele(refreshedOrder, method, {
+      productionReleased: paymentResult.productionReleased === true,
+      remainingBalance: paymentResult.remainingBalance ?? 0,
+      financialStatus: paymentResult.financialStatus ?? 'paid',
+    }).catch(err =>
+      console.error(`[confirmPayment] Ops notification failed:`, err)
     )
 
-    // 5. Notify Isabele
-    notifyIsabele(order, method).catch(err =>
-      console.error(`[confirmPayment] Isabele notification failed:`, err)
-    )
-
-    // 6. Confirm to client
-    if (order.user?.email) {
-      sendClientConfirmation(order).catch(err =>
+    if (refreshedOrder.user?.email) {
+      sendClientConfirmation(refreshedOrder, {
+        productionReleased: paymentResult.productionReleased === true,
+        remainingBalance: paymentResult.remainingBalance ?? 0,
+      }).catch(err =>
         console.error(`[confirmPayment] Client email failed:`, err)
       )
     }
 
-    console.log(`[confirmPayment] ✅ Order #${orderId} → TRANSLATING via ${method}`)
-    return { success: true, orderId }
+    console.log(
+      `[confirmPayment] ✅ Order #${orderId} settled via ${method}; ` +
+      `financial=${paymentResult.financialStatus} operational=${paymentResult.operationalStatus}`
+    )
+    return {
+      success: true,
+      orderId,
+      financialStatus: paymentResult.financialStatus,
+      operationalStatus: paymentResult.operationalStatus,
+      productionReleased: paymentResult.productionReleased,
+    }
 
   } catch (err: any) {
     console.error('[confirmPayment] Error:', err)
@@ -119,28 +183,13 @@ export async function confirmPayment(
   }
 }
 
-// ─── Translation trigger ──────────────────────────────────────────────────────
-
-async function triggerTranslation(orderId: number) {
-  const edgeFnUrl = `${SUPABASE_URL}/functions/v1/translate-order`
-  const res = await fetch(edgeFnUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON}`,
-    },
-    body: JSON.stringify({ orderId }),
-  })
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`Translation edge function returned ${res.status}: ${txt}`)
-  }
-  console.log(`[triggerTranslation] ✅ Dispatched for order #${orderId}`)
-}
-
 // ─── Isabele notification ─────────────────────────────────────────────────────
 
-async function notifyIsabele(order: any, method: PaymentMethod) {
+async function notifyIsabele(
+  order: any,
+  method: PaymentMethod,
+  paymentSummary: { productionReleased: boolean; remainingBalance: number; financialStatus: string },
+) {
   // Find all OPERATIONS users to notify (Isabele + Walter)
   const ops = await prisma.user.findMany({
     where: { role: { in: ['OPERATIONS', 'TECHNICAL'] } },
@@ -170,7 +219,9 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
   await resend.emails.send({
     from: 'Promobidocs <desk@promobidocs.com>',
     to: recipientEmails,
-    subject: `🟡 Novo pedido para traduzir — #${order.id} (${order.user?.fullName ?? 'Cliente'})`,
+    subject: paymentSummary.productionReleased
+      ? `🟡 Novo pedido para traduzir — #${order.id} (${order.user?.fullName ?? 'Cliente'})`
+      : `💰 Pagamento registrado — #${order.id} (${order.user?.fullName ?? 'Cliente'})`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -189,7 +240,11 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
           <div style="padding: 28px 32px;">
             <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
               O pagamento do pedido <strong>#${order.id}</strong> foi confirmado via <strong>${methodLabel[method]}</strong>.
-              A tradução já está sendo processada — em breve os rascunhos estarão disponíveis no Workbench.
+              ${
+                paymentSummary.productionReleased
+                  ? 'A tradução já está sendo processada — em breve os rascunhos estarão disponíveis no Workbench.'
+                  : `O fluxo operacional segue aguardando a política de liberação. Saldo restante: <strong>$${paymentSummary.remainingBalance.toFixed(2)}</strong>.`
+              }
             </p>
 
             <!-- Order summary -->
@@ -215,6 +270,10 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
                   <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Urgência</td>
                   <td style="color: #111827; font-size: 13px; text-align: right; text-transform: capitalize;">${order.urgency ?? 'standard'}</td>
                 </tr>
+                <tr>
+                  <td style="color: #6B7280; font-size: 12px; padding: 4px 0;">Financeiro</td>
+                  <td style="color: #111827; font-size: 13px; text-align: right;">${paymentSummary.financialStatus}</td>
+                </tr>
               </table>
             </div>
 
@@ -239,7 +298,10 @@ async function notifyIsabele(order: any, method: PaymentMethod) {
 
 // ─── Client confirmation email ─────────────────────────────────────────────────
 
-async function sendClientConfirmation(order: any) {
+async function sendClientConfirmation(
+  order: any,
+  paymentSummary: { productionReleased: boolean; remainingBalance: number },
+) {
   const clientName = order.user?.fullName ?? 'Cliente'
   const clientEmail = order.user?.email
 
@@ -252,7 +314,9 @@ async function sendClientConfirmation(order: any) {
   await resend.emails.send({
     from: 'Promobidocs <desk@promobidocs.com>',
     to: [recipient],
-    subject: `✅ Pagamento confirmado — Pedido #${order.id} em tradução`,
+    subject: paymentSummary.productionReleased
+      ? `✅ Pagamento confirmado — Pedido #${order.id} em tradução`
+      : `✅ Pagamento recebido — Pedido #${order.id}`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -268,7 +332,12 @@ async function sendClientConfirmation(order: any) {
 
           <div style="padding: 28px 32px;">
             <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
-              Olá, <strong>${clientName}</strong>! Recebemos seu pagamento e sua tradução certificada já está sendo processada pela nossa equipe.
+              Olá, <strong>${clientName}</strong>! Recebemos seu pagamento.
+              ${
+                paymentSummary.productionReleased
+                  ? 'Sua tradução certificada já está sendo processada pela nossa equipe.'
+                  : `Seu pedido permanece em acompanhamento financeiro, com saldo restante de <strong>$${paymentSummary.remainingBalance.toFixed(2)}</strong>.`
+              }
             </p>
 
             <!-- Status steps -->
@@ -279,7 +348,11 @@ async function sendClientConfirmation(order: any) {
               </div>
               <div style="margin-bottom: 12px;">
                 <span style="color: #B8763E; font-weight: bold; margin-right: 8px;">🔄</span>
-                <span style="color: #111827; font-weight: bold;">Em tradução — nossa equipe está trabalhando agora</span>
+                <span style="color: #111827; font-weight: bold;">${
+                  paymentSummary.productionReleased
+                    ? 'Em tradução — nossa equipe está trabalhando agora'
+                    : 'Pagamento registrado — aguardando próxima etapa operacional'
+                }</span>
               </div>
               <div style="color: #9CA3AF; margin-bottom: 12px;">
                 <span style="margin-right: 8px;">⏳</span> Revisão de qualidade

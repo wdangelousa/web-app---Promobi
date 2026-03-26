@@ -6,12 +6,14 @@ import { useState, useMemo } from 'react'
 import {
     LayoutDashboard,
     ListTodo,
+    CalendarClock,
     Ban,
     CheckCircle,
     Settings,
     LogOut,
     DollarSign,
-    FilePlus
+    FilePlus,
+    Inbox
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import { Avatar } from '@/components/admin/Avatar'
@@ -47,6 +49,22 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
             icon: ListTodo,
             category: 'Pedidos',
             active: isActive('/admin/orders') && !isActive('/admin/orders/cancelados')
+        },
+        {
+            id: 'agenda',
+            title: 'Agenda de Prazos',
+            href: '/admin/agenda',
+            icon: CalendarClock,
+            category: 'Pedidos',
+            active: isActive('/admin/agenda'),
+        },
+        {
+            id: 'pendencias',
+            title: 'Pendências',
+            href: '/admin/pendencias',
+            icon: Inbox,
+            category: 'Pedidos',
+            active: isActive('/admin/pendencias'),
         },
         {
             id: 'orders-completed',
@@ -191,6 +209,7 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
 
                 {filteredItems.length === 0 && (
                     <div className="px-4 py-8 text-center">
+                        <Inbox className="mx-auto mb-2 h-5 w-5 text-gray-500" />
                         <p className="text-gray-500 text-sm">Nenhum item encontrado</p>
                     </div>
                 )}
