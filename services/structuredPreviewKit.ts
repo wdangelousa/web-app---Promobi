@@ -1297,34 +1297,53 @@ async function applyLetterheadOverlayToPdf(
   pdfBuffer: Buffer,
   letterheadBuffer: Buffer,
   logPrefix: string,
+  contentMargins?: { topIn: number; rightIn: number; bottomIn: number; leftIn: number },
 ): Promise<Buffer | null> {
   try {
+    const { rgb } = await import('pdf-lib');
     const srcPdf = await PDFDocument.load(pdfBuffer);
     const finalPdf = await PDFDocument.create();
 
     const letterheadImage = await finalPdf.embedPng(letterheadBuffer);
     const srcPages = srcPdf.getPages();
     const embeddedPages = await finalPdf.embedPages(srcPages);
+    const margins = contentMargins ?? {
+      topIn: 1.85,
+      rightIn: 0.7,
+      bottomIn: 0.75,
+      leftIn: 1.0,
+    };
+    const pointsPerInch = 72;
 
     for (const embeddedPage of embeddedPages) {
       const { width, height } = embeddedPage;
       const page = finalPdf.addPage([width, height]);
 
-      // 1. Content FIRST (Gotenberg-rendered page with margins)
-      page.drawPage(embeddedPage, {
-        x: 0,
-        y: 0,
-        width,
-        height,
-      });
-
-      // 2. Letterhead ON TOP (PNG has transparent center — frame overlay)
+      // 1. Letterhead across the full page
       page.drawImage(letterheadImage, {
         x: 0,
         y: 0,
         width,
         height,
         opacity: 1,
+      });
+
+      // 2. White mask over the safe content box so any internal decorative
+      // bands inside the PNG do not remain behind the translated text.
+      page.drawRectangle({
+        x: margins.leftIn * pointsPerInch,
+        y: margins.bottomIn * pointsPerInch,
+        width: width - ((margins.leftIn + margins.rightIn) * pointsPerInch),
+        height: height - ((margins.topIn + margins.bottomIn) * pointsPerInch),
+        color: rgb(1, 1, 1),
+      });
+
+      // 3. Content on top
+      page.drawPage(embeddedPage, {
+        x: 0,
+        y: 0,
+        width,
+        height,
       });
     }
 
@@ -1534,6 +1553,12 @@ export async function buildStructuredKitBuffer(
           translatedPdfBuffer,
           letterheadBuffer,
           logPrefix,
+          {
+            topIn: parseFloat(safeArea.marginTopIn),
+            rightIn: parseFloat(safeArea.marginRightIn),
+            bottomIn: parseFloat(safeArea.marginBottomIn),
+            leftIn: parseFloat(safeArea.marginLeftIn),
+          },
         );
         if (overlayBuffer) {
           translatedPdfBuffer = overlayBuffer;
@@ -1973,6 +1998,12 @@ export async function buildStructuredKitBuffer(
           translatedPdfBuffer,
           letterheadBuffer,
           logPrefix,
+          {
+            topIn: parseFloat(safeArea.marginTopIn),
+            rightIn: parseFloat(safeArea.marginRightIn),
+            bottomIn: parseFloat(safeArea.marginBottomIn),
+            leftIn: parseFloat(safeArea.marginLeftIn),
+          },
         );
         if (overlayResult) {
           translatedPdfBuffer = overlayResult;
