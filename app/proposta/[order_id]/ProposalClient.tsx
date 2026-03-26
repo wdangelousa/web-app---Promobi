@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Mail, Smartphone, Zap, ArrowRight, CreditCard, Lock, Eye, X } from 'lucide-react'
-import { createCheckoutSession } from '@/app/actions/checkout'
+import { CheckCircle, Info, FileText, ChevronDown, Clock, ShieldCheck, Smartphone, Zap, Lock, Eye, X } from 'lucide-react'
 import { useUIFeedback } from '@/components/UIFeedbackProvider'
 
 import { Download } from 'lucide-react'
@@ -20,9 +19,8 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
         metadata?.documents?.map((d: any) => d.id) || []
     )
     const [quicklookData, setQuicklookData] = useState<{ url: string, pageNumber: number } | null>(null)
-    const [paymentMethod, setPaymentMethod] = useState<'STRIPE' | 'ZELLE' | 'PIX' | null>(null)
+    const [paymentMethod, setPaymentMethod] = useState<'ZELLE' | 'PIX' | null>(null)
     const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
-    const [isProcessingStripe, setIsProcessingStripe] = useState(false)
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
     const [logoBase64, setLogoBase64] = useState<string | null>(null)
 
@@ -55,23 +53,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
     const toggleDocExpand = (id: number) => {
         setExpandedDocs(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id])
-    }
-
-    const handleStripeCheckout = async () => {
-        setIsProcessingStripe(true)
-        try {
-            const result = await createCheckoutSession(order.id)
-            if (result.success && result.url) {
-                window.location.href = result.url
-            } else {
-                toast.error('Erro ao conectar com a plataforma de pagamento.')
-                setIsProcessingStripe(false)
-            }
-        } catch (error) {
-            console.error(error)
-            toast.error('Falha na conexão.')
-            setIsProcessingStripe(false)
-        }
     }
 
     const handleManualPaymentConfirmation = async (method: 'ZELLE' | 'PIX') => {
@@ -418,37 +399,6 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
 
                     <div className="space-y-3">
                         <div
-                            className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'STRIPE' ? 'border-[#B8763E] bg-[#F5EDE3]' : 'border-slate-200 hover:border-slate-300'}`}
-                            onClick={() => setPaymentMethod('STRIPE')}
-                        >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-[#635BFF]/10 p-2 rounded-lg"><CreditCard className="w-6 h-6 text-[#635BFF]" /></div>
-                                    <div>
-                                        <h3 className="font-bold text-slate-900">Cartão de Crédito</h3>
-                                        <p className="text-xs text-slate-500">Google Pay, Apple Pay via Stripe</p>
-                                    </div>
-                                </div>
-                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'STRIPE' ? 'border-[#B8763E]' : 'border-slate-300'}`}>
-                                    {paymentMethod === 'STRIPE' && <div className="w-2.5 h-2.5 bg-[#B8763E] rounded-full"></div>}
-                                </div>
-                            </div>
-                            <AnimatePresence>
-                                {paymentMethod === 'STRIPE' && (
-                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-[#E8DCCF]">
-                                        <button
-                                            disabled={isProcessingStripe}
-                                            onClick={handleStripeCheckout}
-                                            className="w-full bg-[#B8763E] hover:bg-[#A36636] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] disabled:opacity-70"
-                                        >
-                                            {isProcessingStripe ? 'Conectando seguro...' : 'Pagar com Cartão'} <ArrowRight className="w-4 h-4" />
-                                        </button>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-
-                        <div
                             className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${paymentMethod === 'ZELLE' ? 'border-[#741cd9] bg-purple-50' : 'border-slate-200 hover:border-slate-300'}`}
                             onClick={() => setPaymentMethod('ZELLE')}
                         >
@@ -468,8 +418,8 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                 {paymentMethod === 'ZELLE' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-purple-200 text-sm">
                                         <div className="bg-white p-4 rounded-lg border border-purple-100 mb-4 text-center">
-                                            <p className="text-slate-500 mb-1">Envie o valor exato para o número Zelle abaixo:</p>
-                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">zelle@promobidocs.com</p>
+                                            <p className="text-slate-500 mb-1">Envie o valor exato para o Zelle abaixo:</p>
+                                            <p className="font-mono font-bold text-xl text-slate-900 select-all">zelle@promobi.us</p>
                                             <p className="text-xs text-slate-400 mt-2">Promobi Corporate Services LLC</p>
                                         </div>
                                         <button
@@ -495,7 +445,7 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                     </div>
                                     <div>
                                         <h3 className="font-bold text-slate-900">Pix (BRL)</h3>
-                                        <p className="text-xs text-slate-500">Pague em Reais (Conversão Oficial)</p>
+                                        <p className="text-xs text-slate-500">Entre em contato com a Promobi para receber o link do Parcelado USA</p>
                                     </div>
                                 </div>
                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'PIX' ? 'border-[#32bcad]' : 'border-slate-300'}`}>
@@ -506,20 +456,19 @@ export default function ProposalClient({ order, globalSettings }: { order: any, 
                                 {paymentMethod === 'PIX' && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-teal-200 text-sm">
                                         <div className="bg-white p-4 rounded-lg border border-teal-100 mb-4 text-center">
-                                            <p className="text-slate-500 mb-2">Chave Pix (Telefone Celular):</p>
-                                            <p className="font-mono font-bold text-xl text-slate-900 select-all tracking-wider">+14076396154</p>
-                                            <p className="text-xs text-slate-400 mt-2">Nominal/Favorecido: Walter D'Angelo</p>
-                                            <p className="text-xs text-teal-600 font-bold mt-4 bg-teal-50 py-1.5 px-3 rounded-full inline-block">
-                                                Valor em R$: R$ {((order.totalAmount || 0) * 5.2).toFixed(2)}
+                                            <p className="text-slate-600 leading-relaxed">
+                                                Para pagamento em reais via Pix/Parcelado USA, entre em contato com a equipe da Promobi.
+                                                Enviaremos o link correto de pagamento para voce finalizar com seguranca.
                                             </p>
                                         </div>
-                                        <button
-                                            disabled={isConfirmingTransfer}
-                                            onClick={() => handleManualPaymentConfirmation('PIX')}
-                                            className="w-full bg-[#32bcad] hover:bg-[#259c8f] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-[0.98] disabled:opacity-70"
+                                        <a
+                                            href="https://wa.me/13213245851"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="w-full bg-[#32bcad] hover:bg-[#259c8f] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-[0.98] inline-flex items-center justify-center"
                                         >
-                                            {isConfirmingTransfer ? 'Aguarde...' : 'Já realizei o Pix'}
-                                        </button>
+                                            Falar com a Promobi para receber o link
+                                        </a>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
