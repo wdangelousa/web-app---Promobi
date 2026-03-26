@@ -1482,6 +1482,15 @@ export async function buildStructuredKitBuffer(
     const translatedOrientation = isLandscape ? 'landscape' : 'portrait';
     const safeArea = getTranslatedPageSafeArea(translatedOrientation);
     const paperSettings = buildTranslatedGotenbergSettings(translatedOrientation);
+    const htmlEmbedsLetterhead = input.structuredHtml.includes('data:image/png;base64,');
+    if (htmlEmbedsLetterhead) {
+      paperSettings.marginTop = '0';
+      paperSettings.marginBottom = '0';
+      paperSettings.marginLeft = '0';
+      paperSettings.marginRight = '0';
+      paperSettings.preferCssPageSize = 'true';
+      log('gotenberg: zero margins + preferCssPageSize (self-contained letterhead detected)');
+    }
     log(`orientation: ${input.orientation ?? 'portrait (default)'}`);
     log(
       `translated safe area policy: orientation=${safeArea.orientation} ` +
@@ -1736,7 +1745,7 @@ export async function buildStructuredKitBuffer(
       // Attach the official Promobidocs letterhead so the HTML template's
       // Attach letterhead file to Gotenberg only when the HTML references it
       // (mirror_html path via buildTranslatedPageHtml). Structured renderer HTML
-      // does not reference letterhead — those get a PDF overlay after rendering.
+      // may also be self-contained via data URI, which needs no extra file.
       const translatedExtraFiles: GotenbergExtraFile[] = [];
       const htmlReferencesLetterhead =
         input.structuredHtml.includes('letterhead.png') ||
@@ -1983,10 +1992,11 @@ export async function buildStructuredKitBuffer(
       // not the processed HTML which may have had CSS injected.
       const htmlHasLetterheadCss =
         input.structuredHtml.includes('letterhead.png') ||
-        input.structuredHtml.includes('letterhead-landscape.png');
+        input.structuredHtml.includes('letterhead-landscape.png') ||
+        htmlEmbedsLetterhead;
 
       if (htmlHasLetterheadCss) {
-        log(`letterhead overlay: skipped (mirror_html path — HTML already has CSS letterhead)`);
+        log(`letterhead overlay: skipped (HTML already has CSS letterhead)`);
       } else if (letterheadBuffer) {
         log(`letterhead overlay: applying PDF binary overlay (structured renderer path)`);
         const overlayResult = await applyLetterheadOverlayToPdf(
