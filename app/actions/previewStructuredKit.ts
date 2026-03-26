@@ -568,6 +568,7 @@ export async function previewStructuredKit(
       documentFamily: classification.documentType,
       rendererName: 'mirror_html',
       modality: 'faithful',
+      forceLetterheadOverlay: true,
       surface: 'preview-kit',
       compactionAttempted: false,
       languageIntegrity,

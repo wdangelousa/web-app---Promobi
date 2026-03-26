@@ -476,6 +476,7 @@ export async function generateDeliveryKit(
           documentFamily: classification.documentType,
           rendererName: 'mirror_html',
           modality: 'faithful',
+          forceLetterheadOverlay: true,
           surface: preview ? 'preview-kit' : 'delivery-kit',
           compactionAttempted: false,
           languageIntegrity,
