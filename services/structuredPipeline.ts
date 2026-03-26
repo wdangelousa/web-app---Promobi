@@ -44,17 +44,15 @@ import {
   type SupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer';
 import { resolveSourcePageCount } from '@/lib/sourcePageCountResolver';
-import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 /**
  * Wraps structured renderer HTML with the Promobidocs letterhead template.
  *
- * Structured renderers (birth cert, civil record, etc.) produce standalone HTML
- * without letterhead references. This function extracts their body content and
- * CSS, then wraps it with `buildTranslatedPageHtml` which adds the letterhead
- * background, @page margins, and print-color-adjust settings.
- *
- * Safe to call on HTML that already has letterhead (mirror_html path) — returns it unchanged.
+ * Reads the letterhead PNG from /public, embeds it as a base64 data URI
+ * directly in the CSS so the HTML is self-contained — no dependency on
+ * Gotenberg extra file attachment or any external file resolution.
  */
 function wrapRendererHtmlWithLetterhead(
   rendererHtml: string,
@@ -62,14 +60,32 @@ function wrapRendererHtmlWithLetterhead(
 ): string {
   if (
     rendererHtml.includes('letterhead.png') ||
-    rendererHtml.includes('letterhead-landscape.png')
+    rendererHtml.includes('letterhead-landscape.png') ||
+    rendererHtml.includes('data:image/png;base64,')
   ) {
     return rendererHtml;
   }
 
+  const isLandscape = orientation === 'landscape';
+
+  // Read letterhead and encode as base64 data URI
+  const lhFilename = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
+  const lhPath = join(process.cwd(), 'public', lhFilename);
+  let letterheadDataUri = '';
+  try {
+    const lhBuffer = readFileSync(lhPath);
+    letterheadDataUri = `data:image/png;base64,${lhBuffer.toString('base64')}`;
+    console.log(`[wrapRendererHtmlWithLetterhead] letterhead loaded: ${lhFilename} (${lhBuffer.length} bytes)`);
+  } catch (err) {
+    console.warn(`[wrapRendererHtmlWithLetterhead] letterhead NOT found at ${lhPath}: ${err}`);
+    letterheadDataUri = lhFilename;
+  }
+
+  // Extract body content from renderer HTML
   const bodyMatch = rendererHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
   const bodyContent = bodyMatch ? bodyMatch[1].trim() : rendererHtml;
 
+  // Extract and clean renderer CSS
   const styleBlocks: string[] = [];
   const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
   let styleMatch;
@@ -81,16 +97,51 @@ function wrapRendererHtmlWithLetterhead(
   const cleanCss = rendererCss
     .replace(/@page\s*\{[^}]*\}/g, '')
     .replace(/html\s*,\s*body\s*\{[^}]*\}/g, '')
-    .replace(/(body\s*\{[^}]*?)background\s*:[^;]+;?/g, '$1');
+    .replace(/(body\s*\{[^}]*?)background\s*:[^;]+;?/g, '$1')
+    .replace(/\*\s*\{[^}]*margin\s*:\s*0[^}]*\}/g, (match) => {
+      return match.replace(/margin\s*:\s*0\s*;?/g, '');
+    });
 
-  const combinedContent = (cleanCss.trim()
-    ? `<style>\n${cleanCss}\n</style>\n`
-    : '') + bodyContent;
+  const bgSize = isLandscape ? '11in 8.5in' : '8.5in 11in';
+  const pageSize = isLandscape ? 'letter landscape' : 'letter portrait';
 
-  return buildTranslatedPageHtml({
-    translatedHtml: combinedContent,
-    orientation: orientation === 'landscape' ? 'landscape' : 'portrait',
-  });
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Certified Translation</title>
+  <style>
+    @page {
+      size: ${pageSize};
+      margin-top: 1.85in;
+      margin-right: 0.7in;
+      margin-bottom: 0.75in;
+      margin-left: 1.0in;
+    }
+
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      background: url('${letterheadDataUri}') top left / ${bgSize} no-repeat;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ── Renderer styles (cleaned) ── */
+    ${cleanCss}
+  </style>
+</head>
+<body>
+  ${bodyContent}
+</body>
+</html>`;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
