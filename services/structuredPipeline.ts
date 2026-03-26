@@ -44,6 +44,54 @@ import {
   type SupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer';
 import { resolveSourcePageCount } from '@/lib/sourcePageCountResolver';
+import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
+
+/**
+ * Wraps structured renderer HTML with the Promobidocs letterhead template.
+ *
+ * Structured renderers (birth cert, civil record, etc.) produce standalone HTML
+ * without letterhead references. This function extracts their body content and
+ * CSS, then wraps it with `buildTranslatedPageHtml` which adds the letterhead
+ * background, @page margins, and print-color-adjust settings.
+ *
+ * Safe to call on HTML that already has letterhead (mirror_html path) — returns it unchanged.
+ */
+function wrapRendererHtmlWithLetterhead(
+  rendererHtml: string,
+  orientation: DocumentOrientation,
+): string {
+  if (
+    rendererHtml.includes('letterhead.png') ||
+    rendererHtml.includes('letterhead-landscape.png')
+  ) {
+    return rendererHtml;
+  }
+
+  const bodyMatch = rendererHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const bodyContent = bodyMatch ? bodyMatch[1].trim() : rendererHtml;
+
+  const styleBlocks: string[] = [];
+  const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+  let styleMatch;
+  while ((styleMatch = styleRegex.exec(rendererHtml)) !== null) {
+    styleBlocks.push(styleMatch[1]);
+  }
+  const rendererCss = styleBlocks.join('\n');
+
+  const cleanCss = rendererCss
+    .replace(/@page\s*\{[^}]*\}/g, '')
+    .replace(/html\s*,\s*body\s*\{[^}]*\}/g, '')
+    .replace(/(body\s*\{[^}]*?)background\s*:[^;]+;?/g, '$1');
+
+  const combinedContent = (cleanCss.trim()
+    ? `<style>\n${cleanCss}\n</style>\n`
+    : '') + bodyContent;
+
+  return buildTranslatedPageHtml({
+    translatedHtml: combinedContent,
+    orientation: orientation === 'landscape' ? 'landscape' : 'portrait',
+  });
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -313,7 +361,7 @@ export async function runMarriageCertStructuredPipeline(
       if (kitEnabled) {
         const { assembleStructuredPreviewKit } = await import('@/services/structuredPreviewKit');
         const kit = await assembleStructuredPreviewKit({
-          structuredHtml,
+          structuredHtml: wrapRendererHtmlWithLetterhead(structuredHtml, detectedOrientation),
           originalFileBuffer: input.fileBuffer,
           isOriginalPdf: isPdf,
           orderId:          input.orderId   ?? 'unknown',
@@ -649,7 +697,7 @@ export async function runCertificateLandscapeStructuredPipeline(
       if (kitEnabled) {
         const { assembleStructuredPreviewKit } = await import('@/services/structuredPreviewKit');
         const kit = await assembleStructuredPreviewKit({
-          structuredHtml:    certHtml,
+          structuredHtml:    wrapRendererHtmlWithLetterhead(certHtml, effectiveOrientation),
           originalFileBuffer: input.fileBuffer,
           isOriginalPdf:     isPdf,
           orderId:           input.orderId   ?? 'unknown',
@@ -809,7 +857,7 @@ async function runSharedStructuredPipeline(
     if (kitEnabled) {
       const { assembleStructuredPreviewKit } = await import('@/services/structuredPreviewKit');
       const kit = await assembleStructuredPreviewKit({
-        structuredHtml: resolved.structuredHtml,
+        structuredHtml: wrapRendererHtmlWithLetterhead(resolved.structuredHtml, resolved.orientationForKit),
         originalFileBuffer: input.fileBuffer,
         isOriginalPdf: isPdf,
         orderId: input.orderId ?? 'unknown',
