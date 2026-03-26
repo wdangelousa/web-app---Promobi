@@ -1276,63 +1276,6 @@ export function buildTranslatedDocumentHtml(
 </html>`;
 }
 
-// ── Letterhead CSS injection helper ──────────────────────────────────────────
-/**
- * Injects letterhead CSS background into an existing full HTML document
- * when the document does not already reference the letterhead image.
- *
- * The structured renderers produce standalone HTML without letterhead
- * references.  The `buildTranslatedPageHtml` template (used by the
- * mirror_html path) bakes the letterhead into `html { background }`.
- * When `buildStructuredKitBuffer` receives renderer HTML (the structured
- * pipeline path), this function bridges the gap by injecting the same
- * CSS so that the Gotenberg-attached letterhead file resolves correctly.
- *
- * Safe to call on HTML that already includes the reference — it
- * short-circuits immediately.
- */
-function injectLetterheadCssBackground(
-  html: string,
-  orientation: 'portrait' | 'landscape',
-): string {
-  if (html.includes('letterhead.png') || html.includes('letterhead-landscape.png')) {
-    return html;
-  }
-
-  const isLandscape = orientation === 'landscape';
-  const lhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
-  const bgSize = isLandscape ? '11in 8.5in' : '8.5in 11in';
-
-  const letterheadCss = `
-/* ── Letterhead full-page background (injected by buildStructuredKitBuffer) ── */
-html {
-  background: url('${lhFile}') top left / ${bgSize} no-repeat !important;
-}
-body {
-  background: #fff !important;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
-@page {
-  size: ${isLandscape ? 'letter landscape' : 'letter portrait'} !important;
-  margin-top: 1.85in !important;
-  margin-right: 0.7in !important;
-  margin-bottom: 0.75in !important;
-  margin-left: 1.0in !important;
-}`;
-
-  if (/<\/style>/i.test(html)) {
-    return html.replace(/<\/style>/i, `${letterheadCss}\n</style>`);
-  }
-  if (/<\/head>/i.test(html)) {
-    return html.replace(/<\/head>/i, `<style>${letterheadCss}</style>\n</head>`);
-  }
-  if (/<body\b/i.test(html)) {
-    return html.replace(/<body\b/i, `<style>${letterheadCss}</style>\n<body`);
-  }
-  return html;
-}
-
 // ── PDF overlay helper ────────────────────────────────────────────────────────
 
 function loadLetterheadBuffer(path: string): Buffer | null {
@@ -1361,19 +1304,22 @@ async function applyLetterheadOverlayToPdf(
 
       const page = finalPdf.addPage([width, height]);
 
-      page.drawPage(embeddedPage, {
+      // 1. Draw letterhead FIRST — background layer (full-page branded frame)
+      page.drawImage(letterheadImage, {
         x: 0,
         y: 0,
         width,
         height,
       });
 
-      page.drawImage(letterheadImage, {
+      // 2. Draw translated content ON TOP — foreground layer
+      //    Margin areas are transparent → letterhead shows through (header, footer, sides)
+      //    Body area has content text → renders over the letterhead's white center zone
+      page.drawPage(embeddedPage, {
         x: 0,
         y: 0,
         width,
         height,
-        opacity: 1,
       });
     }
 
@@ -1614,11 +1560,8 @@ export async function buildStructuredKitBuffer(
         blockingReason: 'none',
       });
     } else {
-      const safeAreaStructuredHtml = injectLetterheadCssBackground(
-        injectTranslatedPageSafeArea(
-          input.structuredHtml,
-          translatedOrientation,
-        ),
+      const safeAreaStructuredHtml = injectTranslatedPageSafeArea(
+        input.structuredHtml,
         translatedOrientation,
       );
       const missingTranslatedZones = languageIntegrity.missingTranslatedZones;
@@ -1772,17 +1715,25 @@ export async function buildStructuredKitBuffer(
       }
 
       // Attach the official Promobidocs letterhead so the HTML template's
-      // <img src="letterhead.png"> (or letterhead-landscape.png) resolves.
-      // The letterhead is the canonical full-page background for translated pages.
+      // Attach letterhead file to Gotenberg only when the HTML references it
+      // (mirror_html path via buildTranslatedPageHtml). Structured renderer HTML
+      // does not reference letterhead — those get a PDF overlay after rendering.
       const translatedExtraFiles: GotenbergExtraFile[] = [];
-      const targetLhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
-      const targetLhFullPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
-      try {
-        const lhBuf = readFileSync(targetLhFullPath);
-        translatedExtraFiles.push({ filename: targetLhFile, buffer: lhBuf, mimeType: 'image/png' });
-        log(`letterhead attached for translated section: ${targetLhFile}`);
-      } catch {
-        log(`${targetLhFile} not found at ${targetLhFullPath} — letterhead background will be absent`);
+      const htmlReferencesLetterhead =
+        input.structuredHtml.includes('letterhead.png') ||
+        input.structuredHtml.includes('letterhead-landscape.png');
+      if (htmlReferencesLetterhead) {
+        const targetLhFile = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
+        const targetLhFullPath = isLandscape ? LETTERHEAD_LANDSCAPE_PATH : LETTERHEAD_PATH;
+        try {
+          const lhBuf = readFileSync(targetLhFullPath);
+          translatedExtraFiles.push({ filename: targetLhFile, buffer: lhBuf, mimeType: 'image/png' });
+          log(`letterhead attached for Gotenberg: ${targetLhFile} (mirror_html CSS path)`);
+        } catch {
+          log(`${targetLhFile} not found at ${targetLhFullPath} — CSS letterhead background will be absent`);
+        }
+      } else {
+        log(`letterhead Gotenberg extra file skipped: structured renderer path uses PDF overlay`);
       }
 
       const translatedPdfBase = await callGotenberg(
@@ -2001,13 +1952,35 @@ export async function buildStructuredKitBuffer(
         );
       }
 
-      // Letterhead PDF overlay is SKIPPED for canonical internal rendering.
-      // The HTML template (translatedPageTemplate.ts) already provides all
-      // visual branding via CSS: logo, gold border, footer chrome.  Applying
-      // letterhead.png as an additional PDF overlay caused duplicate logos,
-      // margin conflicts, and page-count parity drift.
-      // The overlay is preserved only for external PDF overrides (see above).
-      log(`letterhead overlay skipped: canonical internal path uses HTML chrome`);
+      // ── Letterhead PDF overlay (structured renderers only) ──────────────────
+      // Two paths arrive here:
+      //   mirror_html:        HTML already contains letterhead via CSS background
+      //                       (from buildTranslatedPageHtml). Overlay would cause
+      //                       duplicate branding → SKIP.
+      //   structured renderer: HTML has no letterhead reference. Gotenberg renders
+      //                        plain content. Overlay applies letterhead as a
+      //                        background layer at the PDF binary level → APPLY.
+      const htmlAlreadyHasLetterhead =
+        input.structuredHtml.includes('letterhead.png') ||
+        input.structuredHtml.includes('letterhead-landscape.png');
+
+      if (htmlAlreadyHasLetterhead) {
+        log(`letterhead overlay skipped: HTML already contains letterhead CSS (mirror_html path)`);
+      } else if (letterheadBuffer) {
+        const overlayBuffer = await applyLetterheadOverlayToPdf(
+          translatedPdfBuffer,
+          letterheadBuffer,
+          logPrefix,
+        );
+        if (overlayBuffer) {
+          translatedPdfBuffer = overlayBuffer;
+          log(`letterhead overlay applied: yes (structured renderer path, PDF binary overlay)`);
+        } else {
+          log(`letterhead overlay applied: no (overlay failed)`);
+        }
+      } else {
+        log(`letterhead overlay skipped: letterhead file not found`);
+      }
 
       log(`translated section generated: yes`);
       translatedPdfDoc = await PDFDocument.load(translatedPdfBuffer);
