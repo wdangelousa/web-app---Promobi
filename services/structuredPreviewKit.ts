@@ -204,6 +204,13 @@ function loadCoverAssets(logPrefix: string): GotenbergExtraFile[] {
 
 export interface StructuredPreviewKitInput {
   structuredHtml: string;
+  /**
+   * When true, apply the letterhead PNG overlay to the translated PDF
+   * unconditionally via pdf-lib, regardless of any HTML content detection.
+   * Used by the structured renderer pipeline where CSS-based letterhead
+   * is not viable (Gotenberg API margins clip the CSS canvas background).
+   */
+  forceLetterheadOverlay?: boolean;
   externalTranslatedPdfBuffer?: ArrayBuffer;
   originalFileBuffer: ArrayBuffer;
   isOriginalPdf: boolean;
@@ -1290,10 +1297,8 @@ async function applyLetterheadOverlayToPdf(
   pdfBuffer: Buffer,
   letterheadBuffer: Buffer,
   logPrefix: string,
-  contentMargins?: { topIn: number; rightIn: number; bottomIn: number; leftIn: number },
 ): Promise<Buffer | null> {
   try {
-    const { rgb } = await import('pdf-lib');
     const srcPdf = await PDFDocument.load(pdfBuffer);
     const finalPdf = await PDFDocument.create();
 
@@ -1301,47 +1306,28 @@ async function applyLetterheadOverlayToPdf(
     const srcPages = srcPdf.getPages();
     const embeddedPages = await finalPdf.embedPages(srcPages);
 
-    // Default margins match translatedPageSafeArea portrait/landscape values.
-    const margins = contentMargins ?? { topIn: 1.85, rightIn: 0.7, bottomIn: 0.75, leftIn: 1.0 };
-    const PTS = 72; // 1 inch = 72 PDF points
-
     for (const embeddedPage of embeddedPages) {
       const { width, height } = embeddedPage;
       const page = finalPdf.addPage([width, height]);
 
-      // Layer 1: Letterhead — full page background (butterfly logo, gold borders, footer chrome)
-      page.drawImage(letterheadImage, {
-        x: 0,
-        y: 0,
-        width,
-        height,
-      });
-
-      // Layer 2: White mask — covers the content zone so letterhead only shows in margins.
-      // Without this, if the Gotenberg PDF body area is transparent, letterhead bleeds through text.
-      const maskX = margins.leftIn * PTS;
-      const maskY = margins.bottomIn * PTS;
-      const maskW = width - (margins.leftIn + margins.rightIn) * PTS;
-      const maskH = height - (margins.topIn + margins.bottomIn) * PTS;
-      page.drawRectangle({
-        x: maskX,
-        y: maskY,
-        width: maskW,
-        height: maskH,
-        color: rgb(1, 1, 1),
-      });
-
-      // Layer 3: Translated content — rendered by Gotenberg with matching margins.
-      // Text appears over the white mask. Margin areas are empty → letterhead shows through.
+      // 1. Content FIRST (Gotenberg-rendered page with margins)
       page.drawPage(embeddedPage, {
         x: 0,
         y: 0,
         width,
         height,
       });
+
+      // 2. Letterhead ON TOP (PNG has transparent center — frame overlay)
+      page.drawImage(letterheadImage, {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        opacity: 1,
+      });
     }
 
-    console.log(`${logPrefix} — letterhead overlay: 3-layer composite applied (letterhead → white mask → content)`);
     return Buffer.from(await finalPdf.save());
   } catch (err) {
     console.error(`${logPrefix} — translated letterhead overlay error: ${err}`);
@@ -1980,44 +1966,24 @@ export async function buildStructuredKitBuffer(
         );
       }
 
-      // ── Letterhead PDF overlay (structured renderers only) ──────────────────
-      // Two paths arrive here:
-      //   mirror_html:        HTML already contains letterhead via CSS background
-      //                       (from buildTranslatedPageHtml). Overlay would cause
-      //                       duplicate branding → SKIP.
-      //   structured renderer: HTML has no letterhead reference. Gotenberg renders
-      //                        plain content. Overlay applies letterhead as a
-      //                        background layer at the PDF binary level → APPLY.
-      // Detection: check the ORIGINAL input HTML (before any injection),
-      // not the processed HTML which may have had CSS injected.
-      const htmlHasLetterheadCss =
-        input.structuredHtml.includes('letterhead.png') ||
-        input.structuredHtml.includes('letterhead-landscape.png') ||
-        htmlEmbedsLetterhead;
-
-      if (htmlHasLetterheadCss) {
-        log(`letterhead overlay: skipped (HTML already has CSS letterhead)`);
-      } else if (letterheadBuffer) {
-        log(`letterhead overlay: applying PDF binary overlay (structured renderer path)`);
+      // ── Letterhead overlay ─────────────────────────────────────────────────
+      if (input.forceLetterheadOverlay && letterheadBuffer) {
+        log(`letterhead overlay: applying (forceLetterheadOverlay=true)`);
         const overlayResult = await applyLetterheadOverlayToPdf(
           translatedPdfBuffer,
           letterheadBuffer,
           logPrefix,
-          {
-            topIn: parseFloat(safeArea.marginTopIn),
-            rightIn: parseFloat(safeArea.marginRightIn),
-            bottomIn: parseFloat(safeArea.marginBottomIn),
-            leftIn: parseFloat(safeArea.marginLeftIn),
-          },
         );
         if (overlayResult) {
           translatedPdfBuffer = overlayResult;
           log(`letterhead overlay: applied successfully`);
         } else {
-          log(`letterhead overlay: applyLetterheadOverlayToPdf returned null — overlay failed`);
+          log(`letterhead overlay: failed (applyLetterheadOverlayToPdf returned null)`);
         }
+      } else if (!input.forceLetterheadOverlay) {
+        log(`letterhead overlay: skipped (forceLetterheadOverlay not set — mirror_html CSS path)`);
       } else {
-        log(`letterhead overlay: skipped (letterhead file not found at ${targetLhPath})`);
+        log(`letterhead overlay: skipped (letterhead file not found)`);
       }
 
       log(`translated section generated: yes`);

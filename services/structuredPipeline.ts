@@ -44,114 +44,18 @@ import {
   type SupportedStructuredDocumentType,
 } from '@/services/structuredDocumentRenderer';
 import { resolveSourcePageCount } from '@/lib/sourcePageCountResolver';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
 /**
- * Wraps structured renderer HTML with the Promobidocs letterhead template.
+ * Previously attempted to wrap renderer HTML with letterhead CSS.
+ * CSS approach doesn't work because Gotenberg API margins clip the canvas.
+ * Letterhead is now applied via pdf-lib overlay (forceLetterheadOverlay flag).
+ * This function is kept as a pass-through for code stability.
  *
- * CRITICAL: Uses ZERO Gotenberg margins + CSS body padding to position content.
- * With API-set margins, Chromium clips the CSS canvas background to the content
- * box, hiding the letterhead in the margins. With zero margins, the html background
- * paints the full page, and body padding pushes content into the safe zone.
- * This is the same approach used by the cover page (which has zero margins).
  */
 function wrapRendererHtmlWithLetterhead(
   rendererHtml: string,
-  orientation: DocumentOrientation,
+  _orientation: DocumentOrientation,
 ): string {
-  // Short-circuit: already has letterhead
-  if (
-    rendererHtml.includes('letterhead.png') ||
-    rendererHtml.includes('letterhead-landscape.png') ||
-    rendererHtml.includes('data:image/png;base64,')
-  ) {
-    return rendererHtml;
-  }
-
-  const isLandscape = orientation === 'landscape';
-
-  // Read letterhead and encode as base64 data URI
-  let letterheadDataUri: string;
-  try {
-    const lhFilename = isLandscape ? 'letterhead-landscape.png' : 'letterhead.png';
-    const lhPath = join(process.cwd(), 'public', lhFilename);
-    const lhBuffer = readFileSync(lhPath);
-    letterheadDataUri = `data:image/png;base64,${lhBuffer.toString('base64')}`;
-    console.log(`[wrapRendererHtmlWithLetterhead] letterhead embedded: ${lhFilename} (${lhBuffer.length} bytes)`);
-  } catch (err) {
-    console.error(`[wrapRendererHtmlWithLetterhead] FATAL: cannot read letterhead: ${err}`);
-    return rendererHtml;
-  }
-
-  // Extract body content from renderer HTML
-  const bodyMatch = rendererHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-  const bodyContent = bodyMatch ? bodyMatch[1].trim() : rendererHtml;
-
-  // Extract and clean renderer CSS
-  const styleBlocks: string[] = [];
-  const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
-  let styleMatch;
-  while ((styleMatch = styleRegex.exec(rendererHtml)) !== null) {
-    styleBlocks.push(styleMatch[1]);
-  }
-  const rendererCss = styleBlocks.join('\n');
-
-  const cleanCss = rendererCss
-    .replace(/@page\s*\{[^}]*\}/g, '')
-    .replace(/html\s*,?\s*body\s*\{[^}]*\}/g, '')
-    .replace(/(body\s*\{[^}]*?)background\s*:[^;]+;?/g, '$1');
-
-  const bgSize = isLandscape ? '11in 8.5in' : '8.5in 11in';
-  const pageSize = isLandscape ? '11in 8.5in' : '8.5in 11in';
-  const padTop = '1.85in';
-  const padRight = '0.7in';
-  const padBottom = '0.75in';
-  const padLeft = '1.0in';
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Certified Translation</title>
-  <style id="translated-page-safe-area-policy">
-    @page {
-      size: ${pageSize};
-      margin: 0;
-    }
-
-    html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: url('${letterheadDataUri}') top left / ${bgSize} no-repeat;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    body {
-      margin: 0;
-      padding: ${padTop} ${padRight} ${padBottom} ${padLeft};
-      width: 100%;
-      box-sizing: border-box;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    /* Renderer styles (cleaned — no @page, no body background, no html/body resets) */
-    ${cleanCss}
-  </style>
-</head>
-<body>
-  ${bodyContent}
-</body>
-</html>`;
-
-  console.log(
-    `[wrapRendererHtmlWithLetterhead] HTML assembled: ${html.length} chars, orientation=${isLandscape ? 'landscape' : 'portrait'}`,
-  );
-  return html;
+  return rendererHtml;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -431,6 +335,7 @@ export async function runMarriageCertStructuredPipeline(
           orientation:      detectedOrientation,
           documentTypeLabel: 'Marriage Certificate',
           sourcePageCount:  pageCount,
+          forceLetterheadOverlay: true,
         });
         log(`certification cover generated: ${kit.coverGenerated ? 'yes' : 'no'}`);
         log(`translated section generated: ${kit.translatedSectionGenerated ? 'yes' : 'no'}`);
@@ -767,6 +672,7 @@ export async function runCertificateLandscapeStructuredPipeline(
           orientation:       effectiveOrientation,
           documentTypeLabel: cert.certificate_title || 'Training Certificate',
           sourcePageCount:   detectedPageCount ?? undefined,
+          forceLetterheadOverlay: true,
         });
         log(`certification cover generated: ${kit.coverGenerated ? 'yes' : 'no'}`);
         log(`translated section generated: ${kit.translatedSectionGenerated ? 'yes' : 'no'}`);
@@ -928,6 +834,7 @@ async function runSharedStructuredPipeline(
         orientation: resolved.orientationForKit,
         documentTypeLabel: STRUCTURED_DOCUMENT_LABELS[documentType],
         sourcePageCount,
+        forceLetterheadOverlay: true,
         languageIntegrity: resolved.languageIntegrity,
       });
       log(`certification cover generated: ${kit.coverGenerated ? 'yes' : 'no'}`);
