@@ -197,7 +197,7 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
       padding: 0;
       width: 100%;
       font-family: Arial, sans-serif;
-      font-size: 11.5px;
+      font-size: 11.8px;
       color: #000;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -212,8 +212,8 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
        (higher specificity, centred margin).  Header paragraphs (.header-titulos p)
        override via their own rule defined below. */
     p {
-      margin: 3pt 0;
-      line-height: 1.4;
+      margin: 3.5pt 0;
+      line-height: 1.45;
     }
 
     /* Translator-note blocks: compact, muted — preserve the note but do not
@@ -239,6 +239,8 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
        the letterhead image (via html background) provides all framing. */
     .conteudo-principal {
       width: 100%;
+      padding-top: ${isLandscape ? '0.06in' : '0.14in'};
+      box-sizing: border-box;
     }
 
     /* ── Multi-page section breaks ───────────────────────────────────────────
@@ -361,8 +363,8 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     }
 
     .block-content p {
-      margin: 4pt 0;
-      line-height: 1.4;
+      margin: 4.5pt 0;
+      line-height: 1.45;
     }
 
     table {
@@ -372,14 +374,14 @@ export function buildTranslatedPageHtml(options: TranslatedPageTemplateOptions):
     }
 
     td, th {
-      font-size: 10.5px;
-      line-height: 1.35;
+      font-size: 10.9px;
+      line-height: 1.42;
       vertical-align: top;
     }
 
     th, td {
       border: 1px solid #000;
-      padding: 4px;
+      padding: 5px 5px 4px;
       word-wrap: break-word;
     }
   </style>
