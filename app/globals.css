@@ -19,6 +19,24 @@
     /* #FFFFFF */
     --primary-rgb: 255, 102, 0;
     /* #FF6600 */
+
+    /* Landing Page Design System */
+    --landing-bronze: #B87333;
+    --landing-copper: #8B5A2B;
+    --landing-gold: #C8963E;
+    --landing-cream: #F0E0C8;
+    --landing-green: #2D8B5F;
+    --landing-blue: #4A7FB5;
+    --landing-coral: #D4785A;
+    --landing-bg-page: #FAFAF7;
+    --landing-bg-card: #FFFFFF;
+    --landing-bg-warm: #F5F1EB;
+    --landing-text: #2D2A26;
+    --landing-text-muted: #6B6560;
+    --landing-text-light: #9C9A92;
+    --landing-border: #E8D5C0;
+    --landing-radius: 20px;
+    --landing-radius-lg: 24px;
 }
 
 body {
@@ -27,6 +45,36 @@ body {
     font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hero Calculator — compact to fit viewport */
+#calculator > div {
+    padding: 12px !important;
+}
+
+#calculator > div > div {
+    gap: 10px !important;
+}
+
+#calculator label[for="file-upload"] {
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+}
+
+#calculator label[for="file-upload"] > div:first-child {
+    width: 40px !important;
+    height: 40px !important;
+    margin-bottom: 8px !important;
+}
+
+#calculator label[for="file-upload"] > div:first-child svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+#calculator label[for="file-upload"] h4 {
+    font-size: 14px !important;
+    margin-bottom: 2px !important;
 }
 
 /* Custom Utilities for Premium Look */
