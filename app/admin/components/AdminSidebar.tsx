@@ -12,7 +12,6 @@ import {
     Settings,
     LogOut,
     DollarSign,
-    FilePlus,
     Inbox
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
@@ -92,13 +91,6 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
             show: user.role !== 'TECHNICAL'
         },
         {
-            id: 'concierge',
-            title: 'Novo Orçamento Manual',
-            href: '/admin/concierge',
-            icon: FilePlus,
-            category: 'Geral'
-        },
-        {
             id: 'settings',
             title: 'Configurações',
             href: '/admin/settings',
@@ -133,13 +125,13 @@ export default function AdminSidebar({ user }: { user: UserProps }) {
                     />
                 </Link>
 
-                <div className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
+                <Link href="/admin/profile" className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-xl border border-gray-800 hover:bg-gray-800 transition-colors">
                     <Avatar name={user.fullName || 'Administrador'} size="md" />
                     <div className="overflow-hidden">
                         <h3 className="text-sm font-bold text-gray-100 truncate">{user.fullName || 'Administrador'}</h3>
                         <p className="text-[10px] text-gray-400 truncate uppercase tracking-wider font-medium">{user.role}</p>
                     </div>
-                </div>
+                </Link>
             </div>
 
             {/* Search Bar */}

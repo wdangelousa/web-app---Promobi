@@ -5,6 +5,38 @@ import { createClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 
+type AdminRole = 'OPERATIONS' | 'FINANCIAL' | 'TECHNICAL' | 'PARTNER'
+
+const ROLE_SEED: Record<string, AdminRole> = {
+    'wdangelo81@gmail.com': 'OPERATIONS',
+    'leticia@promobidocs.com': 'FINANCIAL',
+    'isabele@promobidocs.com': 'TECHNICAL',
+    'evandro@promobidocs.com': 'PARTNER',
+    'belebmd@gmail.com': 'TECHNICAL',
+}
+
+function getSeededRole(email?: string | null): AdminRole | null {
+    if (!email) return null
+    return ROLE_SEED[email.toLowerCase()] ?? null
+}
+
+function getDisplayName(user: { email?: string | null; user_metadata?: Record<string, any> } | null) {
+    const metadataName =
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        user?.user_metadata?.display_name
+
+    if (typeof metadataName === 'string' && metadataName.trim().length > 0) {
+        return metadataName.trim()
+    }
+
+    if (user?.email) {
+        return user.email.split('@')[0]
+    }
+
+    return 'Equipe Promobi'
+}
+
 export async function logout() {
     try {
         const supabase = await createClient()
@@ -17,6 +49,32 @@ export async function logout() {
     redirect('/login')
 }
 
+export async function updateUserProfile(data: { fullName: string }) {
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user?.email) throw new Error('Nao autenticado')
+
+    const updated = await prisma.user.update({
+        where: { email: user.email.toLowerCase() },
+        data: { fullName: data.fullName.trim() },
+    })
+
+    await supabase.auth.updateUser({
+        data: { full_name: data.fullName.trim() },
+    })
+
+    return updated
+}
+
+export async function updateUserPassword(data: { newPassword: string }) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({
+        password: data.newPassword,
+    })
+    if (error) throw new Error(error.message)
+    return { success: true }
+}
+
 export async function getCurrentUser() {
     try {
         const supabase = await createClient()
@@ -24,25 +82,41 @@ export async function getCurrentUser() {
 
         if (error || !user?.email) return null
 
-        // MASTER KEY BYPASS - Safe access for critical roles
-        const BYPASS_EMAILS = ['wdangelo81@gmail.com', 'belebmd@gmail.com'];
+        const email = user.email.toLowerCase()
+        const seededRole = getSeededRole(email)
 
         const dbUser = await prisma.user.findUnique({
-            where: { email: user.email }
+            where: { email }
         })
 
-        if (!dbUser && BYPASS_EMAILS.includes(user.email)) {
-            console.log("[Auth] Master Key used for:", user.email);
-            const fullName = user.email === 'wdangelo81@gmail.com' ? 'Walter Dangelo (Founder)' : 'Isabele (Translator)';
-            return {
-                id: 0, // Synthetic ID
-                fullName,
-                email: user.email,
-                role: 'OPERATIONS',
-                createdAt: new Date(),
-                address: null,
-                phone: null
-            };
+        const dbRole = dbUser?.role && dbUser.role !== 'CLIENT' ? dbUser.role : null
+        const resolvedRole = seededRole ?? dbRole
+
+        if (!resolvedRole) {
+            return dbUser
+        }
+
+        if (!dbUser) {
+            const createdUser = await prisma.user.create({
+                data: {
+                    fullName: getDisplayName(user),
+                    email,
+                    role: resolvedRole,
+                },
+            })
+
+            console.log('[Auth] Bootstrapped internal user:', email, 'as', resolvedRole)
+            return createdUser
+        }
+
+        if (dbUser.role !== resolvedRole) {
+            const updatedUser = await prisma.user.update({
+                where: { email },
+                data: { role: resolvedRole },
+            })
+
+            console.log('[Auth] Synced admin role for:', email, 'to', resolvedRole)
+            return updatedUser
         }
 
         return dbUser
@@ -53,19 +127,18 @@ export async function getCurrentUser() {
         try {
             const supabase = await createClient()
             const { data: { user } } = await supabase.auth.getUser()
-            const BYPASS_EMAILS = ['wdangelo81@gmail.com', 'belebmd@gmail.com'];
+            const seededRole = getSeededRole(user?.email)
 
-            if (user?.email && BYPASS_EMAILS.includes(user.email)) {
-                const fullName = user.email === 'wdangelo81@gmail.com' ? 'Walter Dangelo (Fail-safe)' : 'Isabele (Fail-safe)';
+            if (user?.email && seededRole) {
                 return {
                     id: 0,
-                    fullName,
-                    email: user.email,
-                    role: 'OPERATIONS',
+                    fullName: `${getDisplayName(user)} (Fail-safe)`,
+                    email: user.email.toLowerCase(),
+                    role: seededRole,
                     createdAt: new Date(),
                     address: null,
                     phone: null
-                };
+                }
             }
         } catch (e) {
             console.error("Total auth failure:", e);
