@@ -425,11 +425,12 @@ export default function ConciergePage() {
         setTotalPrice(total)
     }, [documents, urgency, paymentPlan, serviceType, globalSettings])
 
+    const manualDiscountBase = breakdown.basePrice + breakdown.urgencyFee + breakdown.notaryFee
     const manualDiscount = useMemo(() => calculateManualProposalDiscount({
-        subtotal: totalPrice,
+        subtotal: manualDiscountBase,
         discountType: manualDiscountType,
         discountValue: manualDiscountValue,
-    }), [manualDiscountType, manualDiscountValue, totalPrice])
+    }), [manualDiscountType, manualDiscountValue, manualDiscountBase])
 
     const finalTotal = useMemo(
         () => Math.max(0, totalPrice - manualDiscount.manualDiscountAmount),
@@ -821,9 +822,6 @@ export default function ConciergePage() {
                             </div>
                             {breakdown.notaryFee > 0 && (
                                 <div className="flex justify-between text-sm text-green-400 font-medium"><span>Notarização:</span><span>+${breakdown.notaryFee.toFixed(2)}</span></div>
-                            )}
-                            {breakdown.volumeDiscountAmount > 0 && (
-                                <div className="flex justify-between text-sm text-emerald-400 font-bold"><span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%):</span><span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span></div>
                             )}
                             {manualDiscount.manualDiscountAmount > 0 && (
                                 <div className="flex justify-between text-sm text-emerald-300 font-bold"><span>Desconto Manual {manualDiscount.manualDiscountType === 'percent' ? `(${manualDiscount.manualDiscountValue.toFixed(2)}%)` : ''}:</span><span>-${manualDiscount.manualDiscountAmount.toFixed(2)}</span></div>

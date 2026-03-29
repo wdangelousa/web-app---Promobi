@@ -316,18 +316,10 @@ export default function Calculator() {
         const baseWithUrgency = totalBaseAfterFloor * (URGENCY_MULTIPLIER[urgency] ?? 1.0)
         const urgencyPart = baseWithUrgency - totalBaseAfterFloor
 
-        let volumeDiscountPercentage = 0
-        let volumeDiscountAmount = 0
+        const volumeDiscountPercentage = 0
+        const volumeDiscountAmount = 0
 
-        if (serviceType === 'translation') {
-            if (totalPages >= 51) volumeDiscountPercentage = 15
-            else if (totalPages >= 31) volumeDiscountPercentage = 10
-            else if (totalPages >= 16) volumeDiscountPercentage = 5
-
-            volumeDiscountAmount = baseWithUrgency * (volumeDiscountPercentage / 100)
-        }
-
-        let total = baseWithUrgency - volumeDiscountAmount + notary
+        let total = baseWithUrgency + notary
 
         if (urgency === 'standard' && paymentPlan === 'upfront_discount') {
             totalDiscountApplied = total * 0.05
@@ -1184,14 +1176,8 @@ export default function Calculator() {
                                 <div className="space-y-1 pb-2 mb-2 border-b border-slate-100 border-dashed">
                                     <div className="flex justify-between text-[#9C9A92] text-sm">
                                         <span>Subtotal Base</span>
-                                        <span>${(totalPrice + totalDiscountApplied + breakdown.volumeDiscountAmount).toFixed(2)}</span>
+                                        <span>${(totalPrice + totalDiscountApplied).toFixed(2)}</span>
                                     </div>
-                                    {breakdown.volumeDiscountAmount > 0 && (
-                                        <div className="flex justify-between text-green-600 font-bold text-sm mt-1">
-                                            <span>Desconto de Volume ({breakdown.volumeDiscountPercentage}%)</span>
-                                            <span>-${breakdown.volumeDiscountAmount.toFixed(2)}</span>
-                                        </div>
-                                    )}
                                     {totalDiscountApplied > 0 && (
                                         <div className="flex justify-between text-green-600 bg-green-50 p-1 rounded text-sm mt-1">
                                             <span>Desconto Pagamento Integral (5%)</span>

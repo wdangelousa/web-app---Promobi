@@ -154,7 +154,6 @@ export function calculateCanonicalProposalTotal(input: {
   const basePrice = roundCurrency(asNumber(breakdown.basePrice));
   const urgencyFee = roundCurrency(asNumber(breakdown.urgencyFee));
   const notaryFee = roundCurrency(asNumber(breakdown.notaryFee));
-  const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
   const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
   const manualDiscountAmount = roundCurrency(asNumber(breakdown.manualDiscountAmount));
   const operationalAdjustmentAmount = roundCurrency(asNumber(input.operationalAdjustmentAmount));
@@ -163,7 +162,6 @@ export function calculateCanonicalProposalTotal(input: {
     basePrice +
       urgencyFee +
       notaryFee -
-      volumeDiscountAmount -
       paymentDiscountAmount -
       manualDiscountAmount -
       operationalAdjustmentAmount,
@@ -248,18 +246,10 @@ export function calculateProposalBreakdown(
       : basePrice;
   const urgencyFee = roundCurrency(baseWithUrgency - basePrice);
 
-  let volumeDiscountPercentage = 0;
-  if (input.serviceType === 'translation') {
-    if (totalCount >= 51) volumeDiscountPercentage = 15;
-    else if (totalCount >= 31) volumeDiscountPercentage = 10;
-    else if (totalCount >= 16) volumeDiscountPercentage = 5;
-  }
+  const volumeDiscountPercentage = 0;
+  const volumeDiscountAmount = 0;
 
-  const volumeDiscountAmount = roundCurrency(
-    baseWithUrgency * (volumeDiscountPercentage / 100),
-  );
-
-  let total = roundCurrency(baseWithUrgency - volumeDiscountAmount + notaryFee);
+  let total = roundCurrency(baseWithUrgency + notaryFee);
   let totalDiscountApplied = 0;
 
   if (
@@ -303,14 +293,14 @@ export function deriveProposalFinancialSummary(
   );
   const urgencyFee = roundCurrency(asNumber(breakdown.urgencyFee));
   const notaryFee = roundCurrency(asNumber(breakdown.notaryFee));
-  const volumeDiscountAmount = roundCurrency(asNumber(breakdown.volumeDiscountAmount));
+  const volumeDiscountAmount = 0;
+  const volumeDiscountPercentage = 0;
   const paymentDiscountAmount = roundCurrency(asNumber(breakdown.totalDiscountApplied));
   const operationalAdjustmentAmount = roundCurrency(asNumber(input.extraDiscount));
   const manualDiscountType: ManualProposalDiscountType =
     breakdown.manualDiscountType === 'percent' ? 'percent' : 'nominal';
   const manualDiscountValue = roundCurrency(asNumber(breakdown.manualDiscountValue));
   const manualDiscountAmount = roundCurrency(asNumber(breakdown.manualDiscountAmount));
-  const volumeDiscountPercentage = asNumber(breakdown.volumeDiscountPercentage);
   const totalPayable = calculateCanonicalProposalTotal({
     breakdown,
     operationalAdjustmentAmount,
@@ -319,7 +309,6 @@ export function deriveProposalFinancialSummary(
   const derivedFullBasePrice = roundCurrency(
     totalPayable +
       totalSavings +
-      volumeDiscountAmount +
       paymentDiscountAmount +
       manualDiscountAmount +
       operationalAdjustmentAmount +

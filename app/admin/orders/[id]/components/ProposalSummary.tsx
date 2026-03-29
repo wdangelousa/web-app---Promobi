@@ -82,7 +82,6 @@ export default function ProposalSummary({ order }: ProposalSummaryProps) {
 
   const hasSavings = financial.totalSavings > 0;
   const hasDiscount =
-    financial.volumeDiscountAmount > 0 ||
     financial.manualDiscountAmount > 0 ||
     financial.operationalAdjustmentAmount > 0;
 
@@ -142,8 +141,7 @@ export default function ProposalSummary({ order }: ProposalSummaryProps) {
             <span className="text-gray-400">Descontos</span>
             <p className="font-semibold text-green-700">
               -{fmt(
-                financial.volumeDiscountAmount +
-                  financial.manualDiscountAmount +
+                financial.manualDiscountAmount +
                   financial.operationalAdjustmentAmount,
               )}
             </p>

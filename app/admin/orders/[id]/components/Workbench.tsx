@@ -317,6 +317,7 @@ export default function Workbench({ order }: { order: Order }) {
     useEffect(() => {
         setShowParityDecisionModal(false)
         setParityDecisionContext(null)
+        setParityDecisionCoverLang(selectedDoc?.sourceLanguage === 'ES' ? 'ES' : 'PT_BR')
         setParityJustification('')
         setParityRelevantPageCountInput('')
         setSelectedParityMode('strict_all_pages')

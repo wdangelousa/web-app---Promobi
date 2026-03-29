@@ -110,25 +110,19 @@ export async function createOrder(data: CreateOrderInput) {
                 breakdown: sanitizedBreakdown,
                 operationalAdjustmentAmount: data.extraDiscount || 0,
             });
-            discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
+            discountPercentage = 0;
             discountAmount =
-                (sanitizedBreakdown?.volumeDiscountAmount || 0) +
                 (sanitizedBreakdown?.totalDiscountApplied || 0) +
                 (sanitizedBreakdown?.manualDiscountAmount || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
 
-            if (totalCount >= 51) discountPercentage = 15;
-            else if (totalCount >= 31) discountPercentage = 10;
-            else if (totalCount >= 16) discountPercentage = 5;
-            else discountPercentage = 0;
-
-            discountAmount = base * (discountPercentage / 100);
-            const baseAfterDiscount = base - discountAmount;
+            discountPercentage = 0;
+            discountAmount = 0;
 
             const notary = data.documents.reduce((a, d) => a + (d.notarized ? NOTARY_FEE_PER_DOC : 0), 0);
-            totalAmount = baseAfterDiscount + notary;
+            totalAmount = base + notary;
         }
 
         const hasTranslation = data.serviceType !== 'notarization';
@@ -229,25 +223,19 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                 breakdown: sanitizedBreakdown,
                 operationalAdjustmentAmount: data.extraDiscount || 0,
             });
-            discountPercentage = sanitizedBreakdown?.volumeDiscountPercentage || 0;
+            discountPercentage = 0;
             discountAmount =
-                (sanitizedBreakdown?.volumeDiscountAmount || 0) +
                 (sanitizedBreakdown?.totalDiscountApplied || 0) +
                 (sanitizedBreakdown?.manualDiscountAmount || 0);
         } else {
             const totalCount = data.documents.reduce((a, d) => a + (d.count || 0), 0);
             const base = totalCount * PRICE_PER_PAGE * (URGENCY_MULTIPLIER[data.urgency] ?? 1.0);
 
-            if (totalCount >= 51) discountPercentage = 15;
-            else if (totalCount >= 31) discountPercentage = 10;
-            else if (totalCount >= 16) discountPercentage = 5;
-            else discountPercentage = 0;
-
-            discountAmount = base * (discountPercentage / 100);
-            const baseAfterDiscount = base - discountAmount;
+            discountPercentage = 0;
+            discountAmount = 0;
 
             const notary = data.documents.reduce((a, d) => a + (d.notarized ? NOTARY_FEE_PER_DOC : 0), 0);
-            totalAmount = baseAfterDiscount + notary;
+            totalAmount = base + notary;
         }
 
         const hasTranslation = data.serviceType !== 'notarization';

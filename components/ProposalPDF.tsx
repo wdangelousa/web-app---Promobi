@@ -545,12 +545,6 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalDiscountVal}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
                   </View>
                 )}
-                {financialSummary.volumeDiscountAmount > 0 && (
-                  <View style={S.totalDiscountRow}>
-                    <Text style={S.totalDiscountLbl}>DESCONTO DE VOLUME ({financialSummary.volumeDiscountPercentage}%)</Text>
-                    <Text style={S.totalDiscountVal}>-${financialSummary.volumeDiscountAmount.toFixed(2)}</Text>
-                  </View>
-                )}
                 {financialSummary.manualDiscountAmount > 0 && (
                   <View style={S.totalDiscountRow}>
                     <Text style={S.totalDiscountLbl}>
