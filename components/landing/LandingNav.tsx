@@ -19,6 +19,7 @@ export function LandingNav() {
         { href: '#calculator', label: 'Preços' },
         { href: '#especialidades', label: 'Serviços' },
         { href: '#faq', label: 'FAQ' },
+        { href: '/admin/dashboard', label: 'Admin' },
     ]
 
     return (
