@@ -180,6 +180,22 @@ export function buildDeliveryKitEmail(data: DeliveryEmailData): string {
             </td>
           </tr>
 
+          <!-- F. BOTAO BAIXAR TODOS -->
+          <tr>
+            <td style="padding:20px 32px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="background:#8B5A2B; border-radius:12px;">
+                    <a href="${BASE_URL}/api/orders/${data.orderId}/download-all"
+                       style="display:block; padding:16px 24px; color:#ffffff; font-family:Arial,Helvetica,sans-serif; font-size:15px; font-weight:bold; text-decoration:none; text-align:center;">
+                      &#11015; &nbsp; Baixar Todos os Documentos (ZIP)
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
           <!-- G. AVISO IMPORTANTE -->
           <tr>
             <td style="padding:24px 32px 0;">
