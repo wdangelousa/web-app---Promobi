@@ -345,202 +345,249 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
     benefits.push({ text: `Desconto concedido${pct}`, savings: financialSummary.manualDiscountAmount });
   }
 
-  // Pagination
-  const FIRST = 3, REST = 5;
-  const chunks: any[][] = [];
-  if (docs.length > 0) {
-    chunks.push(docs.slice(0, FIRST));
-    let i = FIRST;
-    while (i < docs.length) { chunks.push(docs.slice(i, i + REST)); i += REST; }
-  } else {
-    chunks.push([]);
-  }
-  const totalPdfPages = chunks.length;
+  // Urgency label
+  const urgencyLabels: Record<string, string> = {
+    standard: 'Standard', normal: 'Standard',
+    urgent: 'Express (48h)', flash: 'Ultra Express (24h)',
+  };
+  const urgencyLabel = urgencyLabels[order?.urgency] || order?.urgency || 'Standard';
+
+  // Pagination: page 1 = cover only (no docs), page 2+ = docs (6 per page)
+  const DOCS_PER_PAGE = 6;
+  const docChunks: any[][] = [];
+  let i = 0;
+  while (i < docs.length) { docChunks.push(docs.slice(i, i + DOCS_PER_PAGE)); i += DOCS_PER_PAGE; }
+  if (docChunks.length === 0) docChunks.push([]);
+  // Total pages = 1 cover + doc pages
+  const totalPdfPages = 1 + docChunks.length;
 
   return (
     <Document>
-      {chunks.map((chunk: any[], pi: number) => {
-        const isFirst = pi === 0;
-        const isLast = pi === chunks.length - 1;
-        const pageNum = pi + 1;
+      {/* ═══════════════════════════════════════════════════════════════
+          PAGE 1: COVER (no documents)
+          ═══════════════════════════════════════════════════════════════ */}
+      <Page size="A4" style={S.page}>
+        {/* ── A. COVER HEADER ──────────────────────────────────────── */}
+        <View style={S.coverHeader}>
+          <View style={S.coverHeaderRow}>
+            <View>
+              <View style={S.logoWrap}>
+                {logoBase64
+                  ? <Image src={logoBase64} style={S.logo} />
+                  : <Text style={S.logoText}>PROMOBIDOCS</Text>
+                }
+              </View>
+              <Text style={S.coverBadge}>TRADUÇÃO CERTIFICADA · USCIS ACCEPTED</Text>
+            </View>
+            <View style={S.coverRight}>
+              <Text style={S.coverQuoteLabel}>COTAÇÃO</Text>
+              <Text style={S.coverQuoteNum}>#{order?.id}</Text>
+              <Text style={S.coverDate}>{safeDate(order?.createdAt)}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={S.coverAccent} />
+
+        {/* ── B/C. CLIENT + VALIDITY ──────────────────────────────── */}
+        <View style={S.clientSection}>
+          <Text style={S.clientName}>{clientName}</Text>
+          {clientEmail ? <Text style={S.clientEmail}>{clientEmail}</Text> : null}
+          {expiresAt ? <Text style={S.clientValidity}>Proposta válida até {expiresAt}</Text> : null}
+        </View>
+
+        {/* ── SUMMARY PILLS ───────────────────────────────────────── */}
+        <View style={S.pillRow}>
+          <View style={S.pill}>
+            <Text style={S.pillVal}>{totalDocs}</Text>
+            <Text style={S.pillLbl}>Documentos</Text>
+          </View>
+          <View style={S.pill}>
+            <Text style={S.pillVal}>{totalPages}</Text>
+            <Text style={S.pillLbl}>Páginas</Text>
+          </View>
+          <View style={[S.pill, S.pillLast]}>
+            <Text style={S.pillValBronze}>${totalAmt.toFixed(2)}</Text>
+            <Text style={S.pillLbl}>Total USD</Text>
+          </View>
+        </View>
+
+        {/* ── D. DENSITY DISTRIBUTION ─────────────────────────────── */}
+        {densityBars.length > 0 && (
+          <View style={S.densDistSection}>
+            <Text style={S.densDistTitle}>DISTRIBUIÇÃO DE DENSIDADE</Text>
+            {densityBars.map((bar) => {
+              const cfg = getDensity(bar.density);
+              return (
+                <View key={bar.density} style={S.densDistRow}>
+                  <Text style={[S.densDistLabel, { color: cfg.color, backgroundColor: cfg.bg }]}>{cfg.label}</Text>
+                  <View style={S.densDistBar}>
+                    <View style={[S.densDistFill, { width: `${bar.pct}%`, backgroundColor: cfg.color }]} />
+                  </View>
+                  <Text style={S.densDistCount}>{bar.count} págs ({bar.pct}%)</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── E. BENEFITS ─────────────────────────────────────────── */}
+        {benefits.length > 0 && (
+          <View style={S.benefitsBox}>
+            <Text style={S.benefitsTitle}>BENEFÍCIOS DESTA PROPOSTA</Text>
+            {benefits.map((b, bi) => (
+              <View key={bi} style={S.benefitRow}>
+                <Text style={S.benefitCheck}>✓</Text>
+                <Text style={S.benefitText}>{b.text}</Text>
+                {b.savings > 0 && <Text style={S.benefitSavings}>-${b.savings.toFixed(2)}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── F. PRICING ──────────────────────────────────────────── */}
+        <View style={S.pricingBox}>
+          <View style={S.pricingRow}>
+            <Text style={S.pricingLabel}>Subtotal tradução ({totalPages} págs)</Text>
+            <Text style={S.pricingValue}>${financialSummary.billableBasePrice.toFixed(2)}</Text>
+          </View>
+          {financialSummary.urgencyFee > 0 && (
+            <View style={[S.pricingRow, S.pricingRowAlt]}>
+              <Text style={S.pricingLabel}>Taxa de urgência</Text>
+              <Text style={S.pricingValue}>+${financialSummary.urgencyFee.toFixed(2)}</Text>
+            </View>
+          )}
+          {financialSummary.notaryFee > 0 && (
+            <View style={S.pricingRow}>
+              <Text style={S.pricingLabel}>Notarização oficial</Text>
+              <Text style={S.pricingValue}>+${financialSummary.notaryFee.toFixed(2)}</Text>
+            </View>
+          )}
+          {financialSummary.paymentDiscountAmount > 0 && (
+            <View style={[S.pricingRow, S.pricingRowAlt]}>
+              <Text style={S.pricingLabel}>Desconto pagamento integral (5%)</Text>
+              <Text style={S.pricingGreen}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
+            </View>
+          )}
+          {financialSummary.manualDiscountAmount > 0 && (
+            <View style={S.pricingRow}>
+              <Text style={S.pricingLabel}>
+                Desconto {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue}%)` : 'concedido'}
+              </Text>
+              <Text style={S.pricingGreen}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
+            </View>
+          )}
+          {financialSummary.operationalAdjustmentAmount > 0 && (
+            <View style={[S.pricingRow, S.pricingRowAlt]}>
+              <Text style={S.pricingLabel}>Cortesia operacional</Text>
+              <Text style={S.pricingGreen}>-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</Text>
+            </View>
+          )}
+          <View style={S.pricingTotalRow}>
+            <Text style={S.pricingTotalLabel}>TOTAL A PAGAR</Text>
+            <Text style={S.pricingTotalValue}>${totalAmt.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        {/* ── G. METHODOLOGY ──────────────────────────────────────── */}
+        <View style={S.methBox}>
+          <Text style={S.methTitle}>METODOLOGIA: PREÇO JUSTO GARANTIDO</Text>
+          <Text style={S.methText}>
+            Cada página é analisada individualmente pela nossa IA. Páginas com menos
+            conteúdo custam menos — páginas em branco são classificadas como Grátis.
+            O preço reflete a complexidade real, nunca por estimativa genérica.
+          </Text>
+        </View>
+
+        {/* ── FOOTER PAGE 1 ───────────────────────────────────────── */}
+        <View style={S.footer}>
+          <View>
+            <Text style={S.footerAddr}>3300 Greenwald Way N, Kissimmee, FL 34741, USA</Text>
+            <Text style={S.footerContact}>(321) 324-5851 · desk@promobidocs.com</Text>
+          </View>
+          <View style={S.footerRight}>
+            <Text style={S.footerUrl}>www.promobidocs.com</Text>
+            <Text style={S.footerPage}>Página 1 de {totalPdfPages}</Text>
+          </View>
+        </View>
+      </Page>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          PAGES 2+: DOCUMENT DETAIL
+          ═══════════════════════════════════════════════════════════════ */}
+      {docChunks.map((chunk: any[], ci: number) => {
+        const pageNum = ci + 2;
+        const isLastDocPage = ci === docChunks.length - 1;
 
         return (
-          <Page key={pi} size="A4" style={S.page}>
+          <Page key={`doc-${ci}`} size="A4" style={S.page}>
+            {/* ── CONTINUATION HEADER ─────────────────────────────── */}
+            <View style={S.contHead}>
+              <Text style={S.contTitle}>Proposta #{order?.id} — {clientName}</Text>
+              <Text style={S.contMeta}>ANÁLISE DETALHADA</Text>
+            </View>
+            <View style={S.contAccent} />
 
-            {isFirst ? (
+            {/* ── DOC CARDS ───────────────────────────────────────── */}
+            {chunk.map((doc: any, di: number) => {
+              const gi = ci * DOCS_PER_PAGE + di;
+              return <DocCard key={gi} doc={doc} idx={gi} base={base} isOdd={di % 2 === 1} />;
+            })}
+
+            {/* ── LAST DOC PAGE: INVESTMENT TOTAL + PAYMENT ────────── */}
+            {isLastDocPage && (
               <>
-                {/* ── A. COVER HEADER ─────────────────────────────────── */}
-                <View style={S.coverHeader}>
-                  <View style={S.coverHeaderRow}>
-                    <View>
-                      <View style={S.logoWrap}>
-                        {logoBase64
-                          ? <Image src={logoBase64} style={S.logo} />
-                          : <Text style={S.logoText}>PROMOBIDOCS</Text>
-                        }
-                      </View>
-                      <Text style={S.coverBadge}>TRADUÇÃO CERTIFICADA · USCIS ACCEPTED</Text>
+                {/* Investment total */}
+                <View style={{ marginHorizontal: 20, marginTop: 12, backgroundColor: C.dark, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <View style={{ flex: 1, marginRight: 16 }}>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.lightGray, letterSpacing: 2, marginBottom: 4 }}>INVESTIMENTO TOTAL</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.white }}>{clientName}</Text>
+                      <Text style={{ fontSize: 8, color: C.lightGray, marginTop: 3 }}>
+                        {totalDocs} docs · {totalPages} págs · Tradução Certificada USCIS · {urgencyLabel}{dueDateLabel ? ` · Prazo ${dueDateLabel}` : ''}
+                      </Text>
                     </View>
-                    <View style={S.coverRight}>
-                      <Text style={S.coverQuoteLabel}>COTAÇÃO</Text>
-                      <Text style={S.coverQuoteNum}>#{order?.id}</Text>
-                      <Text style={S.coverDate}>{safeDate(order?.createdAt)}</Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.bronze, marginBottom: 2 }}>USD</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.bronze, lineHeight: 1 }}>${totalAmt.toFixed(2)}</Text>
                     </View>
                   </View>
-                </View>
-                <View style={S.coverAccent} />
-
-                {/* ── B/C. CLIENT + VALIDITY ──────────────────────────── */}
-                <View style={S.clientSection}>
-                  <Text style={S.clientName}>{clientName}</Text>
-                  {clientEmail ? <Text style={S.clientEmail}>{clientEmail}</Text> : null}
-                  {expiresAt ? <Text style={S.clientValidity}>Proposta válida até {expiresAt}</Text> : null}
-                </View>
-
-                {/* ── SUMMARY PILLS ───────────────────────────────────── */}
-                <View style={S.pillRow}>
-                  <View style={S.pill}>
-                    <Text style={S.pillVal}>{totalDocs}</Text>
-                    <Text style={S.pillLbl}>Documentos</Text>
-                  </View>
-                  <View style={S.pill}>
-                    <Text style={S.pillVal}>{totalPages}</Text>
-                    <Text style={S.pillLbl}>Páginas</Text>
-                  </View>
-                  <View style={[S.pill, S.pillLast]}>
-                    <Text style={S.pillValBronze}>${totalAmt.toFixed(2)}</Text>
-                    <Text style={S.pillLbl}>Total USD</Text>
-                  </View>
-                </View>
-
-                {/* ── D. DENSITY DISTRIBUTION ─────────────────────────── */}
-                {densityBars.length > 0 && (
-                  <View style={S.densDistSection}>
-                    <Text style={S.densDistTitle}>DISTRIBUIÇÃO DE DENSIDADE</Text>
-                    {densityBars.map((bar) => {
-                      const cfg = getDensity(bar.density);
-                      return (
-                        <View key={bar.density} style={S.densDistRow}>
-                          <Text style={[S.densDistLabel, { color: cfg.color, backgroundColor: cfg.bg }]}>{cfg.label}</Text>
-                          <View style={S.densDistBar}>
-                            <View style={[S.densDistFill, { width: `${bar.pct}%`, backgroundColor: cfg.color }]} />
-                          </View>
-                          <Text style={S.densDistCount}>{bar.count} págs ({bar.pct}%)</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-
-                {/* ── E. BENEFITS ─────────────────────────────────────── */}
-                {benefits.length > 0 && (
-                  <View style={S.benefitsBox}>
-                    <Text style={S.benefitsTitle}>BENEFÍCIOS DESTA PROPOSTA</Text>
-                    {benefits.map((b, i) => (
-                      <View key={i} style={S.benefitRow}>
-                        <Text style={S.benefitCheck}>✓</Text>
-                        <Text style={S.benefitText}>{b.text}</Text>
-                        {b.savings > 0 && <Text style={S.benefitSavings}>-${b.savings.toFixed(2)}</Text>}
+                  {financialSummary.manualDiscountAmount > 0 && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(45,139,95,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(45,139,95,0.3)' }}>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 8, color: '#A5D6A7' }}>
+                        DESCONTO {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue}%)` : 'CONCEDIDO'}
+                      </Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 10, color: '#A5D6A7' }}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
+                    </View>
+                  )}
+                  <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 10 }} />
+                  <View style={{ flexDirection: 'row' }}>
+                    {[
+                      { t: 'ZELLE', s: 'Transferência instantânea' },
+                      { t: 'PIX / BOLETO', s: 'Pagamento via Brasil' },
+                      { t: 'CARTÃO', s: 'Crédito ou débito' },
+                    ].map((p, pi, arr) => (
+                      <View key={pi} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginRight: pi < arr.length - 1 ? 6 : 0 }}>
+                        <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.white, marginBottom: 2 }}>{p.t}</Text>
+                        <Text style={{ fontSize: 6.5, color: C.lightGray }}>{p.s}</Text>
                       </View>
                     ))}
                   </View>
-                )}
-
-                {/* ── F. PRICING ──────────────────────────────────────── */}
-                <View style={S.pricingBox}>
-                  <View style={S.pricingRow}>
-                    <Text style={S.pricingLabel}>Subtotal tradução ({totalPages} págs)</Text>
-                    <Text style={S.pricingValue}>${financialSummary.billableBasePrice.toFixed(2)}</Text>
-                  </View>
-                  {financialSummary.urgencyFee > 0 && (
-                    <View style={[S.pricingRow, S.pricingRowAlt]}>
-                      <Text style={S.pricingLabel}>Taxa de urgência</Text>
-                      <Text style={S.pricingValue}>+${financialSummary.urgencyFee.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {financialSummary.notaryFee > 0 && (
-                    <View style={S.pricingRow}>
-                      <Text style={S.pricingLabel}>Notarização oficial</Text>
-                      <Text style={S.pricingValue}>+${financialSummary.notaryFee.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {financialSummary.paymentDiscountAmount > 0 && (
-                    <View style={[S.pricingRow, S.pricingRowAlt]}>
-                      <Text style={S.pricingLabel}>Desconto pagamento integral (5%)</Text>
-                      <Text style={S.pricingGreen}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {financialSummary.manualDiscountAmount > 0 && (
-                    <View style={S.pricingRow}>
-                      <Text style={S.pricingLabel}>
-                        Desconto {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue}%)` : 'concedido'}
-                      </Text>
-                      <Text style={S.pricingGreen}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {financialSummary.operationalAdjustmentAmount > 0 && (
-                    <View style={[S.pricingRow, S.pricingRowAlt]}>
-                      <Text style={S.pricingLabel}>Cortesia operacional</Text>
-                      <Text style={S.pricingGreen}>-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  <View style={S.pricingTotalRow}>
-                    <Text style={S.pricingTotalLabel}>TOTAL A PAGAR</Text>
-                    <Text style={S.pricingTotalValue}>${totalAmt.toFixed(2)}</Text>
-                  </View>
                 </View>
 
-                {/* ── G. METHODOLOGY ──────────────────────────────────── */}
-                {totalPdfPages > 1 && (
-                  <View style={S.methBox}>
-                    <Text style={S.methTitle}>METODOLOGIA: PREÇO JUSTO GARANTIDO</Text>
-                    <Text style={S.methText}>
-                      Cada página é analisada individualmente pela nossa IA. Páginas com menos
-                      conteúdo custam menos — páginas em branco são classificadas como Grátis.
-                      O preço reflete a complexidade real, nunca por estimativa genérica.
+                {/* Validity */}
+                {expiresAt && (
+                  <View style={{ marginHorizontal: 36, marginTop: 8 }}>
+                    <Text style={{ fontSize: 8, color: C.bronze, fontFamily: 'Helvetica-Bold' }}>
+                      Proposta válida até {expiresAt}
                     </Text>
                   </View>
                 )}
-              </>
-            ) : (
-              <>
-                {/* ── CONTINUATION HEADER ─────────────────────────────── */}
-                <View style={S.contHead}>
-                  <Text style={S.contTitle}>Proposta #{order?.id} — {clientName}</Text>
-                  <Text style={S.contMeta}>ANÁLISE DETALHADA</Text>
-                </View>
-                <View style={S.contAccent} />
-              </>
-            )}
 
-            {/* ── SECTION LABEL ────────────────────────────────────── */}
-            <View style={S.secRow}>
-              <View style={S.secDot} />
-              <Text style={S.secTitle}>ANÁLISE DETALHADA POR DOCUMENTO</Text>
-              <View style={S.secLine} />
-            </View>
-
-            {/* ── DOC CARDS ────────────────────────────────────────── */}
-            {chunk.length === 0
-              ? <View style={{ marginHorizontal: 20, padding: 20 }}><Text style={{ color: C.gray }}>Nenhum documento selecionado.</Text></View>
-              : chunk.map((doc: any, di: number) => {
-                const gi = isFirst ? di : FIRST + (pi - 1) * REST + di;
-                return <DocCard key={gi} doc={doc} idx={gi} base={base} isOdd={di % 2 === 1} />;
-              })
-            }
-
-            {/* ── LAST PAGE: PAYMENT + VALIDITY ────────────────────── */}
-            {isLast && (
-              <>
-                <View style={S.payRow}>
-                  {[
-                    { t: 'ZELLE', s: 'Transferência instantânea nos EUA' },
-                    { t: 'PIX / BOLETO', s: 'Pagamento via Brasil' },
-                    { t: 'CARTÃO', s: 'Crédito ou débito via Stripe' },
-                  ].map((p, i, arr) => (
-                    <View key={i} style={[S.payCard, i === arr.length - 1 ? S.payCardLast : {}]}>
-                      <Text style={S.payTitle}>{p.t}</Text>
-                      <Text style={S.payText}>{p.s}</Text>
+                {/* Credentials */}
+                <View style={{ flexDirection: 'row', marginHorizontal: 36, marginTop: 10 }}>
+                  {['Florida Notary Public', 'ATA Member', 'ATIF Member'].map((badge, bi) => (
+                    <View key={bi} style={{ flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingVertical: 6, alignItems: 'center', marginRight: bi < 2 ? 6 : 0 }}>
+                      <Text style={{ fontSize: 7, color: C.lightGray, fontFamily: 'Helvetica-Bold' }}>{badge}</Text>
                     </View>
                   ))}
                 </View>

@@ -31,11 +31,18 @@ export function cleanDocumentName(raw: string | null | undefined): string {
     }
 
     // Remove WhatsApp timestamps: "2026-03-27 At 5.07.45 Pm" etc.
-    name = name.replace(/\d{4}-\d{2}-\d{2}\s+at\s+\d+\.\d+\.\d+\s*(am|pm)/gi, '')
+    name = name.replace(/\d{4}-\d{2}-\d{2}\s+at\s+\d+[.\-:]\d+[.\-:]\d+\s*(am|pm)?/gi, '')
+
+    // Remove standalone dates: "2025 11 05", "2025-11-05", "2026 03 27"
+    name = name.replace(/^\d{4}[\s\-_.]\d{2}[\s\-_.]\d{2}\s*/g, '')
+    name = name.replace(/\d{4}[\s\-_.]\d{2}[\s\-_.]\d{2}\s*$/g, '')
 
     // Remove file duplicate suffixes: (1), (2), (1) (1), -1, -2
     name = name.replace(/\s*\(\d+\)\s*/g, ' ')
     name = name.replace(/\s*-\d+\s*$/g, '')
+
+    // Remove parentheses with short text inside: "(atyla)", "(1)", "(copy)"
+    name = name.replace(/\s*\([^)]{1,10}\)\s*/g, ' ')
 
     // Replace underscores, multiple hyphens, dots in middle with spaces
     name = name.replace(/[_]+/g, ' ')
@@ -44,11 +51,15 @@ export function cleanDocumentName(raw: string | null | undefined): string {
     name = name.replace(/\s{2,}/g, ' ')
     name = name.trim()
 
-    // Fix apostrophe accents: Declarac'ao -> Declaracao
-    name = name.replace(/c['\u2019]a/gi, 'ca')
+    // Fix apostrophe accents: Declarac'ao -> Declaracao, c'a -> ca
+    name = name.replace(/c['\u2018\u2019\u0027]a/gi, 'ca')
+
+    // Remove trailing numbers: "Criminais 2", "Carta 3", "Carta4"
+    name = name.replace(/\s+\d{1,2}$/g, '')
+    name = name.replace(/(\D)\d{1,2}$/g, '$1')
 
     // Keyword replacements before title case
-    name = name.replace(/^Curriculum\b/i, 'Curriculo')
+    name = name.replace(/\bCurriculum\b/gi, 'Curriculo')
     name = name.replace(/\bCv\b/gi, '')
     name = name.trim()
 
@@ -107,6 +118,12 @@ export function cleanDocumentName(raw: string | null | undefined): string {
     }
     for (const [wrong, right] of Object.entries(accentMap)) {
         name = name.replace(new RegExp(`\\b${wrong}\\b`, 'g'), right)
+    }
+
+    // Uppercase known acronyms (2-4 letters)
+    const acronyms = ['Tcc', 'Mba', 'Ufba', 'Rh', 'Dtp', 'Cnh', 'Cpf', 'Cnpj', 'Oab', 'Crm', 'Crea', 'Inss', 'Fgts', 'Usp', 'Ufmg', 'Ufrj', 'Uff', 'Puc']
+    for (const acr of acronyms) {
+        name = name.replace(new RegExp(`\\b${acr}\\b`, 'g'), acr.toUpperCase())
     }
 
     // Clean up trailing/leading spaces and multiple spaces
