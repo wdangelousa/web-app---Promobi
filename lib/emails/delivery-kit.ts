@@ -1,7 +1,6 @@
 import { cleanDocumentName } from '@/lib/proposalUtils'
 
 const WHATSAPP_NUMBER = '14076396154'
-const GOOGLE_REVIEW_URL = 'https://g.page/r/promobidocs/review'
 const BASE_URL = 'https://promobidocs.com'
 
 interface DeliveryDoc {
@@ -262,30 +261,6 @@ export function buildDeliveryKitEmail(data: DeliveryEmailData): string {
                   <td valign="top" style="padding-left:8px;">
                     <p style="margin:0 0 2px; font-size:13px; font-weight:bold; color:#2D2A26;">Guarde para uso futuro</p>
                     <p style="margin:0; font-size:12px; color:#6B6560; line-height:1.5;">Suas tradu&ccedil;&otilde;es certificadas n&atilde;o expiram. Podem ser reutilizadas em outros processos sem necessidade de nova tradu&ccedil;&atilde;o.</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- I. AVALIACAO -->
-          <tr>
-            <td style="padding:28px 32px 0;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E8D5C0; border-radius:12px;">
-                <tr>
-                  <td style="padding:20px; text-align:center;">
-                    <p style="margin:0 0 8px; font-size:24px; letter-spacing:4px;">&#9733;&#9733;&#9733;&#9733;&#9733;</p>
-                    <p style="margin:0 0 4px; font-size:14px; font-weight:bold; color:#2D2A26;">Sua opini&atilde;o &eacute; muito importante para n&oacute;s.</p>
-                    <p style="margin:0 0 16px; font-size:12px; color:#6B6560;">Como foi sua experi&ecirc;ncia com a Promobidocs?</p>
-                    <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                      <tr>
-                        <td style="background:#B87333; border-radius:8px;">
-                          <a href="${GOOGLE_REVIEW_URL}" style="display:inline-block; padding:10px 24px; color:#ffffff; font-size:13px; font-weight:bold; text-decoration:none; font-family:Arial,sans-serif;">
-                            Deixar avalia&ccedil;&atilde;o no Google &rarr;
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
                   </td>
                 </tr>
               </table>
