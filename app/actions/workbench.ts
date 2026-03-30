@@ -13,6 +13,7 @@ import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/app/actions/auth'
 import { Resend } from 'resend'
 import { PDFDocument } from 'pdf-lib'
+import { buildDeliveryKitEmail, buildDeliverySubject } from '@/lib/emails/delivery-kit'
 import { classifyDocument } from '@/services/documentClassifier'
 import { detectDocumentFamily } from '@/services/documentFamilyRegistry'
 import {
@@ -1329,75 +1330,38 @@ async function sendDeliveryEmail(
     throw new Error(`No selected documents with delivery kit URL for Order #${order.id}.`)
   }
 
-  // Build download links list substituindo Flexbox por Tabelas
-  const docLinks = docs
-    .map((d, i) => {
-      const name = (d.exactNameOnDoc ?? `Documento ${i + 1}`).split(/[/\\]/).pop() ?? `Documento ${i + 1}`
-      return `
-        <table width="100%" cellpadding="12" cellspacing="0" style="border:1px solid #E5E7EB; border-radius:8px; margin-bottom:8px; background:#F9FAFB;">
-          <tr>
-            <td width="30" style="font-size:18px; text-align:center; padding-right:0;">📄</td>
-            <td style="font-size:13px; color:#374151; font-weight:600;">${name}</td>
-            <td align="right">
-              <a href="${d.delivery_pdf_url}"
-                 style="background:#f5b000; color:#111827; text-decoration:none;
-                        padding:8px 16px; border-radius:8px; font-size:12px; font-weight:bold; display:inline-block;">
-                Baixar PDF
-              </a>
-            </td>
-          </tr>
-        </table>
-      `
-    })
-    .join('')
+  // Build document data for new template
+  const metadata = order.metadata ? (typeof order.metadata === 'string' ? JSON.parse(order.metadata) : order.metadata) : {}
+  const metaDocs = Array.isArray(metadata.documents) ? metadata.documents : []
+  const totalPages = docs.reduce((sum, d) => {
+    const md = metaDocs.find((m: any) => m.fileName === d.exactNameOnDoc || m.id === String(d.id))
+    return sum + (md?.analysis?.pages?.length || md?.count || 1)
+  }, 0)
+
+  const emissionDate = new Date(order.createdAt).toLocaleDateString('pt-BR', {
+    day: '2-digit', month: 'long', year: 'numeric',
+  })
+
+  const emailHtml = buildDeliveryKitEmail({
+    clientName,
+    orderId: order.id,
+    totalDocs: docs.length,
+    totalPages,
+    sourceLanguage: order.sourceLanguage || 'PT_BR',
+    emissionDate,
+    documents: docs.map((d, i) => ({
+      name: d.exactNameOnDoc ?? `Documento ${i + 1}`,
+      deliveryUrl: d.delivery_pdf_url!,
+      pages: metaDocs.find((m: any) => m.fileName === d.exactNameOnDoc)?.analysis?.pages?.length,
+      fileType: metaDocs.find((m: any) => m.fileName === d.exactNameOnDoc)?.analysis?.fileType === 'image' ? 'IMG' : 'PDF',
+    })),
+  })
 
   const { data, error } = await resend.emails.send({
     from: 'Promobidocs <desk@promobidocs.com>',
     to: recipients,
-    subject: `📩 [VALIDAÇÃO] Sua tradução certificada está pronta — Pedido #${order.id + 1000}`,
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <body style="font-family: Arial, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-          <tr>
-            <td style="background: #0F1117; padding: 30px; text-align: center;">
-              <img src="https://promobidocs.com/logo-promobidocs.png" width="180" alt="Promobidocs" style="margin-bottom: 10px;" />
-              <p style="color: #f5b000; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin: 0 0 6px;">PROMOBIDOCS · TRADUÇÃO CERTIFICADA</p>
-              <h1 style="color: white; font-size: 22px; margin: 0; font-weight: bold;">Sua tradução está pronta! 🎉</h1>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 40px; background: #ffffff;">
-              <h2 style="color: #111827; margin-top: 0;">Kit de Tradução Disponível</h2>
-              <p style="margin: 0 0 12px; color: #374151;">Olá, <strong>${clientName}</strong>,</p>
-              <p style="margin: 0 0 12px; line-height: 1.6; color: #374151;">
-                Temos o prazer de entregar o seu Kit de Tradução Oficial, processado e revisado por nossa equipe especializada.
-              </p>
-
-              <div style="margin: 24px 0;">
-                  <p style="font-size: 11px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">
-                  ${docs.length} Documento(s) Liberado(s)
-                  </p>
-                ${docLinks}
-              </div>
-
-              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
-                <p style="margin: 0 0 4px; color: #374151; font-size: 14px;">Atenciosamente,</p>
-                <p style="margin: 0; color: #111827; font-weight: bold; font-size: 15px;">Equipe Promobidocs</p>
-                <p style="margin: 0; color: #f5b000; font-size: 13px; font-weight: bold;">www.promobidocs.com</p>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td style="background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #f3f4f6;">
-              © 2026 Promobidocs Services · Orlando, FL · Tradução e Notarização
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-    `,
+    subject: buildDeliverySubject(order.id),
+    html: emailHtml,
   })
 
   if (error) {
