@@ -44,7 +44,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
             {/* Footer */}
             <div style={{ backgroundColor: '#f1f5f9', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
                 <p style={{ margin: 0 }}>© 2026 Promobidocs Services. Todos os direitos reservados.</p>
-                <p style={{ margin: '5px 0 0 0' }}>Orlando, FL - USA</p>
+                <p style={{ margin: '5px 0 0 0' }}>Kissimmee, FL - USA</p>
             </div>
         </div>
     </div>

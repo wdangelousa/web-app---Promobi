@@ -562,7 +562,7 @@ export default function ProposalClient({
                     </div>
                     <div className="text-center text-xs text-[#9C9A92] space-y-1">
                         <p className="font-bold">Promobi Corporate Services LLC</p>
-                        <p>4700 Millenia Blvd, Orlando, FL 32839, USA</p>
+                        <p>3300 Greenwald Way N, Kissimmee, FL 34741, USA</p>
                         <p>(407) 639-6154 · desk@promobidocs.com · www.promobidocs.com</p>
                         <p className="mt-3 text-[10px]">
                             Esta proposta é confidencial e destinada exclusivamente ao destinatário identificado.

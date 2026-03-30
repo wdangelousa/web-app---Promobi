@@ -10,35 +10,7 @@ const REMOVE_PREFIXES = [
     /^Screenshot\s*/i,
     /^Scan\s*/i,
     /^\d{8}[-_]\d{4,6}\s*/i,
-]
-
-const ACCENT_FIXES: [RegExp, string][] = [
-    [/\bDeclarac['\u2019]?ao\b/gi, 'Declaracao'],
-    [/\bCertidao\b/gi, 'Certidao'],
-    [/\bHistorico\b/gi, 'Historico'],
-    [/\bTraducao\b/gi, 'Traducao'],
-    [/\bOrcamento\b/gi, 'Orcamento'],
-    [/\bCotacao\b/gi, 'Cotacao'],
-    [/\bCertificacao\b/gi, 'Certificacao'],
-    [/\bProcuracao\b/gi, 'Procuracao'],
-    [/\bDivorcio\b/gi, 'Divorcio'],
-    [/\bObito\b/gi, 'Obito'],
-    // Now apply proper accents
-    [/\bCertidao\b/g, 'Certidao'],
-    [/\bDeclaracao\b/g, 'Declaracao'],
-]
-
-const PROPER_ACCENTS: [string, string][] = [
-    ['Certidao', 'Certidao de'],
-    ['Declaracao', 'Declaracao'],
-    ['Historico', 'Historico'],
-    ['Traducao', 'Traducao'],
-    ['Orcamento', 'Orcamento'],
-    ['Cotacao', 'Cotacao'],
-    ['Certificacao', 'Certificacao'],
-    ['Procuracao', 'Procuracao'],
-    ['Divorcio', 'Divorcio'],
-    ['Obito', 'Obito'],
+    /^Vq\d+[\s_]*/i,
 ]
 
 export function cleanDocumentName(raw: string | null | undefined): string {
@@ -46,30 +18,46 @@ export function cleanDocumentName(raw: string | null | undefined): string {
 
     let name = raw.trim()
 
-    // Remove file extension
+    // Remove file extension (including glued ones like "Finitospdf")
     name = name.replace(/\.(pdf|jpeg|jpg|png|gif|tiff?|bmp|webp|docx?)$/i, '')
+    name = name.replace(/(pdf|jpg|jpeg|png)$/i, (match, ext, offset) => {
+        if (offset > 0 && /[a-z]/i.test(name[offset - 1])) return ''
+        return match
+    })
 
     // Remove common prefixes
     for (const prefix of REMOVE_PREFIXES) {
         name = name.replace(prefix, '')
     }
 
-    // Replace underscores and multiple hyphens with spaces
+    // Remove WhatsApp timestamps: "2026-03-27 At 5.07.45 Pm" etc.
+    name = name.replace(/\d{4}-\d{2}-\d{2}\s+at\s+\d+\.\d+\.\d+\s*(am|pm)/gi, '')
+
+    // Remove file duplicate suffixes: (1), (2), (1) (1), -1, -2
+    name = name.replace(/\s*\(\d+\)\s*/g, ' ')
+    name = name.replace(/\s*-\d+\s*$/g, '')
+
+    // Replace underscores, multiple hyphens, dots in middle with spaces
     name = name.replace(/[_]+/g, ' ')
     name = name.replace(/-{2,}/g, ' ')
+    name = name.replace(/\.\s/g, ' ')
     name = name.replace(/\s{2,}/g, ' ')
     name = name.trim()
 
-    // Fix common accent patterns
-    for (const [pattern, replacement] of ACCENT_FIXES) {
-        name = name.replace(pattern, replacement)
-    }
+    // Fix apostrophe accents: Declarac'ao -> Declaracao
+    name = name.replace(/c['\u2019]a/gi, 'ca')
+
+    // Keyword replacements before title case
+    name = name.replace(/^Curriculum\b/i, 'Curriculo')
+    name = name.replace(/\bCv\b/gi, '')
+    name = name.trim()
 
     // Title case
     name = name
         .split(' ')
+        .filter(w => w.length > 0)
         .map((word) => {
-            if (word.length <= 2 && /^(de|da|do|em|e|ou|no|na|os|as|ao)$/i.test(word)) {
+            if (/^(de|da|do|em|e|ou|no|na|os|as|ao|por|para)$/i.test(word)) {
                 return word.toLowerCase()
             }
             return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
@@ -107,13 +95,25 @@ export function cleanDocumentName(raw: string | null | undefined): string {
         'Cotacao': 'Cotação',
         'Certificacao': 'Certificação',
         'Orcamento': 'Orçamento',
+        'Inteligencia': 'Inteligência',
+        'Experiencia': 'Experiência',
+        'Transferencia': 'Transferência',
+        'Vivencia': 'Vivência',
+        'Residencia': 'Residência',
+        'Competencia': 'Competência',
+        'Referencia': 'Referência',
+        'Frequencia': 'Frequência',
+        'Nascimento': 'Nascimento',
     }
     for (const [wrong, right] of Object.entries(accentMap)) {
         name = name.replace(new RegExp(`\\b${wrong}\\b`, 'g'), right)
     }
 
-    // If name is empty or just numbers/special chars
-    if (name.length === 0 || /^[\d\s\-_.]+$/.test(name)) {
+    // Clean up trailing/leading spaces and multiple spaces
+    name = name.replace(/\s{2,}/g, ' ').trim()
+
+    // If name is empty or just numbers/special chars/single letter
+    if (name.length <= 1 || /^[\d\s\-_.]+$/.test(name)) {
         return 'Documento Digitalizado'
     }
 

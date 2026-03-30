@@ -1154,7 +1154,7 @@ function buildCertificationCoverHtml(
           <div class="contact">
             Telephone: +1 321 324-5851<br>
             Email: desk@promobidocs.com<br>
-            13550 Village Park Dr, Orlando, FL
+            3300 Greenwald Way N, Kissimmee, FL
           </div>
         </div>
         <div class="footer-right">

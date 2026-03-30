@@ -272,7 +272,7 @@ export const footerHtml = `
     <div class="footer-brand">PRO<span>MOBI</span></div>
     <div class="footer-line">
         <strong>Promobidocs Services LLC</strong><br>
-        Winter Garden / Horizon West · Orlando, FL · United States
+        Winter Garden / Horizon West · Kissimmee, FL · United States
     </div>
     <div class="footer-line" style="margin-top:16px;">
         Possui alguma dúvida?<br>

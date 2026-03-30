@@ -66,7 +66,7 @@ export const DeliveryEmail: React.FC<DeliveryEmailProps> = ({
             {/* Footer */}
             <div style={{ backgroundColor: '#f1f5f9', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
                 <p style={{ margin: '0 0 8px 0' }}>Promobidocs Services LLC • Florida Notary Public</p>
-                <p style={{ margin: 0 }}>Orlando, FL • OAB/SP Affiliate</p>
+                <p style={{ margin: 0 }}>Kissimmee, FL • OAB/SP Affiliate</p>
             </div>
 
         </div>

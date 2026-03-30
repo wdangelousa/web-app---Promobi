@@ -30,7 +30,7 @@ export default async function PixSuccessPage({
 
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 bg-gray-50 my-4">
                     <p className="font-mono text-sm text-gray-500 break-all">
-                        00020126360014BR.GOV.BCB.PIX0114+551199999999520400005303986540510.005802BR5913Promobi LLC6008Orlando62070503***6304E2CA
+                        00020126360014BR.GOV.BCB.PIX0114+551199999999520400005303986540510.005802BR5913Promobi LLC6009Kissimmee62070503***6304E2CA
                     </p>
                 </div>
 

@@ -286,7 +286,7 @@ async function notifyIsabele(
 
           <!-- Footer -->
           <div style="background: #F3F4F6; border-top: 1px solid #E5E7EB; padding: 16px 32px; text-align: center;">
-            <p style="color: #9CA3AF; font-size: 11px; margin: 0;">Promobi · 4700 Millenia Blvd, Orlando FL 32839 · desk@promobidocs.com</p>
+            <p style="color: #9CA3AF; font-size: 11px; margin: 0;">Promobi · 3300 Greenwald Way N, Kissimmee FL 34741 · desk@promobidocs.com</p>
           </div>
         </div>
       </body>

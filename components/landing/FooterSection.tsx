@@ -58,7 +58,7 @@ export function FooterSection() {
                     <motion.div variants={fadeInUp}>
                         <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Contato</h3>
                         <div className="mt-5 space-y-3 text-sm">
-                            <p>Orlando, FL</p>
+                            <p>Kissimmee, FL</p>
                             <a
                                 href="https://wa.me/14076396154"
                                 target="_blank"

@@ -323,7 +323,7 @@ export function buildDeliveryKitEmail(data: DeliveryEmailData): string {
           <tr>
             <td style="padding:24px 32px 28px; text-align:center; border-top:1px solid #E8D5C0; margin-top:24px;">
               <p style="margin:0 0 2px; font-size:12px; font-weight:bold; color:#2D2A26;">Promobidocs Services LLC</p>
-              <p style="margin:0 0 2px; font-size:11px; color:#9C9A92;">4700 Millenia Blvd, Orlando, FL 32839, USA</p>
+              <p style="margin:0 0 2px; font-size:11px; color:#9C9A92;">3300 Greenwald Way N, Kissimmee, FL 34741, USA</p>
               <p style="margin:0 0 8px; font-size:11px; color:#9C9A92;">(321) 324-5851 &middot; desk@promobidocs.com</p>
               <p style="margin:0; font-size:9px; color:#C4C2BC; line-height:1.5;">
                 Este email &eacute; confidencial e destinado exclusivamente ao destinat&aacute;rio identificado. Os documentos anexados s&atilde;o tradu&ccedil;&otilde;es certificadas com fidelidade atestada ao original.
