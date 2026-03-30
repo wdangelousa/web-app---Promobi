@@ -1,6 +1,5 @@
-// components/ProposalPDF.tsx  ·  v5 — Redesign visual completo
-// Capa bronze, barras de densidade, benefícios, pricing estilizado,
-// nomes limpos, acentuação completa, endereço atualizado.
+// components/ProposalPDF.tsx · v6 — Reescrito do zero
+// Página 1 = capa (sem docs). Páginas 2..N-1 = docs (10/página). Última = investimento.
 
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
@@ -8,604 +7,400 @@ import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary';
 import { resolveStoredOrCalculatedDueDate } from '@/lib/orderDueDate';
 import { cleanDocumentName } from '@/lib/proposalUtils';
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+// ─── Colors ──────────────────────────────────────────────────────────────────
 const C = {
-  bronze: '#B87333',
-  bronzeLight: '#F5EDE3',
-  copper: '#8B5A2B',
-  gold: '#C8963E',
-  dark: '#2D2A26',
-  slate: '#4A4A4A',
-  gray: '#6B6560',
-  lightGray: '#9C9A92',
-  border: '#E8D5C0',
-  bgPage: '#FAFAF7',
-  bgWarm: '#F5F1EB',
-  white: '#FFFFFF',
-  green: '#2D8B5F',
-  greenLight: '#E8F5E9',
-  greenBorder: '#A5D6A7',
-  amber: '#D97706',
-  amberBg: '#FEF3C7',
-  red: '#EF4444',
-  redBg: '#FEE2E2',
-  blue: '#4A7FB5',
-  blueBg: '#DBEAFE',
+  bronze: '#B87333', copper: '#8B5A2B', gold: '#C8963E',
+  text: '#1F1A14', sub: '#6B6055', muted: '#A89C90',
+  border: '#E8D5C0', cream: '#F5F1EB', page: '#FAFAF7', white: '#FFFFFF',
+  green: '#2D8B5F', greenBg: '#E8F5E9', greenBorder: '#A5D6A7',
+  coral: '#D4785A', red: '#C94A4A', blue: '#4A7FB5',
+  amber: '#D97706', amberBg: '#FEF3C7',
 };
 
 const DENSITY: Record<string, { label: string; color: string; bg: string }> = {
-  high:     { label: 'ALTA',      color: '#D97706', bg: '#FEF3C7' },
-  medium:   { label: 'MÉDIA',     color: '#B45309', bg: '#FEF3C7' },
-  low:      { label: 'BAIXA',     color: '#4A7FB5', bg: '#DBEAFE' },
-  blank:    { label: 'GRÁTIS',    color: '#2D8B5F', bg: '#E8F5E9' },
-  scanned:  { label: 'ESCANEADA', color: '#EF4444', bg: '#FEE2E2' },
+  high:     { label: 'ALTA',      color: C.coral, bg: '#FDE8E0' },
+  medium:   { label: 'MÉDIA',     color: C.amber, bg: C.amberBg },
+  low:      { label: 'BAIXA',     color: C.blue,  bg: '#DBEAFE' },
+  blank:    { label: 'GRÁTIS',    color: C.green, bg: C.greenBg },
+  scanned:  { label: 'ESCANEADA', color: C.red,   bg: '#FEE2E2' },
 };
-const getDensity = (d: string) => DENSITY[d] || DENSITY.high;
+const getDen = (d: string) => DENSITY[d] || DENSITY.high;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const safeMeta = (raw: any) => {
+  try { return typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {}); } catch { return {}; }
+};
+const fmtDate = (val: any) => {
+  try { return new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }); }
+  catch { return ''; }
+};
+const fmtDateShort = (val: any) => {
+  try { return new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  catch { return ''; }
+};
+const docName = (raw: string, idx: number) =>
+  cleanDocumentName((raw || '').split(/[/\\]/).pop() || `Documento ${idx + 1}`);
+
 const buildRanges = (pages: any[]) => {
   if (!pages?.length) return [];
   const sorted = [...pages].sort((a: any, b: any) => a.pageNumber - b.pageNumber);
-  const groups: Array<{ start: number; end: number; density: string; price: number }> = [];
+  const groups: { start: number; end: number; density: string; price: number }[] = [];
   let cur = { start: sorted[0].pageNumber, end: sorted[0].pageNumber, density: sorted[0].density, price: sorted[0].price || 0 };
   for (let i = 1; i < sorted.length; i++) {
     const p = sorted[i];
-    if (p.density === cur.density && p.pageNumber === cur.end + 1) {
-      cur.end = p.pageNumber;
-    } else {
-      groups.push({ ...cur });
-      cur = { start: p.pageNumber, end: p.pageNumber, density: p.density, price: p.price || 0 };
-    }
+    if (p.density === cur.density && p.pageNumber === cur.end + 1) { cur.end = p.pageNumber; }
+    else { groups.push({ ...cur }); cur = { start: p.pageNumber, end: p.pageNumber, density: p.density, price: p.price || 0 }; }
   }
   groups.push(cur);
   return groups.map(g => ({
     label: g.start === g.end ? `Pág. ${g.start}` : `Págs. ${g.start}\u2013${g.end}`,
-    density: g.density,
-    price: g.price,
+    density: g.density, price: g.price,
   }));
 };
 
-const displayName = (raw: string) => cleanDocumentName((raw || '').split(/[/\\]/).pop() || raw);
-
-const safeMeta = (raw: any) => {
-  try { return typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {}); }
-  catch { return {}; }
-};
-
-const safeDate = (val: any) => {
-  try { return new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }); }
-  catch { return new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }); }
-};
-
-const safeDateShort = (val: any) => {
-  try { return new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
-  catch { return ''; }
-};
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
-  page: { fontFamily: 'Helvetica', backgroundColor: C.white, color: C.dark, fontSize: 10, paddingBottom: 48 },
+  page: { fontFamily: 'Helvetica', backgroundColor: C.white, color: C.text, fontSize: 9, paddingBottom: 44 },
 
   // Cover header
-  coverHeader: { backgroundColor: C.bronze, paddingHorizontal: 36, paddingTop: 28, paddingBottom: 24 },
-  coverHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  logoWrap: { width: 60, height: 60 },
-  logo: { width: 60, height: 60, objectFit: 'contain' },
-  logoText: { fontFamily: 'Helvetica-Bold', fontSize: 20, color: C.white },
-  coverBadge: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: 'rgba(255,255,255,0.8)', letterSpacing: 2, marginTop: 8 },
+  coverHdr: { backgroundColor: C.bronze, paddingHorizontal: 36, paddingTop: 24, paddingBottom: 20 },
+  coverRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  logo: { width: 56, height: 56, objectFit: 'contain' },
+  coverBadge: { fontFamily: 'Helvetica-Bold', fontSize: 6.5, color: 'rgba(255,255,255,0.75)', letterSpacing: 2, marginTop: 6 },
   coverRight: { alignItems: 'flex-end' },
-  coverQuoteLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: 'rgba(255,255,255,0.6)', letterSpacing: 2 },
-  coverQuoteNum: { fontFamily: 'Helvetica-Bold', fontSize: 28, color: C.white, marginTop: 2 },
-  coverDate: { fontSize: 8, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  coverAccent: { height: 3, backgroundColor: C.gold },
+  coverQuoteLbl: { fontFamily: 'Helvetica-Bold', fontSize: 6, color: 'rgba(255,255,255,0.5)', letterSpacing: 3 },
+  coverQuoteNum: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: C.white, marginTop: 1 },
+  coverDate: { fontSize: 7.5, color: 'rgba(255,255,255,0.65)', marginTop: 3 },
+  accent: { height: 3, backgroundColor: C.gold },
 
-  // Client section
-  clientSection: { paddingHorizontal: 36, paddingTop: 18, paddingBottom: 14, backgroundColor: C.bgPage, borderBottomWidth: 1, borderBottomColor: C.border },
-  clientName: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: C.dark },
-  clientEmail: { fontSize: 9, color: C.gray, marginTop: 3 },
-  clientValidity: { fontSize: 8, color: C.bronze, marginTop: 3 },
+  // Client
+  clientBox: { paddingHorizontal: 36, paddingTop: 14, paddingBottom: 10, backgroundColor: C.page, borderBottomWidth: 1, borderBottomColor: C.border },
+  clientName: { fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.text },
+  clientEmail: { fontSize: 8, color: C.sub, marginTop: 2 },
+  clientExpiry: { fontSize: 7.5, color: C.bronze, marginTop: 2, fontFamily: 'Helvetica-Bold' },
 
-  // Summary pills
-  pillRow: { flexDirection: 'row', paddingHorizontal: 36, paddingTop: 14, paddingBottom: 10, backgroundColor: C.bgPage },
-  pill: { flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingVertical: 10, alignItems: 'center', backgroundColor: C.white, marginRight: 6 },
-  pillLast: { marginRight: 0 },
-  pillVal: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: C.dark },
-  pillValBronze: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: C.bronze },
-  pillLbl: { fontSize: 7, color: C.lightGray, marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.5 },
+  // Pills
+  pillRow: { flexDirection: 'row', paddingHorizontal: 36, paddingTop: 12, gap: 6 },
+  pill: { flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 7, paddingVertical: 8, alignItems: 'center', backgroundColor: C.white },
+  pillVal: { fontFamily: 'Helvetica-Bold', fontSize: 15, color: C.text },
+  pillBronze: { fontFamily: 'Helvetica-Bold', fontSize: 15, color: C.bronze },
+  pillLbl: { fontSize: 6.5, color: C.muted, marginTop: 2, letterSpacing: 0.5 },
 
-  // Density distribution
-  densDistSection: { paddingHorizontal: 36, paddingTop: 12, paddingBottom: 10 },
-  densDistTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.dark, letterSpacing: 1, marginBottom: 8 },
-  densDistRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  densDistLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, width: 62, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, textAlign: 'center' },
-  densDistBar: { flex: 1, height: 8, backgroundColor: C.bgWarm, borderRadius: 4, marginHorizontal: 6, overflow: 'hidden' },
-  densDistFill: { height: 8, borderRadius: 4 },
-  densDistCount: { fontSize: 7, color: C.gray, width: 55, textAlign: 'right' },
+  // Density bars
+  densSection: { paddingHorizontal: 36, paddingTop: 10 },
+  densTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.text, letterSpacing: 1.2, marginBottom: 6 },
+  densRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  densLabel: { fontFamily: 'Helvetica-Bold', fontSize: 6, width: 56, paddingHorizontal: 4, paddingVertical: 1.5, borderRadius: 3, textAlign: 'center' },
+  densBar: { flex: 1, height: 7, backgroundColor: C.cream, borderRadius: 3, marginHorizontal: 5, overflow: 'hidden' },
+  densFill: { height: 7, borderRadius: 3 },
+  densCount: { fontSize: 6.5, color: C.sub, width: 50, textAlign: 'right' },
 
   // Benefits
-  benefitsBox: { marginHorizontal: 36, marginTop: 8, borderWidth: 1, borderColor: C.greenBorder, borderRadius: 8, backgroundColor: C.greenLight, paddingHorizontal: 14, paddingVertical: 10 },
-  benefitsTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.green, letterSpacing: 0.5, marginBottom: 6 },
-  benefitRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 3 },
-  benefitCheck: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.green, marginRight: 6, marginTop: 1 },
-  benefitText: { fontSize: 8, color: '#1B5E20', flex: 1 },
-  benefitSavings: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.green },
+  benefitsBox: { marginHorizontal: 36, marginTop: 8, borderWidth: 1, borderColor: C.greenBorder, borderRadius: 6, backgroundColor: C.greenBg, paddingHorizontal: 12, paddingVertical: 8 },
+  benefitsTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.green, letterSpacing: 0.5, marginBottom: 4 },
+  benefitRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  benefitText: { fontSize: 7.5, color: '#1B5E20', flex: 1 },
+  benefitAmt: { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: C.green },
 
   // Pricing
-  pricingBox: { marginHorizontal: 36, marginTop: 10, borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden' },
-  pricingRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 6 },
-  pricingRowAlt: { backgroundColor: C.bgPage },
-  pricingLabel: { fontSize: 9, color: C.gray },
-  pricingValue: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.dark },
-  pricingGreen: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.green },
-  pricingTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.dark, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
-  pricingTotalLabel: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.lightGray, letterSpacing: 1 },
-  pricingTotalValue: { fontFamily: 'Helvetica-Bold', fontSize: 22, color: C.bronze },
+  priceBox: { marginHorizontal: 36, marginTop: 8, borderWidth: 1, borderColor: C.border, borderRadius: 6, overflow: 'hidden' },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 5 },
+  priceAlt: { backgroundColor: C.page },
+  priceLbl: { fontSize: 8, color: C.sub },
+  priceVal: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.text },
+  priceGreen: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.green },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.text },
+  totalLbl: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.muted, letterSpacing: 1.5 },
+  totalVal: { fontFamily: 'Helvetica-Bold', fontSize: 20, color: C.bronze },
 
   // Methodology
-  methBox: { marginHorizontal: 36, marginTop: 10, backgroundColor: C.bgPage, borderLeftWidth: 3, borderLeftColor: C.bronze, borderRadius: 4, paddingHorizontal: 12, paddingVertical: 8 },
-  methTitle: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.bronze, letterSpacing: 0.5, marginBottom: 3 },
-  methText: { fontSize: 7.5, color: C.slate, lineHeight: 1.6 },
+  methBox: { marginHorizontal: 36, marginTop: 8, backgroundColor: C.page, borderLeftWidth: 3, borderLeftColor: C.bronze, borderRadius: 3, paddingHorizontal: 10, paddingVertical: 6 },
+  methTitle: { fontFamily: 'Helvetica-Bold', fontSize: 6.5, color: C.bronze, letterSpacing: 0.5, marginBottom: 2 },
+  methText: { fontSize: 7, color: C.sub, lineHeight: 1.5 },
+
+  // Doc pages header
+  contHdr: { backgroundColor: C.bronze, paddingHorizontal: 36, paddingVertical: 9, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  contTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.white },
+  contSub: { fontSize: 7, color: 'rgba(255,255,255,0.65)' },
 
   // Section label
-  secRow: { paddingHorizontal: 28, paddingTop: 14, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  secDot: { width: 6, height: 6, backgroundColor: C.bronze, borderRadius: 3, marginRight: 8 },
-  secTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.dark, letterSpacing: 1.5 },
-  secLine: { flex: 1, height: 1, backgroundColor: C.border, marginLeft: 10 },
+  secRow: { paddingHorizontal: 28, paddingTop: 10, paddingBottom: 6, flexDirection: 'row', alignItems: 'center' },
+  secDot: { width: 5, height: 5, backgroundColor: C.bronze, borderRadius: 3, marginRight: 7 },
+  secLabel: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.text, letterSpacing: 1.2 },
+  secLine: { flex: 1, height: 1, backgroundColor: C.border, marginLeft: 8 },
 
-  // Document card
-  card: { marginHorizontal: 20, marginBottom: 6, borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden' },
-  cardHead: { paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.border },
-  cardHeadAlt: { backgroundColor: C.bgPage },
-  cardLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 12 },
-  tagBadge: { fontFamily: 'Helvetica-Bold', fontSize: 6.5, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginRight: 8, marginTop: 1, flexShrink: 0 },
-  cardTitle: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.dark, flex: 1, lineHeight: 1.4 },
-  cardRight: { alignItems: 'flex-end', flexShrink: 0 },
-  pgBadge: { flexDirection: 'row', alignItems: 'baseline', backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 3 },
-  pgNum: { fontFamily: 'Helvetica-Bold', fontSize: 11, color: C.dark },
-  pgLbl: { fontSize: 7, color: C.gray, marginLeft: 3 },
-  subtotal: { fontFamily: 'Helvetica-Bold', fontSize: 12, color: C.bronze },
-
-  // Density rows
-  densBody: { paddingHorizontal: 14, paddingVertical: 5 },
-  densRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
-  densRowLast: { marginBottom: 0 },
-  densRange: { fontFamily: 'Courier', fontSize: 7.5, color: C.gray, width: 70 },
-  densArrow: { fontSize: 7, color: C.lightGray, marginHorizontal: 4 },
-  densBadge: { fontFamily: 'Helvetica-Bold', fontSize: 6, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 8 },
-  densPrice: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.slate, marginLeft: 'auto' },
-
-  // Excluded pages strip
-  exclRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#FFFBF5', borderBottomWidth: 1, borderBottomColor: '#FDE68A' },
-  exclBar: { width: 3, alignSelf: 'stretch', backgroundColor: C.bronze, borderRadius: 2, marginRight: 10, flexShrink: 0 },
-  exclBody: { flex: 1 },
-  exclHead: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: '#92400E' },
-  exclPgs: { fontSize: 7, color: C.gray, marginTop: 1.5 },
-  exclSave: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.green, marginLeft: 10, flexShrink: 0 },
-
-  // Payment cards
-  payRow: { flexDirection: 'row', marginHorizontal: 36, marginTop: 10 },
-  payCard: { flex: 1, backgroundColor: C.bgPage, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: C.border, marginRight: 6 },
-  payCardLast: { marginRight: 0 },
-  payTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.dark, marginBottom: 2 },
-  payText: { fontSize: 7, color: C.gray },
-
-  // Continuation header
-  contHead: { backgroundColor: C.bronze, paddingHorizontal: 36, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  contTitle: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.white },
-  contMeta: { fontFamily: 'Helvetica-Bold', fontSize: 7, color: 'rgba(255,255,255,0.7)', letterSpacing: 1 },
-  contAccent: { height: 2, backgroundColor: C.gold },
+  // Doc row (compact)
+  docRow: { marginHorizontal: 20, borderBottomWidth: 0.5, borderBottomColor: C.border, paddingHorizontal: 12, paddingVertical: 6, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  docRowAlt: { backgroundColor: C.cream },
+  docLeft: { flex: 1, marginRight: 10 },
+  docTopRow: { flexDirection: 'row', alignItems: 'center' },
+  docTag: { fontFamily: 'Helvetica-Bold', fontSize: 5.5, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, marginRight: 6 },
+  docTitle: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.text, flex: 1 },
+  docMeta: { fontSize: 6.5, color: C.muted, marginTop: 2 },
+  docRight: { alignItems: 'flex-end' },
+  docPages: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.sub },
+  docPrice: { fontFamily: 'Helvetica-Bold', fontSize: 10, color: C.bronze, marginTop: 1 },
 
   // Footer
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.bgPage, borderTopWidth: 1, borderTopColor: C.border, paddingHorizontal: 36, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  footerAddr: { fontSize: 7, color: C.slate },
-  footerContact: { fontSize: 7, color: C.gray, marginTop: 2 },
-  footerRight: { alignItems: 'flex-end' },
-  footerUrl: { fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.bronze },
-  footerPage: { fontSize: 7, color: C.lightGray, marginTop: 2 },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopWidth: 0.5, borderTopColor: C.border, paddingHorizontal: 36, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: C.white },
+  footerL: { fontSize: 6.5, color: C.sub },
+  footerR: { fontSize: 6.5, color: C.muted, textAlign: 'right' },
 });
 
-// ─── DocCard ─────────────────────────────────────────────────────────────────
-const DocCard = ({ doc, idx, base, isOdd }: { doc: any; idx: number; base: number; isOdd: boolean }) => {
-  const raw = doc.fileName || doc.exactNameOnDoc || `Documento ${idx + 1}`;
-  const name = displayName(raw);
-  const isPDF = /\.pdf$/i.test(raw) || doc.analysis?.fileType !== 'image';
-  const tagColor = isPDF
-    ? { color: '#B91C1C', backgroundColor: '#FEE2E2' }
-    : { color: '#4A7FB5', backgroundColor: '#DBEAFE' };
-  const tagLabel = isPDF ? 'PDF' : 'IMG';
-
-  const allPages = doc.analysis?.pages || [];
-  const includedPgs = allPages.filter((p: any) => p.included !== false);
-  const excludedPgs = allPages.filter((p: any) => p.included === false);
-  const incCount = includedPgs.length || doc.count || 1;
-  const excCount = excludedPgs.length;
-  const excSavings = excludedPgs.reduce((s: number, p: any) => s + (p.price || 0), 0);
-  const multiplier = doc.handwritten ? 1.25 : 1;
-  const subtotal = ((doc.analysis?.totalPrice ?? incCount * base) * multiplier) + (doc.notarized ? 25 : 0);
-  const ranges = buildRanges(includedPgs.length > 0 ? includedPgs : allPages);
-
-  return (
-    <View style={S.card}>
-      <View style={[S.cardHead, isOdd ? S.cardHeadAlt : {}]}>
-        <View style={S.cardLeft}>
-          <Text style={[S.tagBadge, tagColor]}>{tagLabel}</Text>
-          <Text style={S.cardTitle}>{name}</Text>
-        </View>
-        <View style={S.cardRight}>
-          <View style={S.pgBadge}>
-            <Text style={S.pgNum}>{incCount}</Text>
-            <Text style={S.pgLbl}>{incCount === 1 ? 'pág.' : 'págs.'}</Text>
-          </View>
-          <Text style={S.subtotal}>${subtotal.toFixed(2)}</Text>
-        </View>
-      </View>
-
-      {excCount > 0 && (
-        <View style={S.exclRow}>
-          <View style={S.exclBar} />
-          <View style={S.exclBody}>
-            <Text style={S.exclHead}>
-              {excCount} {excCount === 1 ? 'página excluída' : 'páginas excluídas'} pela equipe
-            </Text>
-            <Text style={S.exclPgs}>Desnecessárias para o processo</Text>
-          </View>
-          <Text style={S.exclSave}>-${excSavings.toFixed(2)}</Text>
-        </View>
-      )}
-
-      {ranges.length > 0 && (
-        <View style={S.densBody}>
-          {ranges.map((r: any, ri: number) => {
-            const cfg = getDensity(r.density);
-            return (
-              <View key={ri} style={[S.densRow, ri === ranges.length - 1 ? S.densRowLast : {}]}>
-                <Text style={S.densRange}>{r.label}</Text>
-                <Text style={S.densArrow}>{'>'}</Text>
-                <Text style={[S.densBadge, { color: cfg.color, backgroundColor: cfg.bg }]}>{cfg.label}</Text>
-                <Text style={S.densPrice}>${(r.price || 0).toFixed(2)}/pág</Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
+// ─── Footer component ────────────────────────────────────────────────────────
+const Footer = ({ pageNum, total }: { pageNum: number; total: number }) => (
+  <View style={S.footer}>
+    <View>
+      <Text style={S.footerL}>3300 Greenwald Way N, Kissimmee, FL 34741, USA</Text>
+      <Text style={{ ...S.footerL, marginTop: 1 }}>(321) 324-5851 · desk@promobidocs.com · www.promobidocs.com</Text>
     </View>
-  );
-};
+    <Text style={S.footerR}>Página {pageNum} de {total}</Text>
+  </View>
+);
 
-// ─── Main export ──────────────────────────────────────────────────────────────
-interface ProposalPDFProps {
-  order: any;
-  globalSettings: any;
-  logoBase64?: string | null;
-}
+// ─── Main component ──────────────────────────────────────────────────────────
+interface Props { order: any; globalSettings: any; logoBase64?: string | null; }
 
-export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFProps) => {
+export const ProposalPDF = ({ order, globalSettings, logoBase64 }: Props) => {
   const meta = safeMeta(order?.metadata);
   const docs = meta?.documents ?? [];
   const base = globalSettings?.basePrice || 9;
-  const financialSummary = deriveProposalFinancialSummary({
-    totalAmount: order?.totalAmount,
-    extraDiscount: order?.extraDiscount,
-    metadata: order?.metadata,
+  const fin = deriveProposalFinancialSummary({
+    totalAmount: order?.totalAmount, extraDiscount: order?.extraDiscount, metadata: order?.metadata,
   });
 
-  const totalDocs = docs.length;
-  const totalAmt = financialSummary.totalPayable;
-  const clientName = order?.user?.fullName || order?.clientName || 'Cliente';
-  const clientEmail = order?.user?.email || order?.clientEmail || '';
-  const resolvedDueDate = resolveStoredOrCalculatedDueDate({
-    dueDate: order?.dueDate ?? meta?.dueDate ?? null,
-    createdAt: order?.createdAt,
-    urgency: order?.urgency,
-    settings: globalSettings,
+  const clientName = order?.user?.fullName || 'Cliente';
+  const clientEmail = order?.user?.email || '';
+  const dueDate = resolveStoredOrCalculatedDueDate({
+    dueDate: order?.dueDate ?? meta?.dueDate, createdAt: order?.createdAt,
+    urgency: order?.urgency, settings: globalSettings,
   });
-  const dueDateLabel = resolvedDueDate ? safeDate(resolvedDueDate) : null;
+  const dueDateLabel = dueDate ? fmtDate(dueDate) : null;
   const expiresAt = order?.proposalExpiresAt
-    ? safeDateShort(order.proposalExpiresAt)
-    : safeDateShort(new Date(new Date(order?.createdAt || Date.now()).getTime() + 7 * 24 * 60 * 60 * 1000));
+    ? fmtDateShort(order.proposalExpiresAt)
+    : fmtDateShort(new Date(new Date(order?.createdAt || Date.now()).getTime() + 7 * 86400000));
 
   const totalPages = docs.reduce((s: number, d: any) => {
     const ap = d.analysis?.pages || [];
     return s + (ap.length > 0 ? ap.filter((p: any) => p.included !== false).length : (d.count || 0));
   }, 0);
 
-  const totalSavings = financialSummary.totalSavings;
-  const hasSavings = totalSavings > 0.005;
-
-  // Density distribution for cover page
-  const densityCounts: Record<string, number> = {};
-  let totalIncluded = 0;
+  // Density distribution
+  const densCounts: Record<string, number> = {};
+  let totalInc = 0;
   docs.forEach((d: any) => {
     (d.analysis?.pages || []).filter((p: any) => p.included !== false).forEach((p: any) => {
-      const dens = p.density || 'high';
-      densityCounts[dens] = (densityCounts[dens] || 0) + 1;
-      totalIncluded++;
+      densCounts[p.density || 'high'] = (densCounts[p.density || 'high'] || 0) + 1;
+      totalInc++;
     });
   });
-  const densityOrder = ['blank', 'low', 'medium', 'high', 'scanned'];
-  const densityBars = densityOrder
-    .filter(d => densityCounts[d] > 0)
-    .map(d => ({
-      density: d,
-      count: densityCounts[d],
-      pct: Math.round((densityCounts[d] / totalIncluded) * 100),
-    }));
+  const densOrder = ['blank', 'low', 'medium', 'high', 'scanned'];
+  const densBars = densOrder.filter(d => densCounts[d] > 0).map(d => ({
+    density: d, count: densCounts[d], pct: Math.round((densCounts[d] / totalInc) * 100),
+  }));
 
   // Benefits
-  const benefits: Array<{ text: string; savings: number }> = [];
-  if (hasSavings) {
-    const totalExcluded = docs.reduce((s: number, d: any) =>
+  const benefits: { text: string; amt: number }[] = [];
+  if (fin.totalSavings > 0.01) {
+    const excl = docs.reduce((s: number, d: any) =>
       s + (d.analysis?.pages || []).filter((p: any) => p.included === false).length, 0);
-    if (totalExcluded > 0) {
-      benefits.push({ text: `Auditoria Promobidocs: ${totalExcluded} páginas removidas`, savings: totalSavings });
-    }
+    if (excl > 0) benefits.push({ text: `Auditoria: ${excl} páginas removidas`, amt: fin.totalSavings });
   }
-  if (financialSummary.manualDiscountAmount > 0) {
-    const pct = financialSummary.manualDiscountType === 'percent' ? ` (${financialSummary.manualDiscountValue}%)` : '';
-    benefits.push({ text: `Desconto concedido${pct}`, savings: financialSummary.manualDiscountAmount });
+  if (fin.manualDiscountAmount > 0) {
+    const pct = fin.manualDiscountType === 'percent' ? ` (${fin.manualDiscountValue}%)` : '';
+    benefits.push({ text: `Desconto concedido${pct}`, amt: fin.manualDiscountAmount });
   }
 
-  // Urgency label
-  const urgencyLabels: Record<string, string> = {
-    standard: 'Standard', normal: 'Standard',
-    urgent: 'Express (48h)', flash: 'Ultra Express (24h)',
-  };
-  const urgencyLabel = urgencyLabels[order?.urgency] || order?.urgency || 'Standard';
+  // Urgency
+  const urgMap: Record<string, string> = { standard: 'Standard', normal: 'Standard', urgent: 'Express (48h)', flash: 'Ultra Express (24h)' };
+  const urgLabel = urgMap[order?.urgency] || 'Standard';
 
-  // Pagination: page 1 = cover only (no docs), page 2+ = docs (6 per page)
-  const DOCS_PER_PAGE = 6;
+  // Pagination: 10 docs per page
+  const PER = 10;
   const docChunks: any[][] = [];
-  let i = 0;
-  while (i < docs.length) { docChunks.push(docs.slice(i, i + DOCS_PER_PAGE)); i += DOCS_PER_PAGE; }
-  if (docChunks.length === 0) docChunks.push([]);
-  // Total pages = 1 cover + doc pages
-  const totalPdfPages = 1 + docChunks.length;
+  for (let i = 0; i < docs.length; i += PER) docChunks.push(docs.slice(i, i + PER));
+  if (!docChunks.length) docChunks.push([]);
+  const totalPdf = 1 + docChunks.length; // cover + doc pages (last doc page has investment)
 
   return (
     <Document>
-      {/* ═══════════════════════════════════════════════════════════════
-          PAGE 1: COVER (no documents)
-          ═══════════════════════════════════════════════════════════════ */}
+
+      {/* ═══════════════════════════════ PAGE 1: COVER ═══════════════════════════════ */}
       <Page size="A4" style={S.page}>
-        {/* ── A. COVER HEADER ──────────────────────────────────────── */}
-        <View style={S.coverHeader}>
-          <View style={S.coverHeaderRow}>
+        <View style={S.coverHdr}>
+          <View style={S.coverRow}>
             <View>
-              <View style={S.logoWrap}>
-                {logoBase64
-                  ? <Image src={logoBase64} style={S.logo} />
-                  : <Text style={S.logoText}>PROMOBIDOCS</Text>
-                }
-              </View>
+              {logoBase64 ? <Image src={logoBase64} style={S.logo} /> : <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 18, color: C.white }}>PROMOBIDOCS</Text>}
               <Text style={S.coverBadge}>TRADUÇÃO CERTIFICADA · USCIS ACCEPTED</Text>
             </View>
             <View style={S.coverRight}>
-              <Text style={S.coverQuoteLabel}>COTAÇÃO</Text>
+              <Text style={S.coverQuoteLbl}>COTAÇÃO</Text>
               <Text style={S.coverQuoteNum}>#{order?.id}</Text>
-              <Text style={S.coverDate}>{safeDate(order?.createdAt)}</Text>
+              <Text style={S.coverDate}>{fmtDate(order?.createdAt)}</Text>
             </View>
           </View>
         </View>
-        <View style={S.coverAccent} />
+        <View style={S.accent} />
 
-        {/* ── B/C. CLIENT + VALIDITY ──────────────────────────────── */}
-        <View style={S.clientSection}>
+        <View style={S.clientBox}>
           <Text style={S.clientName}>{clientName}</Text>
           {clientEmail ? <Text style={S.clientEmail}>{clientEmail}</Text> : null}
-          {expiresAt ? <Text style={S.clientValidity}>Proposta válida até {expiresAt}</Text> : null}
+          {expiresAt ? <Text style={S.clientExpiry}>Proposta válida até {expiresAt}</Text> : null}
         </View>
 
-        {/* ── SUMMARY PILLS ───────────────────────────────────────── */}
         <View style={S.pillRow}>
-          <View style={S.pill}>
-            <Text style={S.pillVal}>{totalDocs}</Text>
-            <Text style={S.pillLbl}>Documentos</Text>
-          </View>
-          <View style={S.pill}>
-            <Text style={S.pillVal}>{totalPages}</Text>
-            <Text style={S.pillLbl}>Páginas</Text>
-          </View>
-          <View style={[S.pill, S.pillLast]}>
-            <Text style={S.pillValBronze}>${totalAmt.toFixed(2)}</Text>
-            <Text style={S.pillLbl}>Total USD</Text>
-          </View>
+          <View style={S.pill}><Text style={S.pillVal}>{docs.length}</Text><Text style={S.pillLbl}>DOCUMENTOS</Text></View>
+          <View style={S.pill}><Text style={S.pillVal}>{totalPages}</Text><Text style={S.pillLbl}>PÁGINAS</Text></View>
+          <View style={S.pill}><Text style={S.pillBronze}>${fin.totalPayable.toFixed(2)}</Text><Text style={S.pillLbl}>TOTAL USD</Text></View>
         </View>
 
-        {/* ── D. DENSITY DISTRIBUTION ─────────────────────────────── */}
-        {densityBars.length > 0 && (
-          <View style={S.densDistSection}>
-            <Text style={S.densDistTitle}>DISTRIBUIÇÃO DE DENSIDADE</Text>
-            {densityBars.map((bar) => {
-              const cfg = getDensity(bar.density);
+        {densBars.length > 0 && (
+          <View style={S.densSection}>
+            <Text style={S.densTitle}>DISTRIBUIÇÃO DE DENSIDADE</Text>
+            {densBars.map(bar => {
+              const cfg = getDen(bar.density);
               return (
-                <View key={bar.density} style={S.densDistRow}>
-                  <Text style={[S.densDistLabel, { color: cfg.color, backgroundColor: cfg.bg }]}>{cfg.label}</Text>
-                  <View style={S.densDistBar}>
-                    <View style={[S.densDistFill, { width: `${bar.pct}%`, backgroundColor: cfg.color }]} />
-                  </View>
-                  <Text style={S.densDistCount}>{bar.count} págs ({bar.pct}%)</Text>
+                <View key={bar.density} style={S.densRow}>
+                  <Text style={[S.densLabel, { color: cfg.color, backgroundColor: cfg.bg }]}>{cfg.label}</Text>
+                  <View style={S.densBar}><View style={[S.densFill, { width: `${bar.pct}%`, backgroundColor: cfg.color }]} /></View>
+                  <Text style={S.densCount}>{bar.count} págs ({bar.pct}%)</Text>
                 </View>
               );
             })}
           </View>
         )}
 
-        {/* ── E. BENEFITS ─────────────────────────────────────────── */}
         {benefits.length > 0 && (
           <View style={S.benefitsBox}>
             <Text style={S.benefitsTitle}>BENEFÍCIOS DESTA PROPOSTA</Text>
-            {benefits.map((b, bi) => (
-              <View key={bi} style={S.benefitRow}>
-                <Text style={S.benefitCheck}>✓</Text>
+            {benefits.map((b, i) => (
+              <View key={i} style={S.benefitRow}>
+                <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.green, marginRight: 5 }}>✓</Text>
                 <Text style={S.benefitText}>{b.text}</Text>
-                {b.savings > 0 && <Text style={S.benefitSavings}>-${b.savings.toFixed(2)}</Text>}
+                <Text style={S.benefitAmt}>-${b.amt.toFixed(2)}</Text>
               </View>
             ))}
           </View>
         )}
 
-        {/* ── F. PRICING ──────────────────────────────────────────── */}
-        <View style={S.pricingBox}>
-          <View style={S.pricingRow}>
-            <Text style={S.pricingLabel}>Subtotal tradução ({totalPages} págs)</Text>
-            <Text style={S.pricingValue}>${financialSummary.billableBasePrice.toFixed(2)}</Text>
-          </View>
-          {financialSummary.urgencyFee > 0 && (
-            <View style={[S.pricingRow, S.pricingRowAlt]}>
-              <Text style={S.pricingLabel}>Taxa de urgência</Text>
-              <Text style={S.pricingValue}>+${financialSummary.urgencyFee.toFixed(2)}</Text>
-            </View>
-          )}
-          {financialSummary.notaryFee > 0 && (
-            <View style={S.pricingRow}>
-              <Text style={S.pricingLabel}>Notarização oficial</Text>
-              <Text style={S.pricingValue}>+${financialSummary.notaryFee.toFixed(2)}</Text>
-            </View>
-          )}
-          {financialSummary.paymentDiscountAmount > 0 && (
-            <View style={[S.pricingRow, S.pricingRowAlt]}>
-              <Text style={S.pricingLabel}>Desconto pagamento integral (5%)</Text>
-              <Text style={S.pricingGreen}>-${financialSummary.paymentDiscountAmount.toFixed(2)}</Text>
-            </View>
-          )}
-          {financialSummary.manualDiscountAmount > 0 && (
-            <View style={S.pricingRow}>
-              <Text style={S.pricingLabel}>
-                Desconto {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue}%)` : 'concedido'}
-              </Text>
-              <Text style={S.pricingGreen}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
-            </View>
-          )}
-          {financialSummary.operationalAdjustmentAmount > 0 && (
-            <View style={[S.pricingRow, S.pricingRowAlt]}>
-              <Text style={S.pricingLabel}>Cortesia operacional</Text>
-              <Text style={S.pricingGreen}>-${financialSummary.operationalAdjustmentAmount.toFixed(2)}</Text>
-            </View>
-          )}
-          <View style={S.pricingTotalRow}>
-            <Text style={S.pricingTotalLabel}>TOTAL A PAGAR</Text>
-            <Text style={S.pricingTotalValue}>${totalAmt.toFixed(2)}</Text>
-          </View>
+        <View style={S.priceBox}>
+          <View style={S.priceRow}><Text style={S.priceLbl}>Subtotal tradução ({totalPages} págs)</Text><Text style={S.priceVal}>${fin.billableBasePrice.toFixed(2)}</Text></View>
+          {fin.urgencyFee > 0 && <View style={[S.priceRow, S.priceAlt]}><Text style={S.priceLbl}>Taxa de urgência</Text><Text style={S.priceVal}>+${fin.urgencyFee.toFixed(2)}</Text></View>}
+          {fin.notaryFee > 0 && <View style={S.priceRow}><Text style={S.priceLbl}>Notarização oficial</Text><Text style={S.priceVal}>+${fin.notaryFee.toFixed(2)}</Text></View>}
+          {fin.paymentDiscountAmount > 0 && <View style={[S.priceRow, S.priceAlt]}><Text style={S.priceLbl}>Desconto pagamento integral (5%)</Text><Text style={S.priceGreen}>-${fin.paymentDiscountAmount.toFixed(2)}</Text></View>}
+          {fin.manualDiscountAmount > 0 && <View style={S.priceRow}><Text style={S.priceLbl}>Desconto {fin.manualDiscountType === 'percent' ? `(${fin.manualDiscountValue}%)` : 'concedido'}</Text><Text style={S.priceGreen}>-${fin.manualDiscountAmount.toFixed(2)}</Text></View>}
+          {fin.operationalAdjustmentAmount > 0 && <View style={[S.priceRow, S.priceAlt]}><Text style={S.priceLbl}>Cortesia operacional</Text><Text style={S.priceGreen}>-${fin.operationalAdjustmentAmount.toFixed(2)}</Text></View>}
+          <View style={S.totalRow}><Text style={S.totalLbl}>TOTAL A PAGAR</Text><Text style={S.totalVal}>${fin.totalPayable.toFixed(2)}</Text></View>
         </View>
 
-        {/* ── G. METHODOLOGY ──────────────────────────────────────── */}
         <View style={S.methBox}>
           <Text style={S.methTitle}>METODOLOGIA: PREÇO JUSTO GARANTIDO</Text>
-          <Text style={S.methText}>
-            Cada página é analisada individualmente pela nossa IA. Páginas com menos
-            conteúdo custam menos — páginas em branco são classificadas como Grátis.
-            O preço reflete a complexidade real, nunca por estimativa genérica.
-          </Text>
+          <Text style={S.methText}>Cada página é analisada pela nossa IA. Páginas com menos conteúdo custam menos — páginas em branco são Grátis. O preço reflete a complexidade real.</Text>
         </View>
 
-        {/* ── FOOTER PAGE 1 ───────────────────────────────────────── */}
-        <View style={S.footer}>
-          <View>
-            <Text style={S.footerAddr}>3300 Greenwald Way N, Kissimmee, FL 34741, USA</Text>
-            <Text style={S.footerContact}>(321) 324-5851 · desk@promobidocs.com</Text>
-          </View>
-          <View style={S.footerRight}>
-            <Text style={S.footerUrl}>www.promobidocs.com</Text>
-            <Text style={S.footerPage}>Página 1 de {totalPdfPages}</Text>
-          </View>
-        </View>
+        <Footer pageNum={1} total={totalPdf} />
       </Page>
 
-      {/* ═══════════════════════════════════════════════════════════════
-          PAGES 2+: DOCUMENT DETAIL
-          ═══════════════════════════════════════════════════════════════ */}
-      {docChunks.map((chunk: any[], ci: number) => {
+      {/* ═══════════════════════════════ PAGES 2+: DOCS ═══════════════════════════════ */}
+      {docChunks.map((chunk, ci) => {
         const pageNum = ci + 2;
-        const isLastDocPage = ci === docChunks.length - 1;
+        const isLast = ci === docChunks.length - 1;
 
         return (
-          <Page key={`doc-${ci}`} size="A4" style={S.page}>
-            {/* ── CONTINUATION HEADER ─────────────────────────────── */}
-            <View style={S.contHead}>
+          <Page key={`d${ci}`} size="A4" style={S.page}>
+            <View style={S.contHdr}>
               <Text style={S.contTitle}>Proposta #{order?.id} — {clientName}</Text>
-              <Text style={S.contMeta}>ANÁLISE DETALHADA</Text>
+              <Text style={S.contSub}>Página {pageNum} de {totalPdf}</Text>
             </View>
-            <View style={S.contAccent} />
+            <View style={S.accent} />
 
-            {/* ── DOC CARDS ───────────────────────────────────────── */}
+            <View style={S.secRow}>
+              <View style={S.secDot} /><Text style={S.secLabel}>ANÁLISE DETALHADA POR DOCUMENTO</Text><View style={S.secLine} />
+            </View>
+
             {chunk.map((doc: any, di: number) => {
-              const gi = ci * DOCS_PER_PAGE + di;
-              return <DocCard key={gi} doc={doc} idx={gi} base={base} isOdd={di % 2 === 1} />;
+              const gi = ci * PER + di;
+              const name = docName(doc.fileName || doc.exactNameOnDoc || '', gi);
+              const allPgs = doc.analysis?.pages || [];
+              const incPgs = allPgs.filter((p: any) => p.included !== false);
+              const pgCount = incPgs.length || doc.count || 1;
+              const mult = doc.handwritten ? 1.25 : 1;
+              const sub = ((doc.analysis?.totalPrice ?? pgCount * base) * mult) + (doc.notarized ? 25 : 0);
+              const isPDF = doc.analysis?.fileType !== 'image';
+              const ranges = buildRanges(incPgs.length > 0 ? incPgs : allPgs);
+
+              return (
+                <View key={gi} style={[S.docRow, di % 2 === 1 ? S.docRowAlt : {}]} wrap={false}>
+                  <View style={S.docLeft}>
+                    <View style={S.docTopRow}>
+                      <Text style={[S.docTag, isPDF ? { color: '#B91C1C', backgroundColor: '#FEE2E2' } : { color: C.blue, backgroundColor: '#DBEAFE' }]}>
+                        {isPDF ? 'PDF' : 'IMG'}
+                      </Text>
+                      <Text style={S.docTitle}>{name}</Text>
+                    </View>
+                    {ranges.length > 0 && (
+                      <Text style={S.docMeta}>
+                        {ranges.map(r => `${r.label} > ${getDen(r.density).label}`).join(' · ')}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={S.docRight}>
+                    <Text style={S.docPages}>{pgCount} pág{pgCount > 1 ? 's' : ''}.</Text>
+                    <Text style={S.docPrice}>${sub.toFixed(2)}</Text>
+                  </View>
+                </View>
+              );
             })}
 
-            {/* ── LAST DOC PAGE: INVESTMENT TOTAL + PAYMENT ────────── */}
-            {isLastDocPage && (
+            {/* ── LAST PAGE: INVESTMENT TOTAL ──────────────────────── */}
+            {isLast && (
               <>
-                {/* Investment total */}
-                <View style={{ marginHorizontal: 20, marginTop: 12, backgroundColor: C.dark, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    <View style={{ flex: 1, marginRight: 16 }}>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.lightGray, letterSpacing: 2, marginBottom: 4 }}>INVESTIMENTO TOTAL</Text>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 14, color: C.white }}>{clientName}</Text>
-                      <Text style={{ fontSize: 8, color: C.lightGray, marginTop: 3 }}>
-                        {totalDocs} docs · {totalPages} págs · Tradução Certificada USCIS · {urgencyLabel}{dueDateLabel ? ` · Prazo ${dueDateLabel}` : ''}
-                      </Text>
+                <View style={{ marginHorizontal: 20, marginTop: 12, backgroundColor: C.text, borderRadius: 8, paddingHorizontal: 20, paddingVertical: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, marginRight: 14 }}>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 6.5, color: C.muted, letterSpacing: 2, marginBottom: 3 }}>INVESTIMENTO TOTAL</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 13, color: C.white }}>{clientName}</Text>
+                      <Text style={{ fontSize: 7, color: C.muted, marginTop: 2 }}>{docs.length} docs · {totalPages} págs · Tradução Certificada USCIS · {urgLabel}{dueDateLabel ? ` · ${dueDateLabel}` : ''}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 9, color: C.bronze, marginBottom: 2 }}>USD</Text>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 30, color: C.bronze, lineHeight: 1 }}>${totalAmt.toFixed(2)}</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 8, color: C.bronze }}>USD</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 28, color: C.bronze, lineHeight: 1 }}>${fin.totalPayable.toFixed(2)}</Text>
                     </View>
                   </View>
-                  {financialSummary.manualDiscountAmount > 0 && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(45,139,95,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(45,139,95,0.3)' }}>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 8, color: '#A5D6A7' }}>
-                        DESCONTO {financialSummary.manualDiscountType === 'percent' ? `(${financialSummary.manualDiscountValue}%)` : 'CONCEDIDO'}
-                      </Text>
-                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 10, color: '#A5D6A7' }}>-${financialSummary.manualDiscountAmount.toFixed(2)}</Text>
+                  {fin.manualDiscountAmount > 0 && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(45,139,95,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, marginTop: 8, borderWidth: 1, borderColor: 'rgba(45,139,95,0.3)' }}>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: '#A5D6A7' }}>DESCONTO {fin.manualDiscountType === 'percent' ? `(${fin.manualDiscountValue}%)` : ''}</Text>
+                      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#A5D6A7' }}>-${fin.manualDiscountAmount.toFixed(2)}</Text>
                     </View>
                   )}
-                  <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 10 }} />
+                  <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 8 }} />
                   <View style={{ flexDirection: 'row' }}>
                     {[
                       { t: 'ZELLE', s: 'Transferência instantânea' },
                       { t: 'PIX / BOLETO', s: 'Pagamento via Brasil' },
                       { t: 'CARTÃO', s: 'Crédito ou débito' },
                     ].map((p, pi, arr) => (
-                      <View key={pi} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginRight: pi < arr.length - 1 ? 6 : 0 }}>
-                        <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7, color: C.white, marginBottom: 2 }}>{p.t}</Text>
-                        <Text style={{ fontSize: 6.5, color: C.lightGray }}>{p.s}</Text>
+                      <View key={pi} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', marginRight: pi < arr.length - 1 ? 5 : 0 }}>
+                        <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 6.5, color: C.white, marginBottom: 1 }}>{p.t}</Text>
+                        <Text style={{ fontSize: 6, color: C.muted }}>{p.s}</Text>
                       </View>
                     ))}
                   </View>
                 </View>
 
-                {/* Validity */}
-                {expiresAt && (
-                  <View style={{ marginHorizontal: 36, marginTop: 8 }}>
-                    <Text style={{ fontSize: 8, color: C.bronze, fontFamily: 'Helvetica-Bold' }}>
-                      Proposta válida até {expiresAt}
-                    </Text>
-                  </View>
-                )}
+                {expiresAt && <View style={{ marginHorizontal: 36, marginTop: 6 }}><Text style={{ fontSize: 7, color: C.bronze, fontFamily: 'Helvetica-Bold' }}>Proposta válida até {expiresAt}</Text></View>}
 
-                {/* Credentials */}
-                <View style={{ flexDirection: 'row', marginHorizontal: 36, marginTop: 10 }}>
-                  {['Florida Notary Public', 'ATA Member', 'ATIF Member'].map((badge, bi) => (
-                    <View key={bi} style={{ flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingVertical: 6, alignItems: 'center', marginRight: bi < 2 ? 6 : 0 }}>
-                      <Text style={{ fontSize: 7, color: C.lightGray, fontFamily: 'Helvetica-Bold' }}>{badge}</Text>
+                <View style={{ flexDirection: 'row', marginHorizontal: 36, marginTop: 8 }}>
+                  {['Florida Notary Public', 'ATA Member', 'ATIF Member'].map((b, bi) => (
+                    <View key={bi} style={{ flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 5, paddingVertical: 5, alignItems: 'center', marginRight: bi < 2 ? 5 : 0 }}>
+                      <Text style={{ fontSize: 6.5, color: C.muted, fontFamily: 'Helvetica-Bold' }}>{b}</Text>
                     </View>
                   ))}
                 </View>
               </>
             )}
 
-            {/* ── FOOTER ──────────────────────────────────────────── */}
-            <View style={S.footer}>
-              <View>
-                <Text style={S.footerAddr}>3300 Greenwald Way N, Kissimmee, FL 34741, USA</Text>
-                <Text style={S.footerContact}>(321) 324-5851 · desk@promobidocs.com</Text>
-              </View>
-              <View style={S.footerRight}>
-                <Text style={S.footerUrl}>www.promobidocs.com</Text>
-                <Text style={S.footerPage}>Página {pageNum} de {totalPdfPages}</Text>
-              </View>
-            </View>
-
+            <Footer pageNum={pageNum} total={totalPdf} />
           </Page>
         );
       })}

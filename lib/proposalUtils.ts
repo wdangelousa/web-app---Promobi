@@ -1,138 +1,108 @@
 // ── Document Name Cleaning ──────────────────────────────────────────────────
 
-const REMOVE_PREFIXES = [
-    /^CamScanner\s*/i,
-    /^WhatsApp\s*Image\s*/i,
-    /^IMG[-_]\d{8}[-_]\d{4,6}\s*/i,
-    /^IMG[-_]\s*/i,
-    /^DOC[-_]\d{8}[-_]\d{4,6}\s*/i,
-    /^DOC[-_]\s*/i,
-    /^Screenshot\s*/i,
-    /^Scan\s*/i,
-    /^\d{8}[-_]\d{4,6}\s*/i,
-    /^Vq\d+[\s_]*/i,
-]
-
 export function cleanDocumentName(raw: string | null | undefined): string {
     if (!raw || raw.trim().length === 0) return 'Documento Digitalizado'
 
     let name = raw.trim()
 
-    // Remove file extension (including glued ones like "Finitospdf")
+    // 1. Remove file extensions (including glued: "Finitospdf")
     name = name.replace(/\.(pdf|jpeg|jpg|png|gif|tiff?|bmp|webp|docx?)$/i, '')
-    name = name.replace(/(pdf|jpg|jpeg|png)$/i, (match, ext, offset) => {
-        if (offset > 0 && /[a-z]/i.test(name[offset - 1])) return ''
-        return match
-    })
+    name = name.replace(/(?<=[a-z])pdf$/i, '')
 
-    // Remove common prefixes
-    for (const prefix of REMOVE_PREFIXES) {
-        name = name.replace(prefix, '')
-    }
+    // 2. Remove prefixes (CamScanner, WhatsApp, IMG_, DOC_, Vq1_, etc.)
+    name = name.replace(/^CamScanner\s*/i, '')
+    name = name.replace(/^WhatsApp\s*Image\s*/i, '')
+    name = name.replace(/^IMG[-_]\d{4,8}[-_]\d{4,6}\s*/i, '')
+    name = name.replace(/^IMG[-_]\s*/i, '')
+    name = name.replace(/^DOC[-_]\d{4,8}[-_]\d{4,6}\s*/i, '')
+    name = name.replace(/^DOC[-_]\s*/i, '')
+    name = name.replace(/^Screenshot\s*/i, '')
+    name = name.replace(/^Scan\s*/i, '')
+    name = name.replace(/^\d{8}[-_]\d{4,6}\s*/i, '')
+    name = name.replace(/^Vq\d+[\s_]*/i, '')
 
-    // Remove WhatsApp timestamps: "2026-03-27 At 5.07.45 Pm" etc.
-    name = name.replace(/\d{4}-\d{2}-\d{2}\s+at\s+\d+[.\-:]\d+[.\-:]\d+\s*(am|pm)?/gi, '')
+    // 3. Remove WhatsApp timestamps: "2026-03-27 At 5.07.45 PM"
+    name = name.replace(/\d{4}[-\s]\d{2}[-\s]\d{2}\s*(at\s*)?\d+[.:]\d+[.:]\d+\s*(am|pm)?/gi, '')
 
-    // Remove standalone dates: "2025 11 05", "2025-11-05", "2026 03 27"
-    name = name.replace(/^\d{4}[\s\-_.]\d{2}[\s\-_.]\d{2}\s*/g, '')
-    name = name.replace(/\d{4}[\s\-_.]\d{2}[\s\-_.]\d{2}\s*$/g, '')
+    // 4. Remove standalone dates: "2025 11 05", "2025_11_05", "28-01-2025 17.30"
+    name = name.replace(/^\d{4}[\s_\-.]\d{2}[\s_\-.]\d{2}\s*/g, '')
+    name = name.replace(/\d{2}[-]\d{2}[-]\d{4}\s+\d+\.\d+/g, '')
+    name = name.replace(/\d{4}[\s_\-.]\d{2}[\s_\-.]\d{2}/g, '')
 
-    // Remove file duplicate suffixes: (1), (2), (1) (1), -1, -2
+    // 5. Remove duplicate suffixes: (1), (2), -1, -2
     name = name.replace(/\s*\(\d+\)\s*/g, ' ')
-    name = name.replace(/\s*-\d+\s*$/g, '')
+    name = name.replace(/\s*-\d{1,2}\s*$/g, '')
 
-    // Remove parentheses with short text inside: "(atyla)", "(1)", "(copy)"
-    name = name.replace(/\s*\([^)]{1,10}\)\s*/g, ' ')
+    // 6. Remove short parenthetical: "(atyla)", "(copy)"
+    name = name.replace(/\s*\([^)]{1,12}\)\s*/g, ' ')
 
-    // Replace underscores, multiple hyphens, dots in middle with spaces
+    // 7. Replace underscores, hyphens, dots with spaces
     name = name.replace(/[_]+/g, ' ')
-    name = name.replace(/-{2,}/g, ' ')
+    name = name.replace(/-+/g, ' ')
     name = name.replace(/\.\s/g, ' ')
-    name = name.replace(/\s{2,}/g, ' ')
-    name = name.trim()
+    name = name.replace(/\.\s*/g, ' ')
 
-    // Fix apostrophe accents: Declarac'ao -> Declaracao, c'a -> ca
-    name = name.replace(/c['\u2018\u2019\u0027]a/gi, 'ca')
+    // 8. Fix apostrophe accents: c'ao -> ção, c'ão -> ção
+    name = name.replace(/c['\u2018\u2019\u0027\u2032]ao/gi, 'ção')
+    name = name.replace(/c['\u2018\u2019\u0027\u2032]ão/gi, 'ção')
+    name = name.replace(/c['\u2018\u2019\u0027\u2032]a/gi, 'çã')
 
-    // Remove trailing numbers: "Criminais 2", "Carta 3", "Carta4"
-    name = name.replace(/\s+\d{1,2}$/g, '')
+    // 9. Remove trailing numbers: "Criminais 2", "Carta 3", "Carta4"
+    name = name.replace(/\bCarta\s*\d+/gi, 'Carta')
+    name = name.replace(/\s+\d{1,2}\s*$/g, '')
     name = name.replace(/(\D)\d{1,2}$/g, '$1')
 
-    // Keyword replacements before title case
-    name = name.replace(/\bCurriculum\b/gi, 'Curriculo')
+    // 10. Keyword replacements before title case
+    name = name.replace(/\bCurriculum\b/gi, 'Currículo')
     name = name.replace(/\bCv\b/gi, '')
-    name = name.trim()
+    name = name.replace(/\bServico\b/gi, 'Serviço')
 
-    // Title case
+    // 11. Clean spaces
+    name = name.replace(/\s{2,}/g, ' ').replace(/^\s*-\s*/, '').replace(/-\s*$/, '').trim()
+
+    // 12. Early exit if empty
+    if (name.length <= 1 || /^[\d\s\-_.&]+$/.test(name)) return 'Documento Digitalizado'
+
+    // 13. Title case
     name = name
         .split(' ')
         .filter(w => w.length > 0)
         .map((word) => {
-            if (/^(de|da|do|em|e|ou|no|na|os|as|ao|por|para)$/i.test(word)) {
-                return word.toLowerCase()
-            }
+            if (/^(de|da|do|em|e|ou|no|na|os|as|ao|por|para)$/i.test(word)) return word.toLowerCase()
             return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
         })
         .join(' ')
+    if (name.length > 0) name = name.charAt(0).toUpperCase() + name.slice(1)
 
-    // Capitalize first letter always
-    if (name.length > 0) {
-        name = name.charAt(0).toUpperCase() + name.slice(1)
-    }
-
-    // Fix common Portuguese accents after title-casing
+    // 14. Portuguese accent map (applied AFTER title case)
     const accentMap: Record<string, string> = {
-        'Graduacao': 'Graduação',
-        'Pos': 'Pós',
-        'Historico': 'Histórico',
-        'Certidao': 'Certidão',
-        'Declaracao': 'Declaração',
-        'Traducao': 'Tradução',
-        'Educacao': 'Educação',
-        'Apresentacao': 'Apresentação',
-        'Participacao': 'Participação',
-        'Prestacao': 'Prestação',
-        'Associacao': 'Associação',
-        'Solucoes': 'Soluções',
-        'Metalicas': 'Metálicas',
-        'Curriculo': 'Currículo',
-        'Seguranca': 'Segurança',
-        'Ciencias': 'Ciências',
-        'Financas': 'Finanças',
-        'Comercio': 'Comércio',
-        'Procuracao': 'Procuração',
-        'Divorcio': 'Divórcio',
-        'Obito': 'Óbito',
-        'Cotacao': 'Cotação',
-        'Certificacao': 'Certificação',
-        'Orcamento': 'Orçamento',
-        'Inteligencia': 'Inteligência',
-        'Experiencia': 'Experiência',
-        'Transferencia': 'Transferência',
-        'Vivencia': 'Vivência',
-        'Residencia': 'Residência',
-        'Competencia': 'Competência',
-        'Referencia': 'Referência',
-        'Frequencia': 'Frequência',
-        'Nascimento': 'Nascimento',
+        'Graduacao': 'Graduação', 'Pos': 'Pós', 'Historico': 'Histórico',
+        'Certidao': 'Certidão', 'Declaracao': 'Declaração', 'Traducao': 'Tradução',
+        'Educacao': 'Educação', 'Apresentacao': 'Apresentação', 'Participacao': 'Participação',
+        'Prestacao': 'Prestação', 'Associacao': 'Associação', 'Solucoes': 'Soluções',
+        'Metalicas': 'Metálicas', 'Curriculo': 'Currículo', 'Seguranca': 'Segurança',
+        'Ciencias': 'Ciências', 'Financas': 'Finanças', 'Comercio': 'Comércio',
+        'Procuracao': 'Procuração', 'Divorcio': 'Divórcio', 'Obito': 'Óbito',
+        'Cotacao': 'Cotação', 'Certificacao': 'Certificação', 'Orcamento': 'Orçamento',
+        'Inteligencia': 'Inteligência', 'Experiencia': 'Experiência',
+        'Transferencia': 'Transferência', 'Vivencia': 'Vivência',
+        'Residencia': 'Residência', 'Competencia': 'Competência',
+        'Referencia': 'Referência', 'Frequencia': 'Frequência',
+        'Servico': 'Serviço', 'Notarizacao': 'Notarização',
     }
     for (const [wrong, right] of Object.entries(accentMap)) {
         name = name.replace(new RegExp(`\\b${wrong}\\b`, 'g'), right)
     }
 
-    // Uppercase known acronyms (2-4 letters)
+    // 15. Uppercase known acronyms
     const acronyms = ['Tcc', 'Mba', 'Ufba', 'Rh', 'Dtp', 'Cnh', 'Cpf', 'Cnpj', 'Oab', 'Crm', 'Crea', 'Inss', 'Fgts', 'Usp', 'Ufmg', 'Ufrj', 'Uff', 'Puc']
     for (const acr of acronyms) {
         name = name.replace(new RegExp(`\\b${acr}\\b`, 'g'), acr.toUpperCase())
     }
 
-    // Clean up trailing/leading spaces and multiple spaces
+    // 16. Final cleanup
     name = name.replace(/\s{2,}/g, ' ').trim()
-
-    // If name is empty or just numbers/special chars/single letter
-    if (name.length <= 1 || /^[\d\s\-_.]+$/.test(name)) {
-        return 'Documento Digitalizado'
-    }
+    if (name.length <= 1 || /^[\d\s\-_.&]+$/.test(name)) return 'Documento Digitalizado'
 
     return name
 }
