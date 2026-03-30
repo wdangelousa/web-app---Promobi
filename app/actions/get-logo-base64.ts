@@ -5,8 +5,8 @@ import * as path from 'path';
 
 export async function getLogoBase64() {
     try {
-        // Try logo.png first, then logo-promobidocs.png as fallback
-        const candidates = ['logo.png', 'logo-promobidocs.png'];
+        // Use logo-promobi-transparent.png (RGBA with alpha channel)
+        const candidates = ['logo-promobi-transparent.png', 'logo-promobi.png', 'logo.png'];
         let logoPath = '';
         for (const name of candidates) {
             const p = path.join(process.cwd(), 'public', name);
