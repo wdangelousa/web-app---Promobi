@@ -34,6 +34,10 @@ import {
   upsertTranslationModeRegistryRecord,
 } from '@/lib/translationArtifactSource'
 import {
+  getTranslationLockState,
+  STALE_TRANSLATION_LOCK_ERROR,
+} from '@/lib/translationLock'
+import {
   isLikelyImageSource,
   resolveGroupedSourceImageCountHintFromOrderMetadata,
   resolveSourcePageCount,
@@ -205,6 +209,12 @@ function normalizeTranslationModeInput(value: unknown): TranslationModeSelected 
     return value
   }
   return null
+}
+
+function resolveStructuredKitModality(mode: TranslationModeSelected | null | undefined) {
+  if (mode === 'faithful_layout') return 'faithful' as const
+  if (mode === 'external_pdf') return 'external_pdf' as const
+  return 'standard' as const
 }
 
 // ─── saveTranslationDraft ─────────────────────────────────────────────────────
@@ -525,8 +535,6 @@ export async function saveAndGenerateIAPromobiTranslation(
       translationCompletedAt: null,
       translationError: null,
     })
-    const startedMetadata = upsertTranslationModeRegistryRecord(metadata, docId, startedRecord)
-
     await prisma.$transaction(async (tx) => {
       const lock = await tx.document.updateMany({
         where: {
@@ -536,14 +544,100 @@ export async function saveAndGenerateIAPromobiTranslation(
         },
         data: { translation_status: 'processing' },
       })
+      const currentOrder = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { metadata: true },
+      })
+      const currentMetadataRaw = currentOrder?.metadata as string | null | undefined
+      const currentMetadata = parseOrderMetadata(currentMetadataRaw)
 
       if (lock.count === 0) {
-        throw new Error('__TRANSLATION_ALREADY_IN_PROGRESS__')
+        const lockState = getTranslationLockState(currentMetadata, docId)
+        if (
+          !lockState.isStale ||
+          !lockState.translationStartedAt ||
+          lockState.staleDurationMs === null
+        ) {
+          throw new Error('__TRANSLATION_ALREADY_IN_PROGRESS__')
+        }
+
+        console.warn(
+          `[iaPromobiTranslation] stale lock detected for doc=${docId}, started=${lockState.translationStartedAt}, forcing release`,
+        )
+        console.warn(
+          `[iaPromobiTranslation] ${JSON.stringify({
+            action: 'stale_lock_released',
+            orderId,
+            docId,
+            translationStartedAt: lockState.translationStartedAt,
+            staleDurationMs: lockState.staleDurationMs,
+          })}`,
+        )
+
+        const staleReleasedRecord = buildTranslationModeRecord({
+          mode: lockState.record?.translationModeSelected ?? selectedMode,
+          translationStatus: 'generation_error',
+          translationTriggeredBy:
+            lockState.record?.translationTriggeredBy ?? triggeredBy,
+          translationStartedAt:
+            lockState.record?.translationStartedAt ??
+            lockState.translationStartedAt,
+          translationCompletedAt: new Date().toISOString(),
+          translationError: STALE_TRANSLATION_LOCK_ERROR,
+        })
+        const staleReleasedMetadata = upsertTranslationModeRegistryRecord(
+          currentMetadata,
+          docId,
+          staleReleasedRecord,
+        )
+        const releaseUpdate = await tx.order.updateMany({
+          where: {
+            id: orderId,
+            metadata: currentMetadataRaw ?? null,
+          },
+          data: {
+            metadata: JSON.stringify(staleReleasedMetadata),
+          },
+        })
+
+        if (releaseUpdate.count === 0) {
+          throw new Error('__TRANSLATION_ALREADY_IN_PROGRESS__')
+        }
+
+        const restartedMetadata = upsertTranslationModeRegistryRecord(
+          staleReleasedMetadata,
+          docId,
+          startedRecord,
+        )
+        const restartedUpdate = await tx.order.updateMany({
+          where: {
+            id: orderId,
+            metadata: JSON.stringify(staleReleasedMetadata),
+          },
+          data: {
+            metadata: JSON.stringify(restartedMetadata),
+          },
+        })
+
+        if (restartedUpdate.count === 0) {
+          throw new Error('__TRANSLATION_ALREADY_IN_PROGRESS__')
+        }
+
+        await tx.document.updateMany({
+          where: { id: docId, orderId },
+          data: { translation_status: 'processing' },
+        })
+
+        return
       }
 
       await tx.order.update({
         where: { id: orderId },
-        data: { metadata: JSON.stringify(startedMetadata) },
+        data: {
+          metadata: JSON.stringify(
+            upsertTranslationModeRegistryRecord(currentMetadata, docId, startedRecord),
+          ),
+        },
       })
     })
     lockAcquired = true
@@ -943,6 +1037,16 @@ export async function releaseToClient(
         pageParityRecord && pageParityRecord.status === 'approved_by_user'
           ? pageParityRecord.mode
           : 'strict_all_pages'
+      const translationModeRecord = getTranslationModeRegistryRecord(
+        parsedOrderMetadata,
+        d.id,
+      )
+      const translationModality =
+        artifactSelection.source === 'external_pdf'
+          ? 'external_pdf'
+          : resolveStructuredKitModality(
+              translationModeRecord?.translationModeSelected,
+            )
 
       const groupedSourceImageCountHint = resolveGroupedSourceImageCountHintFromOrderMetadata({
         orderMetadata: parsedOrderMetadata,
@@ -1052,6 +1156,55 @@ export async function releaseToClient(
 
       // Final kit shape: cover(1) + translated(T) + original(source_page_count)
       const translatedPageCount = deliveryTotalPageCount - 1 - sourcePageCount
+      const parityDelta = translatedPageCount - sourcePageCount
+
+      if (parityDelta < 0) {
+        const diagnostics: ReleasePageParityDiagnostics = {
+          orderId,
+          docId: d.id,
+          detected_family: family,
+          page_parity_mode: pageParityMode,
+          source_artifact_type: sourcePageResolution.sourceArtifactType,
+          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+          source_page_count: sourcePageCount,
+          source_relevant_page_count: pageParityRecord?.sourceRelevantPageCount ?? sourcePageCount,
+          translated_page_count: translatedPageCount,
+          parity_status: 'pass',
+          blocking_reason: 'page_parity_underflow_tolerated',
+          renderer_used: rendererUsed,
+          orientation_used: 'unknown-at-release-guard',
+          compaction_attempted: false,
+          certification_generation_blocked: false,
+          release_blocked: false,
+        }
+        logReleasePageParityDiagnostics(diagnostics)
+        continue
+      }
+
+      if (translationModality === 'standard' && parityDelta > 0) {
+        const diagnostics: ReleasePageParityDiagnostics = {
+          orderId,
+          docId: d.id,
+          detected_family: family,
+          page_parity_mode: pageParityMode,
+          source_artifact_type: sourcePageResolution.sourceArtifactType,
+          source_page_count_strategy: sourcePageResolution.sourcePageCountStrategy,
+          resolved_source_page_count: sourcePageResolution.resolvedSourcePageCount,
+          source_page_count: sourcePageCount,
+          source_relevant_page_count: pageParityRecord?.sourceRelevantPageCount ?? sourcePageCount,
+          translated_page_count: translatedPageCount,
+          parity_status: 'pass',
+          blocking_reason: 'page_parity_standard_overflow_tolerated',
+          renderer_used: rendererUsed,
+          orientation_used: 'unknown-at-release-guard',
+          compaction_attempted: false,
+          certification_generation_blocked: false,
+          release_blocked: false,
+        }
+        logReleasePageParityDiagnostics(diagnostics)
+        continue
+      }
 
       const expectedTranslatedPageCount =
         pageParityMode === 'strict_all_pages'

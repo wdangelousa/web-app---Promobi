@@ -17,9 +17,10 @@
  *      Browser/Chromium print default applies: margin: 1em 0 = 20px per
  *      paragraph at body font-size 10px. With many paragraphs this adds up
  *      to a full extra page of whitespace.
- *   2. Parity recovery is only activated for modality === 'faithful'.
- *      Diplomas, certificates, civil records resolve to modality === 'standard',
- *      so the recovery ladder never runs even when translated > source.
+ *   2. Standard modality now runs a limited parity-recovery profile (L1–L2).
+ *      Overflow can still survive that safe profile, but it no longer blocks
+ *      the flow; diagnostics should distinguish limited recovery from disabled
+ *      recovery when analyzing residual mismatches.
  *
  * Usage:
  *   const metrics = analyzeFaithfulTextHtml(htmlForKit, {
@@ -197,7 +198,7 @@ export interface FaithfulTextExpansionDiagnostic extends FaithfulTextHtmlMetrics
   /**
    * Known systematic issue flags for this render path.
    *   paragraph_margin_reset_missing — standard-mode template has no p { margin }
-   *   parity_recovery_disabled       — modality=standard suppresses recovery ladder
+   *   parity_recovery_limited_profile — modality=standard only uses L1–L2 recovery
    */
   knownSystematicIssues: string[];
   /** Path to the saved HTML snapshot, if captured. */
@@ -638,7 +639,7 @@ export function runFaithfulTextDiagnostics(
     knownSystematicIssues.push('paragraph_margin_reset_missing');
   }
   if (modality === 'standard') {
-    knownSystematicIssues.push('parity_recovery_disabled');
+    knownSystematicIssues.push('parity_recovery_limited_profile');
   }
 
   // HTML snapshot: save when source=1 and translated > 1.

@@ -81,8 +81,9 @@ import {
   computeRenderQualityTier,
   isParityRecoveryNeeded,
   isParityUnderflow,
+  resolveParityRecoveryMaxLevel,
+  resolveParityRecoveryProfile,
   resolveParityLabel,
-  PARITY_MAX_RECOVERY_LEVEL,
   type InitialRenderProfile,
   type ParityRecoveryLevel,
   type PreRenderLayoutHints,
@@ -233,9 +234,8 @@ export interface StructuredPreviewKitInput {
   rendererName?: string;
   /**
    * Translation modality — governs parity-recovery policy.
-   *   'faithful'     → parity recovery ladder is activated when translated page
-   *                    count exceeds source page count.
-   *   'standard'     → parity is not enforced during rendering (default).
+   *   'faithful'     → full L1–L4 parity recovery; terminal overflow blocks.
+   *   'standard'     → best-effort L1–L2 parity recovery; residual mismatch warns.
    *   'external_pdf' → handled upstream; recovery is never invoked.
    */
   modality?: 'standard' | 'faithful' | 'external_pdf';
@@ -262,7 +262,7 @@ export interface StructuredPageParityDecision {
 
 export interface PageParityDecisionContext {
   parity_decision_required: true;
-  defaultMode: 'strict_all_pages';
+  defaultMode: PageParityMode;
   currentMode: PageParityMode;
   sourcePhysicalPageCount: number | null;
   sourceRelevantPageCount: number | null;
@@ -293,6 +293,10 @@ export interface StructuredLanguageIntegritySignal {
     | 'missing_and_source_language_mismatch';
 }
 
+type PageParityWarningReason =
+  | 'page_parity_underflow_tolerated'
+  | 'page_parity_standard_overflow_tolerated';
+
 export interface StructuredPreviewKitResult {
   assembled: boolean;
   coverGenerated: boolean;
@@ -313,6 +317,8 @@ export interface StructuredPreviewKitResult {
   parityDecisionRequired?: boolean;
   parityDecisionContext?: PageParityDecisionContext;
   blockingReason?: string;
+  parityWarning?: boolean;
+  parityWarningMessage?: string;
   certificationGenerationBlocked?: boolean;
   releaseBlocked?: boolean;
   /** True when source had exactly 1 page and the translated render produced 2+ pages. */
@@ -355,6 +361,9 @@ export interface PageParityDiagnostic {
   gotenberg_status_code: number | null;
   parity_status: 'pass' | 'fail';
   blocking_reason: string;
+  parity_warning?: boolean;
+  parity_warning_reason?: string | null;
+  parity_warning_message?: string | null;
   renderer_used: string;
   orientation_used: string;
   compaction_attempted: boolean;
@@ -374,6 +383,8 @@ export interface StructuredKitBuildResult {
   pageParityMode?: PageParityMode;
   parityDecisionRequired?: boolean;
   parityDecisionContext?: PageParityDecisionContext;
+  parityWarning?: boolean;
+  parityWarningMessage?: string;
   diagnostics?: PageParityDiagnostic;
   /**
    * True when source had exactly 1 page and the translated render produced 2+
@@ -407,6 +418,26 @@ function logPageParityDiagnostics(
 ): void {
   console.log(
     `${logPrefix} — page parity diagnostics: ${JSON.stringify(diagnostics)}`,
+  );
+}
+
+function logPageParityWarning(
+  logPrefix: string,
+  warning: {
+    orderId: string | number;
+    docId: string | number;
+    modality: StructuredPreviewKitInput['modality'];
+    sourcePhysicalPageCount: number;
+    translatedPageCount: number;
+    reason: PageParityWarningReason;
+    message: string;
+  },
+): void {
+  console.warn(
+    `${logPrefix} — page parity warning: ${JSON.stringify({
+      action: 'page_parity_warning_tolerated',
+      ...warning,
+    })}`,
   );
 }
 
@@ -542,6 +573,66 @@ function logLanguageIntegrityDiagnostics(
 
 const PAGE_PARITY_DEFAULT_MODE = 'strict_all_pages' as const;
 
+function resolveDefaultParityMode(
+  sourcePhysicalPageCount: number | null,
+  translatedPageCount: number | null,
+): PageParityMode {
+  if (!sourcePhysicalPageCount || sourcePhysicalPageCount <= 0) {
+    return 'manual_override';
+  }
+  if (!translatedPageCount || translatedPageCount <= 0) {
+    return 'manual_override';
+  }
+  if (translatedPageCount !== sourcePhysicalPageCount) {
+    return translatedPageCount > sourcePhysicalPageCount
+      ? 'manual_override'
+      : 'content_pages_only';
+  }
+  return PAGE_PARITY_DEFAULT_MODE;
+}
+
+function buildParityWarning(
+  input: {
+    modality: StructuredPreviewKitInput['modality'];
+    sourcePhysicalPageCount: number;
+    translatedPageCount: number;
+  },
+): {
+  parityWarning: boolean;
+  parityWarningReason: PageParityWarningReason | null;
+  parityWarningMessage: string | null;
+} {
+  const sourcePhysicalPageCount = input.sourcePhysicalPageCount;
+  const translatedPageCount = input.translatedPageCount;
+  const pageDelta = translatedPageCount - sourcePhysicalPageCount;
+
+  if (pageDelta < 0) {
+    return {
+      parityWarning: true,
+      parityWarningReason: 'page_parity_underflow_tolerated',
+      parityWarningMessage:
+        `Translated output rendered ${Math.abs(pageDelta)} page(s) fewer than the source; ` +
+        `the kit remains unblocked because underflow is treated as a warning.`,
+    };
+  }
+
+  if (input.modality === 'standard' && pageDelta > 0) {
+    return {
+      parityWarning: true,
+      parityWarningReason: 'page_parity_standard_overflow_tolerated',
+      parityWarningMessage:
+        `Standard recovery exhausted its safe L1-L2 profile and the translation still exceeds ` +
+        `the source by ${pageDelta} page(s); continuing with a non-blocking parity warning.`,
+    };
+  }
+
+  return {
+    parityWarning: false,
+    parityWarningReason: null,
+    parityWarningMessage: null,
+  };
+}
+
 function normalizePositiveInteger(value: unknown): number | null {
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
     return value;
@@ -589,11 +680,16 @@ function buildSuggestedParityModes(
   sourcePhysicalPageCount: number | null,
   translatedPageCount: number | null,
 ): PageParityMode[] {
+  const defaultMode = resolveDefaultParityMode(
+    sourcePhysicalPageCount,
+    translatedPageCount,
+  );
+
   if (!sourcePhysicalPageCount || sourcePhysicalPageCount <= 0) {
-    return ['strict_all_pages', 'manual_override'];
+    return [defaultMode, 'manual_override', 'strict_all_pages'];
   }
 
-  const suggested: PageParityMode[] = ['strict_all_pages'];
+  const suggested: PageParityMode[] = [defaultMode];
   if (
     translatedPageCount &&
     translatedPageCount > 0 &&
@@ -605,6 +701,7 @@ function buildSuggestedParityModes(
     suggested.push('first_page_only');
   }
   suggested.push('manual_override');
+  suggested.push('strict_all_pages');
   return Array.from(new Set(suggested));
 }
 
@@ -612,6 +709,7 @@ interface PageParityEvaluationInput {
   sourcePhysicalPageCount: number | null;
   translatedPageCount: number;
   decision: StructuredPageParityDecision | null;
+  modality: StructuredPreviewKitInput['modality'];
 }
 
 interface PageParityEvaluationResult {
@@ -624,6 +722,9 @@ interface PageParityEvaluationResult {
     | 'page_parity_mismatch'
     | 'page_parity_unverifiable_source_page_count'
     | 'page_parity_manual_override_requires_justification';
+  parityWarning: boolean;
+  parityWarningReason: PageParityWarningReason | null;
+  parityWarningMessage: string | null;
   decisionContext?: PageParityDecisionContext;
 }
 
@@ -647,6 +748,9 @@ function evaluatePageParity(
           parityPass: false,
           decisionRequired: false,
           blockingReason: 'page_parity_manual_override_requires_justification',
+          parityWarning: false,
+          parityWarningReason: null,
+          parityWarningMessage: null,
         };
       }
       return {
@@ -655,6 +759,9 @@ function evaluatePageParity(
         parityPass: true,
         decisionRequired: false,
         blockingReason: 'none',
+        parityWarning: false,
+        parityWarningReason: null,
+        parityWarningMessage: null,
       };
     }
 
@@ -665,18 +772,28 @@ function evaluatePageParity(
         parityPass: false,
         decisionRequired: false,
         blockingReason: 'page_parity_unverifiable_source_page_count',
+        parityWarning: false,
+        parityWarningReason: null,
+        parityWarningMessage: null,
       };
     }
 
+    const defaultMode = resolveDefaultParityMode(
+      sourcePhysicalPageCount,
+      translatedPageCount,
+    );
     return {
       mode,
       sourceRelevantPageCount: null,
       parityPass: false,
       decisionRequired: true,
       blockingReason: 'page_parity_unverifiable_source_page_count',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
       decisionContext: {
         parity_decision_required: true,
-        defaultMode: PAGE_PARITY_DEFAULT_MODE,
+        defaultMode,
         currentMode: mode,
         sourcePhysicalPageCount: null,
         sourceRelevantPageCount: null,
@@ -684,6 +801,26 @@ function evaluatePageParity(
         suggestedModes,
         blockingReason: 'page_parity_unverifiable_source_page_count',
       },
+    };
+  }
+
+  const parityWarning = buildParityWarning({
+    modality: input.modality,
+    sourcePhysicalPageCount,
+    translatedPageCount,
+  });
+
+  if (parityWarning.parityWarning) {
+    return {
+      mode,
+      sourceRelevantPageCount:
+        input.decision?.sourceRelevantPageCount ?? sourcePhysicalPageCount,
+      parityPass: true,
+      decisionRequired: false,
+      blockingReason: 'none',
+      parityWarning: true,
+      parityWarningReason: parityWarning.parityWarningReason,
+      parityWarningMessage: parityWarning.parityWarningMessage,
     };
   }
 
@@ -695,6 +832,9 @@ function evaluatePageParity(
         parityPass: false,
         decisionRequired: false,
         blockingReason: 'page_parity_manual_override_requires_justification',
+        parityWarning: false,
+        parityWarningReason: null,
+        parityWarningMessage: null,
       };
     }
     return {
@@ -703,6 +843,9 @@ function evaluatePageParity(
       parityPass: true,
       decisionRequired: false,
       blockingReason: 'none',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
     };
   }
 
@@ -716,6 +859,9 @@ function evaluatePageParity(
         parityPass: false,
         decisionRequired: false,
         blockingReason: 'page_parity_mismatch',
+        parityWarning: false,
+        parityWarningReason: null,
+        parityWarningMessage: null,
       };
     }
     return {
@@ -724,6 +870,9 @@ function evaluatePageParity(
       parityPass: true,
       decisionRequired: false,
       blockingReason: 'none',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
     };
   }
 
@@ -745,6 +894,9 @@ function evaluatePageParity(
         parityPass: false,
         decisionRequired: false,
         blockingReason: 'page_parity_mismatch',
+        parityWarning: false,
+        parityWarningReason: null,
+        parityWarningMessage: null,
       };
     }
     return {
@@ -753,6 +905,9 @@ function evaluatePageParity(
       parityPass: true,
       decisionRequired: false,
       blockingReason: 'none',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
     };
   }
 
@@ -764,6 +919,9 @@ function evaluatePageParity(
       parityPass: true,
       decisionRequired: false,
       blockingReason: 'none',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
     };
   }
 
@@ -774,18 +932,28 @@ function evaluatePageParity(
       parityPass: false,
       decisionRequired: false,
       blockingReason: 'page_parity_mismatch',
+      parityWarning: false,
+      parityWarningReason: null,
+      parityWarningMessage: null,
     };
   }
 
+  const defaultMode = resolveDefaultParityMode(
+    sourcePhysicalPageCount,
+    translatedPageCount,
+  );
   return {
     mode,
     sourceRelevantPageCount: sourcePhysicalPageCount,
     parityPass: false,
     decisionRequired: true,
     blockingReason: 'page_parity_mismatch',
+    parityWarning: false,
+    parityWarningReason: null,
+    parityWarningMessage: null,
     decisionContext: {
       parity_decision_required: true,
-      defaultMode: PAGE_PARITY_DEFAULT_MODE,
+      defaultMode,
       currentMode: mode,
       sourcePhysicalPageCount,
       sourceRelevantPageCount: sourcePhysicalPageCount,
@@ -1488,6 +1656,9 @@ export async function buildStructuredKitBuffer(
     gotenberg_failure_type: null as string | null,
     gotenberg_failure_detail: null as string | null,
     gotenberg_status_code: null as number | null,
+    parity_warning: false,
+    parity_warning_reason: null as string | null,
+    parity_warning_message: null as string | null,
     renderer_used: input.rendererName ?? 'unknown',
     orientation_used: input.orientation ?? 'portrait',
     compaction_attempted: input.compactionAttempted ?? false,
@@ -1830,13 +2001,12 @@ export async function buildStructuredKitBuffer(
 
       translatedPdfBuffer = translatedPdfBase.buffer;
 
-      // ── Parity recovery loop (faithful modality only) ──────────────────────
-      // For faithful-modality documents, if the initial render produces more
-      // pages than the source, apply successive CSS/HTML compression levels
-      // and re-render until parity is achieved or all levels are exhausted.
-      // Standard and external_pdf modalities skip this block entirely.
+      // ── Parity recovery loop ────────────────────────────────────────────────
+      // Standard modality runs a best-effort L1–L2 profile and keeps the kit
+      // non-blocking on residual overflow. Faithful modality keeps the full
+      // L1–L4 ladder and still treats terminal overflow as blocking.
       if (
-        input.modality === 'faithful' &&
+        resolveParityRecoveryMaxLevel(input.modality ?? 'standard') > 0 &&
         typeof input.sourcePageCount === 'number' &&
         input.sourcePageCount > 0
       ) {
@@ -1851,7 +2021,7 @@ export async function buildStructuredKitBuffer(
           const recoveryNeeded = isParityRecoveryNeeded(
             probePageCount,
             input.sourcePageCount,
-            'faithful',
+            input.modality ?? 'standard',
           );
           log(
             `first-render result: profile=${firstRenderProfile.name} ` +
@@ -1860,12 +2030,16 @@ export async function buildStructuredKitBuffer(
           );
         }
 
-        // Detect underflow (translated renders fewer pages than source).
-        // Not remediated in Phase 1 — detected and logged for diagnostics only.
-        if (isParityUnderflow(probePageCount, input.sourcePageCount, 'faithful')) {
+        if (
+          isParityUnderflow(
+            probePageCount,
+            input.sourcePageCount,
+            input.modality ?? 'standard',
+          )
+        ) {
           log(
             `parity underflow: translated=${probePageCount} source=${input.sourcePageCount} ` +
-            `delta=${input.sourcePageCount - probePageCount} — underflow is not remediated in Phase 1`,
+            `delta=${input.sourcePageCount - probePageCount} — underflow is tolerated as a warning`,
           );
         }
 
@@ -1874,8 +2048,20 @@ export async function buildStructuredKitBuffer(
         let resolvedAtLevel: ParityRecoveryLevel | null = null;
         let parityResolved = true; // true if first render or recovery achieved parity
 
-        if (isParityRecoveryNeeded(probePageCount, input.sourcePageCount, 'faithful')) {
+        if (
+          isParityRecoveryNeeded(
+            probePageCount,
+            input.sourcePageCount,
+            input.modality ?? 'standard',
+          )
+        ) {
           recoveryWasNeeded = true;
+          const recoveryProfile = resolveParityRecoveryProfile(
+            input.modality ?? 'standard',
+          );
+          const recoveryMaxLevel = resolveParityRecoveryMaxLevel(
+            input.modality ?? 'standard',
+          );
 
           // V2 pipeline: deterministic HTML produces predictable pagination.
           // If first render achieved parity, skip recovery entirely.
@@ -1905,8 +2091,10 @@ export async function buildStructuredKitBuffer(
           // and adds !important overrides at each successive level.
           const preRenderHints = buildPreRenderLayoutHints(budget);
           log(
-            `parity recovery: start — translated=${probePageCount} source=${input.sourcePageCount} ` +
+            `parity recovery: start — profile=${recoveryProfile ?? 'none'} ` +
+            `translated=${probePageCount} source=${input.sourcePageCount} ` +
             `overflow=${probePageCount - input.sourcePageCount} page(s) ` +
+            `max_level=${recoveryMaxLevel} ` +
             `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in ` +
             `hints=font:${preRenderHints.suggestedFontSizePx}px/lh:${preRenderHints.suggestedLineHeight}/pad:${preRenderHints.suggestedCellPaddingPx}px`,
           );
@@ -1915,7 +2103,7 @@ export async function buildStructuredKitBuffer(
           let bestPageCount = probePageCount;
           let recoveryResolved = false;
 
-          for (let lvl = 1; lvl <= PARITY_MAX_RECOVERY_LEVEL && !recoveryResolved; lvl++) {
+          for (let lvl = 1; lvl <= recoveryMaxLevel && !recoveryResolved; lvl++) {
             const level = lvl as ParityRecoveryLevel;
             // Recovery builds on firstRenderHtml (which may already include
             // initial-profile CSS). Recovery CSS uses !important and overrides
@@ -1968,7 +2156,7 @@ export async function buildStructuredKitBuffer(
           if (!recoveryResolved) {
             parityResolved = false;
             log(
-              `parity recovery: exhausted all levels — ` +
+              `parity recovery: exhausted configured levels — ` +
               `final_translated=${bestPageCount} source=${input.sourcePageCount}`,
             );
             log(`parity recovery outcome: ${resolveParityLabel(null)}`);
@@ -2129,6 +2317,7 @@ export async function buildStructuredKitBuffer(
       sourcePhysicalPageCount,
       translatedPageCount,
       decision: normalizedParityDecision,
+      modality: input.modality ?? 'standard',
     });
     const sourceRelevantPageCount = parityEvaluation.sourceRelevantPageCount;
     const parityDiagnosticsBase = {
@@ -2139,6 +2328,9 @@ export async function buildStructuredKitBuffer(
       source_relevant_page_count: sourceRelevantPageCount,
       source_page_count: sourcePhysicalPageCount,
       translated_page_count: translatedPageCount,
+      parity_warning: parityEvaluation.parityWarning,
+      parity_warning_reason: parityEvaluation.parityWarningReason,
+      parity_warning_message: parityEvaluation.parityWarningMessage,
     } as const;
 
     if (parityEvaluation.decisionRequired) {
@@ -2196,6 +2388,22 @@ export async function buildStructuredKitBuffer(
       certification_generation_blocked: false,
       release_blocked: false,
     };
+    if (
+      parityEvaluation.parityWarning &&
+      parityEvaluation.parityWarningReason &&
+      parityEvaluation.parityWarningMessage &&
+      sourcePhysicalPageCount !== null
+    ) {
+      logPageParityWarning(logPrefix, {
+        orderId: input.orderId,
+        docId: input.documentId,
+        modality: input.modality ?? 'standard',
+        sourcePhysicalPageCount,
+        translatedPageCount,
+        reason: parityEvaluation.parityWarningReason,
+        message: parityEvaluation.parityWarningMessage,
+      });
+    }
     logPageParityDiagnostics(logPrefix, passDiagnostics);
 
     // ── Part 1: HTML certification cover ─────────────────────────────────────
@@ -2321,6 +2529,8 @@ export async function buildStructuredKitBuffer(
       translatedPageCount,
       parityStatus: 'pass',
       pageParityMode: parityEvaluation.mode,
+      parityWarning: parityEvaluation.parityWarning,
+      parityWarningMessage: parityEvaluation.parityWarningMessage ?? undefined,
       diagnostics: passDiagnostics,
     };
 
@@ -2385,6 +2595,8 @@ export async function assembleStructuredPreviewKit(
     result.parityDecisionRequired = buildResult.parityDecisionRequired ?? false;
     result.parityDecisionContext = buildResult.parityDecisionContext;
     result.blockingReason = buildResult.blockingReason;
+    result.parityWarning = buildResult.parityWarning ?? false;
+    result.parityWarningMessage = buildResult.parityWarningMessage;
     result.certificationGenerationBlocked =
       buildResult.diagnostics?.certification_generation_blocked ?? false;
     result.releaseBlocked = buildResult.diagnostics?.release_blocked ?? false;

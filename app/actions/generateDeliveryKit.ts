@@ -15,8 +15,10 @@ import { buildTranslatedPageHtml } from "@/services/translatedPageTemplate";
 import {
   getApprovedPreviewArtifactRegistryRecord,
   getPageParityRegistryRecord,
+  getTranslationModeRegistryRecord,
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
+  type TranslationModeSelected,
   upsertDeliveryArtifactRegistryRecord,
 } from "@/lib/translationArtifactSource";
 import { resolveKitSetup } from "@/services/structuredKitSetup";
@@ -81,6 +83,14 @@ function buildStoredPageParityDecision(
   };
 }
 
+function resolveStructuredKitModality(
+  mode: TranslationModeSelected | null | undefined,
+): 'standard' | 'faithful' | 'external_pdf' {
+  if (mode === 'faithful_layout') return 'faithful';
+  if (mode === 'external_pdf') return 'external_pdf';
+  return 'standard';
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function generateDeliveryKit(
@@ -121,6 +131,13 @@ export async function generateDeliveryKit(
       translatedText: doc.translatedText,
       translatedFileUrl: doc.translatedFileUrl,
     });
+    const translationModeRecord = getTranslationModeRegistryRecord(
+      parsedOrderMetadata,
+      documentId,
+    );
+    const structuredKitModality = resolveStructuredKitModality(
+      translationModeRecord?.translationModeSelected,
+    );
 
     console.log(
       `${logPrefix} — translation artifact selection: ${JSON.stringify({
@@ -455,7 +472,8 @@ export async function generateDeliveryKit(
         console.log(
           `${logPrefix} — mirror_html renderer | ` +
           `documentType=${classification.documentType} orientation=${detectedOrientation} ` +
-          `layoutHint=${layoutHint} pages=${sourcePageCount ?? 'n/a'}`,
+          `layoutHint=${layoutHint} pages=${sourcePageCount ?? 'n/a'} ` +
+          `modality=${structuredKitModality}`,
         );
 
         const buildResult = await buildStructuredKitBuffer({
@@ -477,7 +495,7 @@ export async function generateDeliveryKit(
           originalContentType: contentType,
           documentFamily: classification.documentType,
           rendererName: 'mirror_html',
-          modality: 'faithful',
+          modality: structuredKitModality,
           forceLetterheadOverlay: true,
           surface: preview ? 'preview-kit' : 'delivery-kit',
           compactionAttempted: false,

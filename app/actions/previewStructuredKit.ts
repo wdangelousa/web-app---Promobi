@@ -40,11 +40,13 @@ import { isCertificateGenreDocumentType } from '@/lib/singlePageSafeguard';
 import { buildTranslatedPageHtml } from '@/services/translatedPageTemplate';
 import {
   getPageParityRegistryRecord,
+  getTranslationModeRegistryRecord,
   parseOrderMetadata,
   resolveTranslationArtifactSelection,
   upsertPageParityRegistryRecord,
   type PageParityMode,
   type TranslationArtifactSource,
+  type TranslationModeSelected,
 } from '@/lib/translationArtifactSource';
 import { resolveKitSetup } from '@/services/structuredKitSetup';
 import { getCurrentUser } from '@/app/actions/auth';
@@ -66,12 +68,22 @@ interface PreviewStructuredKitActionResult {
   error?: string;
   parityDecisionRequired?: boolean;
   parityDecision?: PreviewPageParityDecisionRequiredPayload;
+  parityWarning?: boolean;
+  parityWarningMessage?: string;
   resolvedPageParity?: {
     mode: PageParityMode;
     sourcePhysicalPageCount: number | null;
     sourceRelevantPageCount: number | null;
     translatedPageCount: number | null;
   };
+}
+
+function resolveStructuredKitModality(
+  mode: TranslationModeSelected | null | undefined,
+): 'standard' | 'faithful' | 'external_pdf' {
+  if (mode === 'faithful_layout') return 'faithful';
+  if (mode === 'external_pdf') return 'external_pdf';
+  return 'standard';
 }
 
 function buildExternalOverrideLanguageIntegrity(
@@ -225,6 +237,8 @@ async function generatePreviewFromExternalPdf(params: {
   return {
     success: true,
     previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+    parityWarning: kit.parityWarning ?? false,
+    parityWarningMessage: kit.parityWarningMessage ?? undefined,
     resolvedPageParity: {
       mode: kit.pageParityMode ?? 'strict_all_pages',
       sourcePhysicalPageCount: kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
@@ -309,6 +323,13 @@ export async function previewStructuredKit(
 
     const parsedOrderMetadata = parseOrderMetadata(
       doc.order?.metadata as string | null | undefined,
+    );
+    const translationModeRecord = getTranslationModeRegistryRecord(
+      parsedOrderMetadata,
+      doc.id,
+    );
+    const structuredKitModality = resolveStructuredKitModality(
+      translationModeRecord?.translationModeSelected,
     );
     const persistedPageParityRecord = getPageParityRegistryRecord(
       parsedOrderMetadata,
@@ -546,7 +567,8 @@ export async function previewStructuredKit(
     console.log(
       `${logPrefix} — mirror_html renderer | ` +
       `documentType=${classification.documentType} orientation=${detectedOrientation} ` +
-      `layoutHint=${layoutHint} pages=${sourcePageCount ?? 'n/a'}`,
+      `layoutHint=${layoutHint} pages=${sourcePageCount ?? 'n/a'} ` +
+      `modality=${structuredKitModality}`,
     );
 
     // ── Step 5: Assemble the preview kit ────────────────────────────────────
@@ -570,7 +592,7 @@ export async function previewStructuredKit(
       orientation: detectedOrientation === 'landscape' ? 'landscape' : undefined,
       documentFamily: classification.documentType,
       rendererName: 'mirror_html',
-      modality: 'faithful',
+      modality: structuredKitModality,
       forceLetterheadOverlay: true,
       surface: 'preview-kit',
       compactionAttempted: false,
@@ -644,6 +666,8 @@ export async function previewStructuredKit(
     return {
       success: true,
       previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
+      parityWarning: kit.parityWarning ?? false,
+      parityWarningMessage: kit.parityWarningMessage ?? undefined,
       resolvedPageParity: {
         mode: kit.pageParityMode ?? 'strict_all_pages',
         sourcePhysicalPageCount:

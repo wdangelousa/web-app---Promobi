@@ -1,7 +1,7 @@
 /**
  * lib/parityRecovery.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Parity-recovery ladder for faithful-modality translations.
+ * Parity-recovery ladder for translated preview / delivery HTML renders.
  *
  * When a translated PDF has more pages than the source, this module provides
  * a deterministic sequence of CSS/HTML transforms that attempt to compress
@@ -18,12 +18,18 @@
  *   Level 4 — aggressive reflow    maximum CSS compaction within safe bounds,
  *                                   last resort before terminal failure
  *
- * Terminal failure is signalled by the caller after all levels are exhausted.
+ * Recovery profiles:
+ *   standard_recovery — best-effort overflow handling for standard modality.
+ *                       Attempts Levels 1–2 only and does NOT block when the
+ *                       output still overflows after those safe transforms.
+ *   faithful_recovery — strict overflow handling for faithful modality.
+ *                       Attempts Levels 1–4 and blocks on terminal failure.
  *
  * Modality contract:
- *   'standard'     — parity recovery is NOT activated; overflow is tolerated.
- *   'faithful'     — parity recovery IS activated; all levels are attempted
- *                    before terminal failure.
+ *   'standard'     — parity recovery IS activated in best-effort mode
+ *                    (Levels 1–2 only, non-blocking on failure).
+ *   'faithful'     — parity recovery IS activated in strict mode
+ *                    (Levels 1–4, terminal failure remains blocking).
  *   'external_pdf' — parity is handled upstream; this module is not invoked.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -35,9 +41,15 @@ export const PARITY_MIN_FONT_SIZE_PX = 8;
 
 /**
  * Maximum number of recovery levels available.
- * Callers iterate 1..PARITY_MAX_RECOVERY_LEVEL before declaring terminal failure.
+ * Faithful recovery uses the full ladder. Standard recovery uses the capped
+ * profile defined in `PARITY_RECOVERY_PROFILE_MAX_LEVEL.standard_recovery`.
  */
 export const PARITY_MAX_RECOVERY_LEVEL = 4;
+
+export const PARITY_RECOVERY_PROFILE_MAX_LEVEL = {
+  standard_recovery: 2,
+  faithful_recovery: PARITY_MAX_RECOVERY_LEVEL,
+} as const;
 
 /** Minimum line-height permitted at the most aggressive recovery level (Level 4). */
 export const PARITY_MIN_LINE_HEIGHT = 1.05;
@@ -61,9 +73,9 @@ export const PARITY_MAX_ANNOTATION_INNER_LENGTH = 20;
 export const COMPACT_ANNOTATION_COMPACTION_THRESHOLD = 35;
 
 /**
- * Prompt note appended to system prompts for faithful-modality structured
- * renders. Instructs the model to keep translated content compact to help
- * preserve the source page count.
+ * Prompt note appended to faithful-recovery prompts only.
+ * Standard recovery remains best-effort and relies on the safe L1–L2 ladder
+ * instead of extra prompt pressure because overflow does not block that mode.
  */
 export const FAITHFUL_PARITY_PROMPT_NOTE = `
 LAYOUT CONSTRAINT — PAGE COUNT PRESERVATION:
@@ -80,6 +92,8 @@ To help achieve this:
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type ParityRecoveryLevel = 1 | 2 | 3 | 4;
+export type ParityRecoveryProfile =
+  | keyof typeof PARITY_RECOVERY_PROFILE_MAX_LEVEL;
 
 /**
  * Controls how aggressively bracket annotations are pre-compacted in the
@@ -342,7 +356,7 @@ export function resolveParityLabel(level: ParityRecoveryLevel | null): ParityRes
 
 /**
  * Returns true when the translated page count is fewer than the source page
- * count for a faithful-modality document.
+ * count.
  *
  * Underflow indicates over-compaction or a translation that omitted content.
  * It is not remediated by the recovery ladder (which targets overflow only)
@@ -351,9 +365,8 @@ export function resolveParityLabel(level: ParityRecoveryLevel | null): ParityRes
 export function isParityUnderflow(
   translatedPageCount: number,
   sourcePageCount: number | undefined,
-  modality: string,
+  _modality: string,
 ): boolean {
-  if (modality !== 'faithful') return false;
   if (!sourcePageCount || sourcePageCount <= 0) return false;
   return translatedPageCount < sourcePageCount;
 }
@@ -653,9 +666,22 @@ export function computeRenderQualityTier(
   return 'acceptable';
 }
 
+export function resolveParityRecoveryProfile(
+  modality: string,
+): ParityRecoveryProfile | null {
+  if (modality === 'faithful') return 'faithful_recovery';
+  if (modality === 'standard') return 'standard_recovery';
+  return null;
+}
+
+export function resolveParityRecoveryMaxLevel(modality: string): number {
+  const profile = resolveParityRecoveryProfile(modality);
+  return profile ? PARITY_RECOVERY_PROFILE_MAX_LEVEL[profile] : 0;
+}
+
 /**
  * Returns true when parity recovery should be attempted.
- * Recovery is only activated for the 'faithful' modality and when the
+ * Recovery is activated for the 'standard' and 'faithful' modalities when the
  * translated page count exceeds the source page count.
  */
 export function isParityRecoveryNeeded(
@@ -663,7 +689,7 @@ export function isParityRecoveryNeeded(
   sourcePageCount: number | undefined,
   modality: string,
 ): boolean {
-  if (modality !== 'faithful') return false;
+  if (resolveParityRecoveryMaxLevel(modality) <= 0) return false;
   if (!sourcePageCount || sourcePageCount <= 0) return false;
   return translatedPageCount > sourcePageCount;
 }
