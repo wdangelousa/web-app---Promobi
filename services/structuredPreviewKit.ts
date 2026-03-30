@@ -819,6 +819,7 @@ function buildCertificationCoverHtml(
   loadedAssets: Set<string>,
 ): string {
   const coverVariantLabel = variant === 'es-en' ? 'Spanish to English' : 'Portuguese to English';
+  const coverSourceLanguage = variant === 'es-en' ? 'Spanish' : 'Portuguese';
 
   const certificationBodyHtml = variant === 'es-en'
     ? `<p>
@@ -1120,7 +1121,7 @@ function buildCertificationCoverHtml(
           </tr>
           <tr>
             <td class="label">Source Language</td>
-            <td class="value">${String(meta.sourceLanguage || '')}</td>
+            <td class="value">${coverSourceLanguage}</td>
             <td class="label">Target Language</td>
             <td class="value">${targetLanguage}</td>
           </tr>
