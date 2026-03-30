@@ -7,6 +7,7 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { deriveProposalFinancialSummary } from '@/lib/proposalPricingSummary';
 import { resolveStoredOrCalculatedDueDate } from '@/lib/orderDueDate';
+import { cleanDocumentName } from '@/lib/proposalUtils';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -39,7 +40,7 @@ const DENSITY: Record<string, { label: string; color: string; bg: string; pct: s
   high: { label: 'ALTA', color: '#B91C1C', bg: '#FEE2E2', pct: '100%' },
   medium: { label: 'MEDIA', color: '#92400E', bg: '#FEF3C7', pct: '50%' },
   low: { label: 'BAIXA', color: '#065F46', bg: '#D1FAE5', pct: '25%' },
-  blank: { label: 'EM BRANCO', color: '#6B7280', bg: '#F3F4F6', pct: 'Free' },
+  blank: { label: 'GRATIS', color: '#6B7280', bg: '#F3F4F6', pct: 'Free' },
   scanned: { label: 'ESCANEADA', color: '#1D4ED8', bg: '#DBEAFE', pct: '100%' },
 };
 const getDensity = (d: string) => DENSITY[d] || DENSITY.high;
@@ -76,7 +77,7 @@ const fmtExcluded = (excluded: any[]) => {
   return `${nums.length} pags. (${nums[0]}–${nums[nums.length - 1]})`;
 };
 
-const displayName = (raw: string) => (raw || '').split(/[/\\]/).pop() || raw;
+const displayName = (raw: string) => cleanDocumentName((raw || '').split(/[/\\]/).pop() || raw);
 
 const safeMeta = (raw: any) => {
   try { return typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {}); }
@@ -249,7 +250,7 @@ const DocCard = ({ doc, idx, base }: { doc: any; idx: number; base: number }) =>
   const ranges = buildRanges(srcPages);
 
   const priceHint = (pct: string) => {
-    if (pct === 'Free') return 'Gratis';
+    if (pct === 'Free') return 'Grátis';
     return `$${(base * parseFloat(pct) / 100).toFixed(2)}/pag`;
   };
 
@@ -277,10 +278,10 @@ const DocCard = ({ doc, idx, base }: { doc: any; idx: number; base: number }) =>
           <View style={S.exclBar} />
           <View style={S.exclBody}>
             <Text style={S.exclHead}>
-              {excCount} {excCount === 1 ? 'pagina excluida' : 'paginas excluidas'} pela equipe Promobidocs
+              {excCount} {excCount === 1 ? 'página excluída' : 'páginas excluídas'} pela equipe Promobidocs
             </Text>
             <Text style={S.exclPgs}>
-              {fmtExcluded(excludedPgs)} — desnecessarias para o processo
+              {fmtExcluded(excludedPgs)} — desnecessárias para o processo
             </Text>
           </View>
           <Text style={S.exclSave}>-${excSavings.toFixed(2)}</Text>
@@ -389,13 +390,13 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <View style={S.logoWrap}>
                       {logoBase64
                         ? <Image src={logoBase64} style={S.logo} />
-                        : <Text style={S.logoText}>PROMOBIDOCSDOCS</Text>
+                        : <Text style={S.logoText}>PROMOBIDOCS</Text>
                       }
                     </View>
-                    <Text style={S.headerTagline}>TRADUCAO CERTIFICADA · USCIS ACCEPTED</Text>
+                    <Text style={S.headerTagline}>TRADUÇÃO CERTIFICADA · USCIS ACCEPTED</Text>
                   </View>
                   <View style={S.headerRight}>
-                    <Text style={S.headerBadge}>C O T A C A O</Text>
+                    <Text style={S.headerBadge}>C O T A Ç Ã O</Text>
                     <Text style={S.headerId}>#{order?.id}</Text>
                     <Text style={S.headerDate}>{safeDate(order?.createdAt)}</Text>
                   </View>
@@ -422,7 +423,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                       </View>
                       <View style={[S.pill, S.pillL]}>
                         <Text style={S.pillVal}>{totalPages}</Text>
-                        <Text style={S.pillLbl}>paginas</Text>
+                        <Text style={S.pillLbl}>páginas</Text>
                       </View>
                     </View>
                     <View style={[S.pillRow, S.pillRowGap]}>
@@ -449,7 +450,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <View style={S.contDot} />
                     <Text style={S.contTitle}>Proposta #{order?.id} — {clientName}</Text>
                   </View>
-                  <Text style={S.contMeta}>Pagina {pageNum} de {totalPdfPages}</Text>
+                  <Text style={S.contMeta}>Página {pageNum} de {totalPdfPages}</Text>
                 </View>
                 <View style={S.contAccent} />
               </>
@@ -458,7 +459,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
             {/* ── SECTION LABEL ──────────────────────────────────── */}
             <View style={S.secRow}>
               <View style={S.secDot} />
-              <Text style={S.secTitle}>ANALISE DETALHADA POR DOCUMENTO</Text>
+              <Text style={S.secTitle}>ANÁLISE DETALHADA POR DOCUMENTO</Text>
               <View style={S.secLine} />
             </View>
 
@@ -474,12 +475,12 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
             {/* ── METHODOLOGY — page 1 only, not on single-page proposals ── */}
             {showMeth && (
               <View style={S.methBox}>
-                <Text style={S.methTitle}>METODOLOGIA: PRECO JUSTO GARANTIDO</Text>
+                <Text style={S.methTitle}>METODOLOGIA: PREÇO JUSTO GARANTIDO</Text>
                 <Text style={S.methText}>
-                  Cada pagina e analisada individualmente pela nossa IA. Paginas com menos
-                  conteudo custam menos — paginas em branco sao cobradas como Gratis. Paginas
-                  escaneadas requerem formatacao manual (DTP) e sao tarifadas como Alta
-                  Densidade. O preco reflete a complexidade real — nunca por estimativa generica.
+                  Cada página é analisada individualmente pela nossa IA. Páginas com menos
+                  conteúdo custam menos — páginas em branco são cobradas como Grátis. Páginas
+                  escaneadas requerem formatação manual (DTP) e são tarifadas como Alta
+                  Densidade. O preço reflete a complexidade real — nunca por estimativa genérica.
                 </Text>
               </View>
             )}
@@ -490,10 +491,10 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                 <View style={S.savingsHead}>
                   <View style={S.savingsLeft}>
                     <Text style={S.savingsTitle}>
-                      OTIMIZACAO DO ORCAMENTO — PROMOBIDOCSDOCS CUIDA DO SEU DINHEIRO
+                      OTIMIZAÇÃO DO ORÇAMENTO — PROMOBIDOCS CUIDA DO SEU DINHEIRO
                     </Text>
                     <Text style={S.savingsSub}>
-                      Nossa equipe removeu paginas desnecessarias para reduzir seu custo
+                      Nossa equipe removeu páginas desnecessárias para reduzir seu custo
                     </Text>
                   </View>
                   <Text style={S.savingsAmt}>-${totalSavings.toFixed(2)}</Text>
@@ -501,12 +502,12 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                 <View style={S.savingsStats}>
                   <View style={S.statItem}>
                     <Text style={S.statNum}>{totalAnalyzed}</Text>
-                    <Text style={S.statLbl}>paginas{'\n'}analisadas</Text>
+                    <Text style={S.statLbl}>páginas{'\n'}analisadas</Text>
                   </View>
                   <View style={S.statDiv} />
                   <View style={S.statItem}>
                     <Text style={S.statNum}>{totalPages}</Text>
-                    <Text style={S.statLbl}>necessarias{'\n'}para o processo</Text>
+                    <Text style={S.statLbl}>necessárias{'\n'}para o processo</Text>
                   </View>
                   <View style={S.statDiv} />
                   <View style={S.statItem}>
@@ -515,10 +516,10 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                   </View>
                 </View>
                 <Text style={S.savingsDesc}>
-                  Nossa equipe revisou cada documento e identificou quais paginas sao
-                  realmente necessarias para o seu processo. As paginas desnecessarias
-                  foram excluidas do orcamento, gerando uma economia real de
-                  ${totalSavings.toFixed(2)}. Voce paga apenas pelo que e essencial.
+                  Nossa equipe revisou cada documento e identificou quais páginas são
+                  realmente necessárias para o seu processo. As páginas desnecessárias
+                  foram excluídas do orçamento, gerando uma economia real de
+                  ${totalSavings.toFixed(2)}. Você paga apenas pelo que é essencial.
                 </Text>
               </View>
             )}
@@ -531,7 +532,7 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                     <Text style={S.totalLabel}>INVESTIMENTO TOTAL</Text>
                     <Text style={S.totalName}>{clientName}</Text>
                     <Text style={S.totalMeta}>
-                      {totalDocs} docs · {totalPages} pags · Traducao Certificada USCIS{dueDateLabel ? ` · Prazo ${dueDateLabel}` : ''}
+                      {totalDocs} docs · {totalPages} pags · Tradução Certificada USCIS{dueDateLabel ? ` · Prazo ${dueDateLabel}` : ''}
                     </Text>
                   </View>
                   <View style={S.totalRight}>
@@ -562,9 +563,9 @@ export const ProposalPDF = ({ order, globalSettings, logoBase64 }: ProposalPDFPr
                 <View style={S.totalDiv} />
                 <View style={S.payRow}>
                   {[
-                    { t: 'ZELLE', s: 'Transferencia instantanea nos EUA' },
+                    { t: 'ZELLE', s: 'Transferência instantânea nos EUA' },
                     { t: 'PIX / BOLETO', s: 'Pagamento via Brasil' },
-                    { t: 'CARTAO', s: 'Credito ou debito via Stripe' },
+                    { t: 'CARTAO', s: 'Crédito ou débito via Stripe' },
                   ].map((p, i, arr) => (
                     <View key={i} style={[S.payCard, i === arr.length - 1 ? S.payCardLast : {}]}>
                       <Text style={S.payTitle}>{p.t}</Text>

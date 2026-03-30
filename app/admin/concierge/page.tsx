@@ -112,6 +112,7 @@ export default function ConciergePage() {
     const [serviceType, setServiceType] = useState<'translation' | 'notarization' | null>(null)
     const [documents, setDocuments] = useState<DocumentItem[]>([])
     const [urgency, setUrgency] = useState('standard')
+    const [proposalValidityDays, setProposalValidityDays] = useState(7)
     const [paymentPlan, setPaymentPlan] = useState<'upfront_discount' | 'upfront' | 'split'>('upfront')
     const [totalPrice, setTotalPrice] = useState(0)
     const [manualDiscountType, setManualDiscountType] = useState<ManualProposalDiscountType>('nominal')
@@ -483,6 +484,7 @@ export default function ConciergePage() {
                 paymentProvider: 'STRIPE',
                 serviceType: serviceType ?? 'translation',
                 status: 'PENDING_PAYMENT',
+                proposalValidityDays,
             })
             if (result.success) {
                 setGeneratedLink(`${window.location.origin}/pay/${result.orderId}`)
@@ -819,6 +821,19 @@ export default function ConciergePage() {
                                 <span className={urgency !== 'standard' ? 'text-orange-400 font-bold' : ''}>
                                     {urgency === 'standard' ? 'Padrão (10d)' : urgency === 'urgent' ? 'Urgente (48h)' : 'Flash (24h)'}
                                 </span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-400">Validade:</span>
+                                <select
+                                    value={proposalValidityDays}
+                                    onChange={(e) => setProposalValidityDays(Number(e.target.value))}
+                                    className="bg-gray-800 border border-gray-700 text-white text-xs rounded px-2 py-1"
+                                >
+                                    <option value={3}>3 dias</option>
+                                    <option value={7}>7 dias</option>
+                                    <option value={15}>15 dias</option>
+                                    <option value={30}>30 dias</option>
+                                </select>
                             </div>
                             {breakdown.notaryFee > 0 && (
                                 <div className="flex justify-between text-sm text-green-400 font-medium"><span>Notarização:</span><span>+${breakdown.notaryFee.toFixed(2)}</span></div>

@@ -55,6 +55,7 @@ type CreateOrderInput = {
     sourceLanguage?: 'PT_BR' | 'ES';
     extraDiscount?: number;
     dueDate?: string | null;
+    proposalValidityDays?: number;
 }
 
 // ── Scope helper ───────────────────────────────────────────────────────────────
@@ -165,6 +166,9 @@ export async function createOrder(data: CreateOrderInput) {
                     discountPercentage,
                     discountAmount,
                     extraDiscount: data.extraDiscount || 0,
+                    proposalExpiresAt: data.proposalValidityDays
+                        ? new Date(Date.now() + data.proposalValidityDays * 24 * 60 * 60 * 1000)
+                        : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);
@@ -275,6 +279,9 @@ export async function updateOrder(orderId: number, data: CreateOrderInput) {
                     discountPercentage,
                     discountAmount,
                     extraDiscount: data.extraDiscount || 0,
+                    proposalExpiresAt: data.proposalValidityDays
+                        ? new Date(Date.now() + data.proposalValidityDays * 24 * 60 * 60 * 1000)
+                        : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                     documents: {
                         create: data.documents.map((doc) => {
                             const scope = extractDocumentScope(doc);

@@ -45,6 +45,7 @@ model Order {
   finalPaidAmount      Float?
   sourceLanguage       SourceLanguage  @default(PT_BR)
   cancellation_reason  String?
+  proposalExpiresAt    DateTime?
   documents            Document[]
   user                 User            @relation(fields: [userId], references: [id])
 }
