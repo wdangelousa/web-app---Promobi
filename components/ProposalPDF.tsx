@@ -65,7 +65,7 @@ const S = StyleSheet.create({
   // Cover header
   coverHdr: { backgroundColor: C.bronze, paddingHorizontal: 36, paddingTop: 24, paddingBottom: 20 },
   coverRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  logo: { width: 56, height: 56, objectFit: 'contain' },
+  logo: { width: 150, height: 56, objectFit: 'contain' },
   coverBadge: { fontFamily: 'Helvetica-Bold', fontSize: 6.5, color: 'rgba(255,255,255,0.75)', letterSpacing: 2, marginTop: 6 },
   coverRight: { alignItems: 'flex-end' },
   coverQuoteLbl: { fontFamily: 'Helvetica-Bold', fontSize: 6, color: 'rgba(255,255,255,0.5)', letterSpacing: 3 },
