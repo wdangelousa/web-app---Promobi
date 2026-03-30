@@ -323,7 +323,9 @@ test('structuredPreviewKit.ts logs profile_telemetry line after recovery', () =>
   assert.match(src, /profile_telemetry:/)
   assert.match(src, /first_render_resolved_parity=/)
   assert.match(src, /recovery_was_needed=/)
+  assert.match(src, /scale_recovery_needed=/)
   assert.match(src, /resolved_at_level=/)
+  assert.match(src, /resolved_at_scale=/)
   assert.match(src, /render_quality_tier=/)
 })
 
@@ -357,10 +359,12 @@ test('structuredPreviewKit.ts tracks resolvedAtLevel from recovery loop', () => 
   assert.match(src, /resolvedAtLevel: ParityRecoveryLevel \| null/)
 })
 
-test('structuredPreviewKit.ts passes resolvedAtLevel and parityResolved to computeRenderQualityTier', () => {
+test('structuredPreviewKit.ts passes recoveryResolutionStep and parityResolved to computeRenderQualityTier', () => {
   const src = read('services/structuredPreviewKit.ts')
 
   assert.match(src, /computeRenderQualityTier\(/)
-  assert.match(src, /resolvedAtLevel,/)
+  assert.match(src, /const recoveryResolutionStep =/)
+  assert.match(src, /resolvedAtScale !== null \? 'scale_down' : resolvedAtLevel/)
+  assert.match(src, /recoveryResolutionStep,/)
   assert.match(src, /parityResolved,/)
 })

@@ -68,8 +68,6 @@ interface PreviewStructuredKitActionResult {
   error?: string;
   parityDecisionRequired?: boolean;
   parityDecision?: PreviewPageParityDecisionRequiredPayload;
-  parityWarning?: boolean;
-  parityWarningMessage?: string;
   resolvedPageParity?: {
     mode: PageParityMode;
     sourcePhysicalPageCount: number | null;
@@ -237,8 +235,6 @@ async function generatePreviewFromExternalPdf(params: {
   return {
     success: true,
     previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
-    parityWarning: kit.parityWarning ?? false,
-    parityWarningMessage: kit.parityWarningMessage ?? undefined,
     resolvedPageParity: {
       mode: kit.pageParityMode ?? 'strict_all_pages',
       sourcePhysicalPageCount: kit.sourcePhysicalPageCount ?? kit.sourcePageCount ?? null,
@@ -666,8 +662,6 @@ export async function previewStructuredKit(
     return {
       success: true,
       previewUrl: kit.kitUrl ?? kit.kitLocalPath ?? undefined,
-      parityWarning: kit.parityWarning ?? false,
-      parityWarningMessage: kit.parityWarningMessage ?? undefined,
       resolvedPageParity: {
         mode: kit.pageParityMode ?? 'strict_all_pages',
         sourcePhysicalPageCount:

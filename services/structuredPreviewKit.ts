@@ -73,6 +73,7 @@ import {
 } from '@/lib/sourcePageCountResolver';
 import type { PageParityMode } from '@/lib/translationArtifactSource';
 import {
+  PARITY_SCALE_STEPS,
   applyInitialRenderProfile,
   applyRecoveryToHtml,
   buildInitialRenderProfile,
@@ -234,8 +235,8 @@ export interface StructuredPreviewKitInput {
   rendererName?: string;
   /**
    * Translation modality — governs parity-recovery policy.
-   *   'faithful'     → full L1–L4 parity recovery; terminal overflow blocks.
-   *   'standard'     → best-effort L1–L2 parity recovery; residual mismatch warns.
+   *   'faithful'     → full L1-L4 parity recovery plus scale-down; terminal overflow blocks.
+   *   'standard'     → full L1-L4 parity recovery plus scale-down; terminal overflow blocks.
    *   'external_pdf' → handled upstream; recovery is never invoked.
    */
   modality?: 'standard' | 'faithful' | 'external_pdf';
@@ -421,26 +422,6 @@ function logPageParityDiagnostics(
   );
 }
 
-function logPageParityWarning(
-  logPrefix: string,
-  warning: {
-    orderId: string | number;
-    docId: string | number;
-    modality: StructuredPreviewKitInput['modality'];
-    sourcePhysicalPageCount: number;
-    translatedPageCount: number;
-    reason: PageParityWarningReason;
-    message: string;
-  },
-): void {
-  console.warn(
-    `${logPrefix} — page parity warning: ${JSON.stringify({
-      action: 'page_parity_warning_tolerated',
-      ...warning,
-    })}`,
-  );
-}
-
 function buildLanguageIntegritySignal(
   input: StructuredPreviewKitInput,
 ): StructuredLanguageIntegritySignal {
@@ -589,48 +570,6 @@ function resolveDefaultParityMode(
       : 'content_pages_only';
   }
   return PAGE_PARITY_DEFAULT_MODE;
-}
-
-function buildParityWarning(
-  input: {
-    modality: StructuredPreviewKitInput['modality'];
-    sourcePhysicalPageCount: number;
-    translatedPageCount: number;
-  },
-): {
-  parityWarning: boolean;
-  parityWarningReason: PageParityWarningReason | null;
-  parityWarningMessage: string | null;
-} {
-  const sourcePhysicalPageCount = input.sourcePhysicalPageCount;
-  const translatedPageCount = input.translatedPageCount;
-  const pageDelta = translatedPageCount - sourcePhysicalPageCount;
-
-  if (pageDelta < 0) {
-    return {
-      parityWarning: true,
-      parityWarningReason: 'page_parity_underflow_tolerated',
-      parityWarningMessage:
-        `Translated output rendered ${Math.abs(pageDelta)} page(s) fewer than the source; ` +
-        `the kit remains unblocked because underflow is treated as a warning.`,
-    };
-  }
-
-  if (input.modality === 'standard' && pageDelta > 0) {
-    return {
-      parityWarning: true,
-      parityWarningReason: 'page_parity_standard_overflow_tolerated',
-      parityWarningMessage:
-        `Standard recovery exhausted its safe L1-L2 profile and the translation still exceeds ` +
-        `the source by ${pageDelta} page(s); continuing with a non-blocking parity warning.`,
-    };
-  }
-
-  return {
-    parityWarning: false,
-    parityWarningReason: null,
-    parityWarningMessage: null,
-  };
 }
 
 function normalizePositiveInteger(value: unknown): number | null {
@@ -801,26 +740,6 @@ function evaluatePageParity(
         suggestedModes,
         blockingReason: 'page_parity_unverifiable_source_page_count',
       },
-    };
-  }
-
-  const parityWarning = buildParityWarning({
-    modality: input.modality,
-    sourcePhysicalPageCount,
-    translatedPageCount,
-  });
-
-  if (parityWarning.parityWarning) {
-    return {
-      mode,
-      sourceRelevantPageCount:
-        input.decision?.sourceRelevantPageCount ?? sourcePhysicalPageCount,
-      parityPass: true,
-      decisionRequired: false,
-      blockingReason: 'none',
-      parityWarning: true,
-      parityWarningReason: parityWarning.parityWarningReason,
-      parityWarningMessage: parityWarning.parityWarningMessage,
     };
   }
 
@@ -2002,9 +1921,9 @@ export async function buildStructuredKitBuffer(
       translatedPdfBuffer = translatedPdfBase.buffer;
 
       // ── Parity recovery loop ────────────────────────────────────────────────
-      // Standard modality runs a best-effort L1–L2 profile and keeps the kit
-      // non-blocking on residual overflow. Faithful modality keeps the full
-      // L1–L4 ladder and still treats terminal overflow as blocking.
+      // Standard and faithful modalities both enforce absolute page parity:
+      // first the full L1-L4 CSS ladder, then a final Gotenberg scale-down
+      // phase using the best CSS-compressed HTML candidate.
       if (
         resolveParityRecoveryMaxLevel(input.modality ?? 'standard') > 0 &&
         typeof input.sourcePageCount === 'number' &&
@@ -2030,23 +1949,26 @@ export async function buildStructuredKitBuffer(
           );
         }
 
-        if (
-          isParityUnderflow(
-            probePageCount,
-            input.sourcePageCount,
-            input.modality ?? 'standard',
-          )
-        ) {
+        const parityMatchedOnFirstRender = probePageCount === input.sourcePageCount;
+        const parityUnderflowDetected = isParityUnderflow(
+          probePageCount,
+          input.sourcePageCount,
+          input.modality ?? 'standard',
+        );
+
+        if (parityUnderflowDetected) {
           log(
             `parity underflow: translated=${probePageCount} source=${input.sourcePageCount} ` +
-            `delta=${input.sourcePageCount - probePageCount} — underflow is tolerated as a warning`,
+            `delta=${input.sourcePageCount - probePageCount} — mismatch remains blocking unless a manual fallback is explicitly approved`,
           );
         }
 
         // Track recovery outcome for telemetry and quality tier.
         let recoveryWasNeeded = false;
         let resolvedAtLevel: ParityRecoveryLevel | null = null;
-        let parityResolved = true; // true if first render or recovery achieved parity
+        let scaleRecoveryNeeded = false;
+        let resolvedAtScale: number | null = null;
+        let parityResolved = parityMatchedOnFirstRender;
 
         if (
           isParityRecoveryNeeded(
@@ -2081,88 +2003,145 @@ export async function buildStructuredKitBuffer(
           }
 
           if (recoveryWasNeeded) {
-          const budget = buildPageLayoutBudget(
-            input.sourcePageCount,
-            isLandscape ? 'landscape' : 'portrait',
-          );
-          // Compute pre-render hints for the start-of-recovery log.
-          // The profile may have already applied these hints in the first render;
-          // recovery builds on firstRenderHtml (which includes any profile CSS)
-          // and adds !important overrides at each successive level.
-          const preRenderHints = buildPreRenderLayoutHints(budget);
-          log(
-            `parity recovery: start — profile=${recoveryProfile ?? 'none'} ` +
-            `translated=${probePageCount} source=${input.sourcePageCount} ` +
-            `overflow=${probePageCount - input.sourcePageCount} page(s) ` +
-            `max_level=${recoveryMaxLevel} ` +
-            `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in ` +
-            `hints=font:${preRenderHints.suggestedFontSizePx}px/lh:${preRenderHints.suggestedLineHeight}/pad:${preRenderHints.suggestedCellPaddingPx}px`,
-          );
-
-          let bestBuffer = translatedPdfBuffer;
-          let bestPageCount = probePageCount;
-          let recoveryResolved = false;
-
-          for (let lvl = 1; lvl <= recoveryMaxLevel && !recoveryResolved; lvl++) {
-            const level = lvl as ParityRecoveryLevel;
-            // Recovery builds on firstRenderHtml (which may already include
-            // initial-profile CSS). Recovery CSS uses !important and overrides
-            // the profile baseline where needed.
-            const recoveredHtml = applyRecoveryToHtml(firstRenderHtml, level);
-            const htmlChanged = recoveredHtml.length !== firstRenderHtml.length;
-            const recoveredResult = await callGotenberg(
-              recoveredHtml,
-              paperSettings,
-              logPrefix,
-              `parity-recovery-l${level}`,
-              translatedExtraFiles,
+            const budget = buildPageLayoutBudget(
+              input.sourcePageCount,
+              isLandscape ? 'landscape' : 'portrait',
+            );
+            // Compute pre-render hints for the start-of-recovery log.
+            // The profile may have already applied these hints in the first render;
+            // recovery builds on firstRenderHtml (which includes any profile CSS)
+            // and adds !important overrides at each successive level.
+            const preRenderHints = buildPreRenderLayoutHints(budget);
+            log(
+              `parity recovery: start — profile=${recoveryProfile ?? 'none'} ` +
+              `translated=${probePageCount} source=${input.sourcePageCount} ` +
+              `overflow=${probePageCount - input.sourcePageCount} page(s) ` +
+              `max_level=${recoveryMaxLevel} ` +
+              `budget_per_page=${budget.usableHeightPerSourcePageIn.toFixed(2)}in ` +
+              `hints=font:${preRenderHints.suggestedFontSizePx}px/lh:${preRenderHints.suggestedLineHeight}/pad:${preRenderHints.suggestedCellPaddingPx}px`,
             );
 
-            if (recoveredResult.buffer) {
-              let recoveredPageCount = 0;
-              try {
-                const recoveredDoc = await PDFDocument.load(
-                  recoveredResult.buffer,
-                  { ignoreEncryption: true },
-                );
-                recoveredPageCount = recoveredDoc.getPageCount();
-              } catch { /* leave recoveredPageCount = 0 */ }
+            let bestBuffer = translatedPdfBuffer;
+            let scaleBaseHtml = firstRenderHtml;
+            let bestPageCount = probePageCount;
+            let recoveryResolved = false;
 
-              log(
-                `parity recovery level ${level}: translated_pages=${recoveredPageCount} ` +
-                `source_pages=${input.sourcePageCount} ` +
-                `page_delta=${recoveredPageCount - input.sourcePageCount} ` +
-                `html_changed=${htmlChanged} ` +
-                `resolved=${recoveredPageCount <= input.sourcePageCount}`,
+            for (let lvl = 1; lvl <= recoveryMaxLevel && !recoveryResolved; lvl++) {
+              const level = lvl as ParityRecoveryLevel;
+              // Recovery builds on firstRenderHtml (which may already include
+              // initial-profile CSS). Recovery CSS uses !important and overrides
+              // the profile baseline where needed.
+              const recoveredHtml = applyRecoveryToHtml(firstRenderHtml, level);
+              // Scale-down must build on the most compressed CSS HTML we reached,
+              // not on the last page-count winner alone.
+              scaleBaseHtml = recoveredHtml;
+              const htmlChanged = recoveredHtml.length !== firstRenderHtml.length;
+              const recoveredResult = await callGotenberg(
+                recoveredHtml,
+                paperSettings,
+                logPrefix,
+                `parity-recovery-l${level}`,
+                translatedExtraFiles,
               );
 
-              if (recoveredPageCount <= input.sourcePageCount) {
-                bestBuffer = recoveredResult.buffer;
-                bestPageCount = recoveredPageCount;
-                recoveryResolved = true;
-                resolvedAtLevel = level;
-                log(`parity recovery: resolved at level ${level}`);
-                log(`parity recovery outcome: ${resolveParityLabel(level)}`);
-              } else if (recoveredPageCount < bestPageCount) {
-                // Partial improvement — keep as best candidate so far.
-                bestBuffer = recoveredResult.buffer;
-                bestPageCount = recoveredPageCount;
+              if (recoveredResult.buffer) {
+                let recoveredPageCount = 0;
+                try {
+                  const recoveredDoc = await PDFDocument.load(
+                    recoveredResult.buffer,
+                    { ignoreEncryption: true },
+                  );
+                  recoveredPageCount = recoveredDoc.getPageCount();
+                } catch {
+                  /* leave recoveredPageCount = 0 */
+                }
+
+                log(
+                  `parity recovery level ${level}: translated_pages=${recoveredPageCount} ` +
+                  `source_pages=${input.sourcePageCount} ` +
+                  `page_delta=${recoveredPageCount - input.sourcePageCount} ` +
+                  `html_changed=${htmlChanged} ` +
+                  `resolved=${recoveredPageCount === input.sourcePageCount}`,
+                );
+
+                if (recoveredPageCount === input.sourcePageCount) {
+                  bestBuffer = recoveredResult.buffer;
+                  bestPageCount = recoveredPageCount;
+                  recoveryResolved = true;
+                  resolvedAtLevel = level;
+                  log(`parity recovery: resolved at level ${level}`);
+                  log(`parity recovery outcome: ${resolveParityLabel(level)}`);
+                } else if (recoveredPageCount < bestPageCount) {
+                  // Partial improvement — keep as best candidate so far.
+                  bestBuffer = recoveredResult.buffer;
+                  bestPageCount = recoveredPageCount;
+                }
+              } else {
+                log(`parity recovery level ${level}: Gotenberg failed`);
               }
-            } else {
-              log(`parity recovery level ${level}: Gotenberg failed`);
             }
-          }
 
-          if (!recoveryResolved) {
-            parityResolved = false;
-            log(
-              `parity recovery: exhausted configured levels — ` +
-              `final_translated=${bestPageCount} source=${input.sourcePageCount}`,
-            );
-            log(`parity recovery outcome: ${resolveParityLabel(null)}`);
-          }
+            if (!recoveryResolved) {
+              scaleRecoveryNeeded = true;
+              log(`parity recovery: CSS exhausted, starting scale-down phase`);
 
-          translatedPdfBuffer = bestBuffer;
+              for (const scale of PARITY_SCALE_STEPS) {
+                const scaledSettings = { ...paperSettings, scale: String(scale) };
+                const scaledResult = await callGotenberg(
+                  scaleBaseHtml,
+                  scaledSettings,
+                  logPrefix,
+                  `parity-recovery-scale-${scale}`,
+                  translatedExtraFiles,
+                );
+
+                if (scaledResult.buffer) {
+                  let scaledPageCount = 0;
+                  try {
+                    const scaledDoc = await PDFDocument.load(scaledResult.buffer, {
+                      ignoreEncryption: true,
+                    });
+                    scaledPageCount = scaledDoc.getPageCount();
+                  } catch {
+                    /* leave scaledPageCount = 0 */
+                  }
+
+                  log(
+                    `parity recovery scale ${scale}: pages=${scaledPageCount} ` +
+                    `source=${input.sourcePageCount} resolved=${scaledPageCount === input.sourcePageCount}`,
+                  );
+
+                  if (scaledPageCount === input.sourcePageCount) {
+                    bestBuffer = scaledResult.buffer;
+                    bestPageCount = scaledPageCount;
+                    recoveryResolved = true;
+                    resolvedAtScale = scale;
+                    parityResolved = true;
+                    log(`parity recovery: resolved at scale=${scale}`);
+                    log(`parity recovery outcome: ${resolveParityLabel('scale_down')}`);
+                    break;
+                  }
+
+                  if (scaledPageCount < bestPageCount) {
+                    bestBuffer = scaledResult.buffer;
+                    bestPageCount = scaledPageCount;
+                  }
+                } else {
+                  log(`parity recovery scale ${scale}: Gotenberg failed`);
+                }
+              }
+            }
+
+            if (!recoveryResolved) {
+              parityResolved = false;
+              log(
+                `parity recovery: exhausted configured levels and scale steps — ` +
+                `final_translated=${bestPageCount} source=${input.sourcePageCount}`,
+              );
+              log(`parity recovery outcome: ${resolveParityLabel(null)}`);
+            }
+
+            translatedPdfBuffer = bestBuffer;
           } // end if (recoveryWasNeeded)
         }
 
@@ -2170,13 +2149,21 @@ export async function buildStructuredKitBuffer(
         // Emit a structured log line grouping profile selection, recovery outcome,
         // and document context so operational dashboards can track:
         //   - how often each profile resolves parity on first render
-        //   - how often each profile still requires L1/L2/L3/L4 recovery
+        //   - how often each profile still requires L1/L2/L3/L4/scale recovery
         //   - render quality distribution by document type, family, orientation,
         //     and fallback vs. non-fallback path
         const isFallbackRenderer = (input.rendererName ?? '').includes('fallback');
+        const recoveryResolutionStep =
+          resolvedAtScale !== null ? 'scale_down' : resolvedAtLevel;
+        const recoveryResolutionLabel =
+          recoveryResolutionStep !== null
+            ? resolveParityLabel(recoveryResolutionStep)
+            : parityResolved
+              ? 'first_render_parity'
+              : resolveParityLabel(null);
         const qualityTier: RenderQualityTier = computeRenderQualityTier(
           firstRenderProfile,
-          resolvedAtLevel,
+          recoveryResolutionStep,
           parityResolved,
           isFallbackRenderer,
           input.documentFamily,
@@ -2185,9 +2172,12 @@ export async function buildStructuredKitBuffer(
           `profile_telemetry: ` +
           `v2_pipeline=${input.rendererName === 'mirror_html_v2'} ` +
           `profile=${firstRenderProfile?.name ?? 'none'} ` +
-          `first_render_resolved_parity=${!recoveryWasNeeded} ` +
+          `first_render_resolved_parity=${parityMatchedOnFirstRender} ` +
           `recovery_was_needed=${recoveryWasNeeded} ` +
+          `scale_recovery_needed=${scaleRecoveryNeeded} ` +
           `resolved_at_level=${resolvedAtLevel ?? 'none'} ` +
+          `resolved_at_scale=${resolvedAtScale ?? 'none'} ` +
+          `recovery_resolution_label=${recoveryResolutionLabel} ` +
           `parity_resolved=${parityResolved} ` +
           `render_quality_tier=${qualityTier} ` +
           `document_type=${input.documentTypeLabel ?? 'unknown'} ` +
@@ -2388,22 +2378,6 @@ export async function buildStructuredKitBuffer(
       certification_generation_blocked: false,
       release_blocked: false,
     };
-    if (
-      parityEvaluation.parityWarning &&
-      parityEvaluation.parityWarningReason &&
-      parityEvaluation.parityWarningMessage &&
-      sourcePhysicalPageCount !== null
-    ) {
-      logPageParityWarning(logPrefix, {
-        orderId: input.orderId,
-        docId: input.documentId,
-        modality: input.modality ?? 'standard',
-        sourcePhysicalPageCount,
-        translatedPageCount,
-        reason: parityEvaluation.parityWarningReason,
-        message: parityEvaluation.parityWarningMessage,
-      });
-    }
     logPageParityDiagnostics(logPrefix, passDiagnostics);
 
     // ── Part 1: HTML certification cover ─────────────────────────────────────

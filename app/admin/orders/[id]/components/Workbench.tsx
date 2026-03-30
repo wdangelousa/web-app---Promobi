@@ -139,13 +139,13 @@ function getParityPageDelta(context: PreviewParityDecisionPayload): number | nul
 function buildDefaultParityJustification(context: PreviewParityDecisionPayload): string {
     const pageDelta = getParityPageDelta(context)
     if (pageDelta === 1) {
-        return 'Tradução expandiu 1 página por diferença de comprimento entre idiomas — aceitável para este tipo de documento.'
+        return 'Paridade automática não foi alcançada após o recovery completo; override manual registrado após conferência do conteúdo.'
     }
     if (pageDelta !== null && pageDelta < 0) {
-        return 'Tradução gerou menos páginas que o original — conteúdo mantido, diferença aceitável.'
+        return 'Paridade automática não foi alcançada após o recovery completo; contagem revisada e override manual registrado.'
     }
     if (pageDelta !== null && pageDelta > 1) {
-        return `Tradução expandiu ${pageDelta} páginas por diferença de comprimento entre idiomas — divergência aceitável após conferência do conteúdo.`
+        return `Paridade automática não foi alcançada após o recovery completo (${pageDelta} página(s) de diferença); override manual registrado após conferência do conteúdo.`
     }
     if (context.blockingReason === 'page_parity_unverifiable_source_page_count') {
         return 'Contagem de páginas de origem indisponível — conteúdo conferido e aprovação manual registrada.'
@@ -180,13 +180,13 @@ function resolveRecommendedParityRelevantPageCount(
 function buildParityRecommendation(context: PreviewParityDecisionPayload): string {
     const pageDelta = getParityPageDelta(context)
     if (pageDelta === 1) {
-        return 'Recomendado: aprovar com divergência. Expansão de 1 página costuma ser aceitável por diferença de comprimento entre idiomas.'
+        return 'Fallback extremo: revisar rapidamente e registrar override manual apenas se a paridade continuar inviável após todas as tentativas automáticas.'
     }
     if (pageDelta !== null && pageDelta < 0) {
-        return 'Recomendado: aprovar com divergência após conferência rápida do conteúdo. Underflow não deve travar este documento.'
+        return 'Fallback extremo: revisar a contagem de páginas de origem e registrar override manual apenas se a divergência permanecer confirmada.'
     }
     if (pageDelta !== null && pageDelta > 1) {
-        return `Recomendado: usar aprovação com divergência se a expansão de ${pageDelta} página(s) for aceitável para este documento.`
+        return `Fallback extremo: registrar override manual somente se a diferença de ${pageDelta} página(s) continuar após o recovery automático completo.`
     }
     return 'Recomendado: registrar uma aprovação manual com justificativa após conferir o conteúdo.'
 }
@@ -314,7 +314,6 @@ export default function Workbench({ order }: { order: Order }) {
     const [selectedParityMode, setSelectedParityMode] = useState<PageParityMode>('strict_all_pages')
     const [parityJustification, setParityJustification] = useState('')
     const [parityRelevantPageCountInput, setParityRelevantPageCountInput] = useState('')
-    const [parityWarningMessage, setParityWarningMessage] = useState<string | null>(null)
     const [isFullEditorOpen, setIsFullEditorOpen] = useState(false)
     const [showReference, setShowReference] = useState(true)
     const [showFinancialModal, setShowFinancialModal] = useState(false)
@@ -401,7 +400,6 @@ export default function Workbench({ order }: { order: Order }) {
         setParityJustification('')
         setParityRelevantPageCountInput('')
         setSelectedParityMode('strict_all_pages')
-        setParityWarningMessage(null)
         setKitApproved(false)
     }, [selectedDoc?.id])
 
@@ -503,16 +501,9 @@ export default function Workbench({ order }: { order: Order }) {
                 error?: string
                 parityDecisionRequired?: boolean
                 parityDecision?: PreviewParityDecisionPayload
-                parityWarning?: boolean
-                parityWarningMessage?: string
             }
 
             if (result.success && result.previewUrl) {
-                setParityWarningMessage(
-                    result.parityWarning
-                        ? result.parityWarningMessage || 'Divergência de paridade registrada como aviso não bloqueante.'
-                        : null,
-                )
                 setShowParityDecisionModal(false)
                 setParityDecisionContext(null)
                 setKitPreviewUrl(result.previewUrl)
@@ -536,7 +527,6 @@ export default function Workbench({ order }: { order: Order }) {
                             : '',
                 )
                 setParityJustification('')
-                setParityWarningMessage(null)
                 setShowParityDecisionModal(true)
                 return
             }
@@ -667,7 +657,6 @@ export default function Workbench({ order }: { order: Order }) {
                 setEditorContent(cleanedText)
             }
 
-            setParityWarningMessage(null)
             setShowTranslationModeModal(false)
             router.refresh()
         } catch (err: any) {
@@ -1125,12 +1114,6 @@ export default function Workbench({ order }: { order: Order }) {
                     </div>
                 </div>
 
-                {parityWarningMessage && (
-                    <div className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                        <span className="font-semibold">Aviso de paridade:</span> {parityWarningMessage}
-                    </div>
-                )}
-
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
                     <Editor
                         content={editorContent}
@@ -1295,12 +1278,6 @@ export default function Workbench({ order }: { order: Order }) {
                                     <button onClick={() => { setShowPreviewModal(false); setKitApproved(false) }} className="text-white/80 hover:text-white"><X className="h-6 w-6" /></button>
                                 </div>
                             </div>
-                            {parityWarningMessage && (
-                                <div className="mx-6 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                    <div className="font-semibold">Aviso de paridade</div>
-                                    <div className="mt-1">{parityWarningMessage}</div>
-                                </div>
-                            )}
                             <div className="flex-1 overflow-hidden bg-gray-100 flex justify-center p-4">
                                 {kitPreviewUrl ? <iframe src={kitPreviewUrl} className="w-full h-full bg-white rounded-lg shadow-lg border-0" title="Kit Preview" /> : <div className="flex flex-col flex-1 items-center justify-center text-gray-500 gap-3"><Loader2 className="h-8 w-8 animate-spin" /><span>Carregando visualização...</span></div>}
                             </div>
@@ -1322,7 +1299,7 @@ export default function Workbench({ order }: { order: Order }) {
                             <div className="px-6 py-4 border-b border-gray-200 bg-amber-50">
                                 <h3 className="text-lg font-bold text-gray-900">Decisão de Paridade de Páginas</h3>
                                 <p className="text-sm text-gray-700 mt-1">
-                                    Detectamos uma divergência entre o original e a tradução. Você pode aprovar essa diferença rapidamente ou escolher outro tratamento técnico abaixo.
+                                    A paridade automática não foi alcançada neste preview. Quando há overflow, o sistema já esgota compressão CSS e scale no Gotenberg antes de abrir este fallback manual.
                                 </p>
                             </div>
 

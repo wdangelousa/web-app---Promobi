@@ -19,17 +19,16 @@
  *                                   last resort before terminal failure
  *
  * Recovery profiles:
- *   standard_recovery — best-effort overflow handling for standard modality.
- *                       Attempts Levels 1–2 only and does NOT block when the
- *                       output still overflows after those safe transforms.
- *   faithful_recovery — strict overflow handling for faithful modality.
- *                       Attempts Levels 1–4 and blocks on terminal failure.
+ *   standard_recovery — full overflow handling for standard modality.
+ *                       Attempts Levels 1–4 and then Gotenberg scale-down.
+ *   faithful_recovery — full overflow handling for faithful modality.
+ *                       Attempts Levels 1–4 and then Gotenberg scale-down.
  *
  * Modality contract:
- *   'standard'     — parity recovery IS activated in best-effort mode
- *                    (Levels 1–2 only, non-blocking on failure).
+ *   'standard'     — parity recovery IS activated in strict mode
+ *                    (Levels 1–4 + scale-down, terminal failure remains blocking).
  *   'faithful'     — parity recovery IS activated in strict mode
- *                    (Levels 1–4, terminal failure remains blocking).
+ *                    (Levels 1–4 + scale-down, terminal failure remains blocking).
  *   'external_pdf' — parity is handled upstream; this module is not invoked.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -40,16 +39,20 @@
 export const PARITY_MIN_FONT_SIZE_PX = 8;
 
 /**
- * Maximum number of recovery levels available.
- * Faithful recovery uses the full ladder. Standard recovery uses the capped
- * profile defined in `PARITY_RECOVERY_PROFILE_MAX_LEVEL.standard_recovery`.
+ * Maximum number of CSS recovery levels available before scale-down begins.
  */
 export const PARITY_MAX_RECOVERY_LEVEL = 4;
 
 export const PARITY_RECOVERY_PROFILE_MAX_LEVEL = {
-  standard_recovery: 2,
+  standard_recovery: PARITY_MAX_RECOVERY_LEVEL,
   faithful_recovery: PARITY_MAX_RECOVERY_LEVEL,
 } as const;
+
+/** Scale-down steps used after CSS recovery is exhausted. */
+export const PARITY_SCALE_STEPS = [0.95, 0.9, 0.85, 0.8, 0.75] as const;
+
+/** Minimum scale allowed before parity is declared terminally failed. */
+export const PARITY_MIN_SCALE = 0.75;
 
 /** Minimum line-height permitted at the most aggressive recovery level (Level 4). */
 export const PARITY_MIN_LINE_HEIGHT = 1.05;
@@ -73,9 +76,10 @@ export const PARITY_MAX_ANNOTATION_INNER_LENGTH = 20;
 export const COMPACT_ANNOTATION_COMPACTION_THRESHOLD = 35;
 
 /**
- * Prompt note appended to faithful-recovery prompts only.
- * Standard recovery remains best-effort and relies on the safe L1–L2 ladder
- * instead of extra prompt pressure because overflow does not block that mode.
+ * Prompt note appended to faithful-layout prompts.
+ * Both faithful and standard modalities now rely on the full CSS ladder plus
+ * scale-down enforcement during rendering; the prompt still nudges the model
+ * to stay concise before post-render recovery is needed.
  */
 export const FAITHFUL_PARITY_PROMPT_NOTE = `
 LAYOUT CONSTRAINT — PAGE COUNT PRESERVATION:
@@ -133,13 +137,17 @@ export const SENSITIVE_DOCUMENT_FAMILIES: readonly string[] = [
  *   parity_resolved_light      — Level 1 (safe reflow only)
  *   parity_resolved_moderate   — Level 2 or 3 (typographic compression / annotation compaction)
  *   parity_resolved_aggressive — Level 4 (maximum CSS compaction)
+ *   parity_resolved_scale_down — Gotenberg scale-down after CSS exhaustion
  *   parity_failed_terminal     — All levels exhausted; parity not achieved
  */
 export type ParityResolutionLabel =
   | 'parity_resolved_light'
   | 'parity_resolved_moderate'
   | 'parity_resolved_aggressive'
+  | 'parity_resolved_scale_down'
   | 'parity_failed_terminal';
+
+export type ParityRecoveryResolutionStep = ParityRecoveryLevel | 'scale_down';
 
 export interface ParityRecoveryAttempt {
   level: ParityRecoveryLevel;
@@ -157,7 +165,7 @@ export interface ParityRecoveryDiagnostics {
   overflowPagesInitial: number;
   attempts: ParityRecoveryAttempt[];
   parityResolved: boolean;
-  recoveryLevelUsed: ParityRecoveryLevel | null;
+  recoveryLevelUsed: ParityRecoveryResolutionStep | null;
   /** Semantic resolution label for structured logging and alerting. */
   resolutionLabel: ParityResolutionLabel;
 }
@@ -339,16 +347,20 @@ export function compactAnnotations(
 // ── Recovery outcome helpers ──────────────────────────────────────────────────
 
 /**
- * Maps a recovery level (or null for terminal failure) to its semantic label.
+ * Maps a recovery level/step (or null for terminal failure) to its semantic label.
  * Used for structured logging and monitoring.
  *
- *   1    → parity_resolved_light      (safe reflow)
- *   2–3  → parity_resolved_moderate   (typographic compression or annotation compaction)
- *   4    → parity_resolved_aggressive (aggressive reflow)
- *   null → parity_failed_terminal     (all levels exhausted)
+ *   1            → parity_resolved_light      (safe reflow)
+ *   2–3          → parity_resolved_moderate   (typographic compression or annotation compaction)
+ *   4            → parity_resolved_aggressive (aggressive reflow)
+ *   scale_down   → parity_resolved_scale_down (Chromium scale-down after CSS exhaustion)
+ *   null         → parity_failed_terminal     (all levels exhausted)
  */
-export function resolveParityLabel(level: ParityRecoveryLevel | null): ParityResolutionLabel {
+export function resolveParityLabel(
+  level: ParityRecoveryResolutionStep | null,
+): ParityResolutionLabel {
   if (level === null) return 'parity_failed_terminal';
+  if (level === 'scale_down') return 'parity_resolved_scale_down';
   if (level === 1) return 'parity_resolved_light';
   if (level === 2 || level === 3) return 'parity_resolved_moderate';
   return 'parity_resolved_aggressive';
@@ -615,9 +627,9 @@ export function applyRecoveryToHtml(html: string, level: ParityRecoveryLevel): s
  *
  *   review_recommended
  *     — parity was not resolved (terminal failure)
- *     — dense profile was selected AND recovery reached L3 or L4
- *     — fallback renderer was used AND recovery reached L4
- *     — document is in a sensitive family AND recovery reached L3 or L4
+ *     — dense profile was selected AND recovery reached L3/L4/scale-down
+ *     — fallback renderer was used AND recovery reached L4 or scale-down
+ *     — document is in a sensitive family AND recovery reached L3/L4/scale-down
  *
  *   high
  *     — no recovery was needed (first render achieved parity)
@@ -628,7 +640,7 @@ export function applyRecoveryToHtml(html: string, level: ParityRecoveryLevel): s
  *     — recovery resolved at L4 without a flagged risk combination
  *
  * @param profile         The initial render profile used, or null if none was applied.
- * @param recoveryLevel   The recovery level at which parity resolved, or null if no
+ * @param recoveryLevel   The recovery step at which parity resolved, or null if no
  *                        recovery was attempted / needed.
  * @param parityResolved  True if parity was ultimately achieved.
  * @param isFallbackRenderer  True if a fallback renderer path was used (e.g. faithful_light_fallback).
@@ -636,7 +648,7 @@ export function applyRecoveryToHtml(html: string, level: ParityRecoveryLevel): s
  */
 export function computeRenderQualityTier(
   profile: InitialRenderProfile | null,
-  recoveryLevel: ParityRecoveryLevel | null,
+  recoveryLevel: ParityRecoveryResolutionStep | null,
   parityResolved: boolean,
   isFallbackRenderer: boolean,
   documentFamily?: string,
@@ -646,6 +658,13 @@ export function computeRenderQualityTier(
 
   const isSensitive =
     documentFamily !== undefined && SENSITIVE_DOCUMENT_FAMILIES.includes(documentFamily);
+
+  if (recoveryLevel === 'scale_down') {
+    if (profile?.name === 'dense' || isFallbackRenderer || isSensitive) {
+      return 'review_recommended';
+    }
+    return 'acceptable';
+  }
 
   if (recoveryLevel !== null && recoveryLevel >= 3) {
     // L3/L4 recovery with dense profile.

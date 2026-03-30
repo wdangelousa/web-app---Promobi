@@ -6,12 +6,12 @@
  *  - lib/parityRecovery.ts exports the required API surface
  *  - CSS injection functions produce syntactically valid output
  *  - Annotation compaction correctly shortens verbose bracket descriptions
- *  - isParityRecoveryNeeded enforces modality gating
+ *  - isParityRecoveryNeeded uses recovery-profile gating for standard/faithful
  *  - applyRecoveryToHtml is additive across levels
  *  - FAITHFUL_PARITY_PROMPT_NOTE is non-empty and contains key instructions
- *  - structuredPreviewKit.ts has the modality field and recovery loop
- *  - generateDeliveryKit.ts and previewStructuredKit.ts pass modality
- *  - faithful_light_fallback path flows through the same recovery-aware buffer
+ *  - structuredPreviewKit.ts has the modality field and recovery+scale loop
+ *  - generateDeliveryKit.ts and previewStructuredKit.ts pass structured kit modality
+ *  - preview/delivery internal paths flow through the same recovery-aware buffer
  *  - editorial_news_pages and publication_media_record prompts include parity note
  *  - empty translated text still fails terminally (no regression)
  */
@@ -33,6 +33,8 @@ test('parityRecovery exports required API surface', () => {
   assert.match(src, /export type ParityRecoveryLevel = 1 \| 2 \| 3 \| 4/)
   assert.match(src, /export const PARITY_MIN_FONT_SIZE_PX/)
   assert.match(src, /export const PARITY_MAX_RECOVERY_LEVEL/)
+  assert.match(src, /export const PARITY_SCALE_STEPS/)
+  assert.match(src, /export const PARITY_MIN_SCALE/)
   assert.match(src, /export const FAITHFUL_PARITY_PROMPT_NOTE/)
   assert.match(src, /export interface ParityRecoveryAttempt/)
   assert.match(src, /export interface ParityRecoveryDiagnostics/)
@@ -45,11 +47,13 @@ test('parityRecovery exports required API surface', () => {
   assert.match(src, /export function isParityRecoveryNeeded\(/)
 })
 
-test('isParityRecoveryNeeded only activates for faithful modality', () => {
+test('isParityRecoveryNeeded activates through recovery-profile gating for standard and faithful modalities', () => {
   const src = read('lib/parityRecovery.ts')
 
-  // Must gate on modality === 'faithful'
-  assert.match(src, /modality !== 'faithful'/)
+  // Recovery depends on the resolved profile rather than a hard-coded faithful-only check.
+  assert.match(src, /resolveParityRecoveryMaxLevel\(modality\) <= 0/)
+  assert.match(src, /standard_recovery: PARITY_MAX_RECOVERY_LEVEL/)
+  assert.match(src, /faithful_recovery: PARITY_MAX_RECOVERY_LEVEL/)
   // Must check sourcePageCount > 0
   assert.match(src, /sourcePageCount <= 0/)
   // Must compare translatedPageCount > sourcePageCount
@@ -117,20 +121,23 @@ test('structuredPreviewKit.ts has modality field and imports parityRecovery', ()
   assert.match(src, /from '@\/lib\/parityRecovery'/)
   assert.match(src, /applyRecoveryToHtml/)
   assert.match(src, /isParityRecoveryNeeded/)
-  assert.match(src, /PARITY_MAX_RECOVERY_LEVEL/)
+  assert.match(src, /PARITY_SCALE_STEPS/)
+  assert.match(src, /resolveParityRecoveryMaxLevel/)
   assert.match(src, /modality\?:\s*'standard' \| 'faithful' \| 'external_pdf'/)
 })
 
-test('structuredPreviewKit.ts recovery loop activates on faithful modality', () => {
+test('structuredPreviewKit.ts recovery loop activates for recovery-enabled modalities and escalates to scale-down', () => {
   const src = read('services/structuredPreviewKit.ts')
 
-  assert.match(src, /input\.modality === 'faithful'/)
+  assert.match(src, /resolveParityRecoveryMaxLevel\(input\.modality \?\? 'standard'\) > 0/)
   assert.match(src, /isParityRecoveryNeeded\(/)
   assert.match(src, /parity recovery: start/)
   assert.match(src, /parity recovery level \${level}/)
+  assert.match(src, /parity recovery: CSS exhausted, starting scale-down phase/)
+  assert.match(src, /parity recovery scale \$\{scale\}/)
   assert.match(src, /parity recovery: resolved at level/)
+  assert.match(src, /parity recovery: resolved at scale=/)
   assert.match(src, /parity recovery: exhausted/)
-  assert.match(src, /PARITY_MAX_RECOVERY_LEVEL/)
   assert.match(src, /buildPageLayoutBudget\(/)
 })
 
@@ -146,7 +153,8 @@ test('structuredPreviewKit.ts recovery loop logs per-step diagnostics', () => {
   assert.match(src, /budget_per_page=/)
   assert.match(src, /translated_pages=\$\{recoveredPageCount\}/)
   assert.match(src, /source_pages=\$\{input\.sourcePageCount\}/)
-  assert.match(src, /resolved=\$\{recoveredPageCount <= input\.sourcePageCount\}/)
+  assert.match(src, /resolved=\$\{recoveredPageCount === input\.sourcePageCount\}/)
+  assert.match(src, /resolved=\$\{scaledPageCount === input\.sourcePageCount\}/)
 })
 
 test('structuredPreviewKit.ts letterhead overlay uses post-recovery buffer', () => {
@@ -169,41 +177,31 @@ test('generateDeliveryKit.ts passes modality to both kit calls', () => {
 
   // External-PDF path still hard-codes 'external_pdf'
   assert.match(src, /modality: "external_pdf"/)
-  // Internal path: kitModality variable is seeded from resolveDocumentTypeModality
-  // and then overridden to 'faithful' for faithful-light paths so parity recovery activates.
-  // kitModality is seeded via: const modality = resolveDocumentTypeModality(...); let kitModality = modality
-  // then overridden to 'faithful' in each faithful-light path.
-  assert.match(src, /resolveDocumentTypeModality\(classification\.documentType\)/)
-  assert.match(src, /let kitModality/)
-  assert.match(src, /modality: kitModality/)
+  // Internal path resolves the structured kit modality once and threads it through.
+  assert.match(src, /function resolveStructuredKitModality\(/)
+  assert.match(src, /const structuredKitModality = resolveStructuredKitModality\(/)
+  assert.match(src, /modality: structuredKitModality/)
 })
 
 test('previewStructuredKit.ts passes modality to both kit calls', () => {
   const src = read('app/actions/previewStructuredKit.ts')
 
   assert.match(src, /modality: 'external_pdf'/)
-  assert.match(src, /modality: resolveDocumentTypeModality\(classification\.documentType\)/)
+  assert.match(src, /function resolveStructuredKitModality\(/)
+  assert.match(src, /const structuredKitModality = resolveStructuredKitModality\(/)
+  assert.match(src, /modality: structuredKitModality/)
 })
 
-// ── faithful_light_fallback obeys parity control ──────────────────────────────
+// ── Internal preview/delivery paths obey parity control ───────────────────────
 
-test('faithful_light_fallback flows through the same recovery-aware kit builder', () => {
-  // The faithful_light_fallback path sets htmlForKit and passes it to
-  // buildStructuredKitBuffer / assembleStructuredPreviewKit as structuredHtml.
-  // The recovery loop in buildStructuredKitBuffer operates on structuredHtml,
-  // so no separate bypass path exists for faithful_light_fallback.
+test('internal preview and delivery paths flow through the same recovery-aware modality contract', () => {
   const deliverySrc = read('app/actions/generateDeliveryKit.ts')
   const previewSrc = read('app/actions/previewStructuredKit.ts')
 
-  // faithful_light_fallback sets rendererName — must be visible in both files
-  assert.match(deliverySrc, /faithful_light_fallback/)
-  assert.match(previewSrc, /faithful_light_fallback/)
-
-  // generateDeliveryKit uses kitModality (seeded from resolveDocumentTypeModality, overridden
-  // to 'faithful' for all faithful-light paths so parity recovery activates).
-  // previewStructuredKit still passes resolveDocumentTypeModality directly.
-  assert.match(deliverySrc, /modality: kitModality/)
-  assert.match(previewSrc, /modality: resolveDocumentTypeModality/)
+  assert.match(deliverySrc, /rendererName: 'mirror_html'/)
+  assert.match(previewSrc, /rendererName: 'mirror_html'/)
+  assert.match(deliverySrc, /modality: structuredKitModality/)
+  assert.match(previewSrc, /modality: structuredKitModality/)
 })
 
 // ── Structured renderer prompt updates ───────────────────────────────────────
@@ -230,13 +228,13 @@ test('editorial_news_pages and publication_media_record prompts include parity n
 
 // ── Empty translated text regression ─────────────────────────────────────────
 
-test('empty translated text still blocks terminally (faithfulText.length > 50 guard)', () => {
+test('empty translated text still blocks terminally \(faithfulText.length < 50 guard\)', () => {
   const deliverySrc = read('app/actions/generateDeliveryKit.ts')
   const previewSrc = read('app/actions/previewStructuredKit.ts')
 
   // Guard must still be present in both files
-  assert.match(deliverySrc, /faithfulText\.length > 50/)
-  assert.match(previewSrc, /faithfulText\.length > 50/)
+  assert.match(deliverySrc, /faithfulText\.length < 50/)
+  assert.match(previewSrc, /faithfulText\.length < 50/)
 })
 
 // ── documentFamilyRegistry modality API ──────────────────────────────────────
@@ -293,6 +291,7 @@ test('parityRecovery exports ParityResolutionLabel type and resolveParityLabel',
   assert.match(src, /parity_resolved_light/)
   assert.match(src, /parity_resolved_moderate/)
   assert.match(src, /parity_resolved_aggressive/)
+  assert.match(src, /parity_resolved_scale_down/)
   assert.match(src, /parity_failed_terminal/)
   assert.match(src, /export function resolveParityLabel\(/)
 })
@@ -304,6 +303,8 @@ test('resolveParityLabel maps all levels correctly', () => {
   assert.match(src, /level === 1.*parity_resolved_light|parity_resolved_light.*level === 1/s)
   // level 2 or 3 → moderate
   assert.match(src, /level === 2.*parity_resolved_moderate|parity_resolved_moderate.*level === 2/s)
+  // scale_down path → scale-down label
+  assert.match(src, /level === 'scale_down'.*parity_resolved_scale_down|parity_resolved_scale_down.*level === 'scale_down'/s)
   // null path → terminal
   assert.match(src, /level === null.*parity_failed_terminal|parity_failed_terminal.*level === null/s)
   // level 4 → aggressive (the only remaining case)
@@ -316,8 +317,6 @@ test('parityRecovery exports isParityUnderflow', () => {
   const src = read('lib/parityRecovery.ts')
 
   assert.match(src, /export function isParityUnderflow\(/)
-  // Must gate on faithful modality
-  assert.match(src, /modality !== 'faithful'/)
   // Must return true when translated < source
   assert.match(src, /translatedPageCount < sourcePageCount/)
 })
@@ -328,7 +327,7 @@ test('structuredPreviewKit.ts imports and uses isParityUnderflow', () => {
   assert.match(src, /isParityUnderflow/)
   // Must log underflow when detected
   assert.match(src, /parity underflow/)
-  assert.match(src, /underflow is not remediated/)
+  assert.match(src, /mismatch remains blocking unless a manual fallback is explicitly approved/)
 })
 
 test('structuredPreviewKit.ts recovery loop emits page_delta and html_changed per step', () => {
@@ -371,16 +370,13 @@ test('StructuredPreviewKitInput accepts layoutHints field', () => {
   assert.match(src, /layoutHints\?:/)
 })
 
-test('action files import buildPreRenderLayoutHints and pass layoutHints to renderer', () => {
-  const deliverySrc = read('app/actions/generateDeliveryKit.ts')
-  const previewSrc = read('app/actions/previewStructuredKit.ts')
+test('structuredPreviewKit derives pre-render hints from the page budget before recovery logging', () => {
+  const src = read('services/structuredPreviewKit.ts')
 
-  // Both must import the budget builders
-  assert.match(deliverySrc, /buildPreRenderLayoutHints/)
-  assert.match(previewSrc, /buildPreRenderLayoutHints/)
-  // Both must pass layoutHints to the renderer call
-  assert.match(deliverySrc, /layoutHints,/)
-  assert.match(previewSrc, /layoutHints,/)
+  assert.match(src, /const preRenderHints = buildPreRenderLayoutHints\(budget\)/)
+  assert.match(src, /hints=font:\$\{preRenderHints\.suggestedFontSizePx\}px/)
+  assert.match(src, /lh:\$\{preRenderHints\.suggestedLineHeight\}/)
+  assert.match(src, /pad:\$\{preRenderHints\.suggestedCellPaddingPx\}px/)
 })
 
 // ── Faithful prompt helper centralisation ────────────────────────────────────
@@ -585,12 +581,18 @@ test('structuredPreviewKit.ts recovery loop uses firstRenderHtml as base', () =>
   assert.match(src, /recoveredHtml\.length !== firstRenderHtml\.length/)
 })
 
-test('Phase 1 recovery ladder still present and unchanged as fallback', () => {
+test('Phase 1 recovery ladder remains in place and scale-down is added as the final fallback', () => {
   const src = read('services/structuredPreviewKit.ts')
 
-  // All four levels must still be attempted
-  assert.match(src, /PARITY_MAX_RECOVERY_LEVEL/)
+  // The CSS ladder remains active and scale-down starts only after CSS exhaustion.
+  assert.match(src, /for \(let lvl = 1; lvl <= recoveryMaxLevel && !recoveryResolved; lvl\+\+\)/)
+  assert.match(src, /let scaleBaseHtml = firstRenderHtml/)
+  assert.match(src, /scaleBaseHtml = recoveredHtml/)
   assert.match(src, /parity-recovery-l\$\{level\}/)
+  assert.match(src, /PARITY_SCALE_STEPS/)
+  assert.match(src, /callGotenberg\(\s*scaleBaseHtml,/s)
+  assert.match(src, /parity recovery: CSS exhausted, starting scale-down phase/)
+  assert.match(src, /parity-recovery-scale-\$\{scale\}/)
   assert.match(src, /parity recovery: resolved at level/)
   assert.match(src, /parity recovery: exhausted/)
 })
