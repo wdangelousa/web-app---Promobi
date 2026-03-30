@@ -81,7 +81,7 @@ export function buildDeliveryKitEmail(data: DeliveryEmailData): string {
           <!-- A. HEADER -->
           <tr>
             <td style="background:#B87333; padding:32px 40px; text-align:center; border-radius:16px 16px 0 0;">
-              <img src="${BASE_URL}/logo-promobi.png" width="240" height="96" alt="Promobidocs" style="display:block; margin:0 auto 16px; height:96px; width:auto;" />
+              <img src="${BASE_URL}/logo.png" width="96" height="96" alt="Promobidocs" style="display:block; margin:0 auto 16px; height:96px; width:96px; border-radius:50%; mix-blend-mode:multiply; background:#B87333;" />
               <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
                 <tr>
                   <td style="background:rgba(255,255,255,0.15); border-radius:100px; padding:6px 16px;">
