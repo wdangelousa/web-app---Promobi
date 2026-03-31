@@ -2462,22 +2462,38 @@ export async function buildStructuredKitBuffer(
     translatedPages.forEach(p => finalPdf.addPage(p));
 
     // Part 3: original intact (skipped if not PDF or unavailable)
+    // When sourceRelevantPageCount is set and smaller than the full document,
+    // only include the relevant leading pages (partial scope from parity decision).
     let originalPageCount = 0;
     if (originalPdfDocForAssembly) {
+      const allIndices = originalPdfDocForAssembly.getPageIndices();
+      const indicesToCopy =
+        typeof sourceRelevantPageCount === 'number' &&
+        sourceRelevantPageCount > 0 &&
+        sourceRelevantPageCount < allIndices.length
+          ? allIndices.slice(0, sourceRelevantPageCount)
+          : allIndices;
       const originalPages = await finalPdf.copyPages(
         originalPdfDocForAssembly,
-        originalPdfDocForAssembly.getPageIndices(),
+        indicesToCopy,
       );
       originalPages.forEach(p => finalPdf.addPage(p));
-      originalPageCount = originalPdfDocForAssembly.getPageCount();
-      log(`original appended: yes (${originalPageCount} page(s))`);
+      originalPageCount = indicesToCopy.length;
+      log(`original appended: yes (${originalPageCount}/${allIndices.length} page(s))`);
     } else if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
       try {
         const originalDoc = await PDFDocument.load(input.originalFileBuffer, { ignoreEncryption: true });
-        const originalPages = await finalPdf.copyPages(originalDoc, originalDoc.getPageIndices());
+        const allIndices = originalDoc.getPageIndices();
+        const indicesToCopy =
+          typeof sourceRelevantPageCount === 'number' &&
+          sourceRelevantPageCount > 0 &&
+          sourceRelevantPageCount < allIndices.length
+            ? allIndices.slice(0, sourceRelevantPageCount)
+            : allIndices;
+        const originalPages = await finalPdf.copyPages(originalDoc, indicesToCopy);
         originalPages.forEach(p => finalPdf.addPage(p));
-        originalPageCount = originalDoc.getPageCount();
-        log(`original appended: yes (${originalPageCount} page(s))`);
+        originalPageCount = indicesToCopy.length;
+        log(`original appended: yes (${originalPageCount}/${allIndices.length} page(s))`);
       } catch (origErr) {
         log(`original appended: no (pdf-lib load error: ${origErr})`);
       }
