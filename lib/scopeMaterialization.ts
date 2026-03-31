@@ -112,14 +112,16 @@ export async function materializeScopedDocuments(
               ? metadataDoc.analysis.pages.length
               : undefined
 
-        if (
-          includedPages.length === 0 &&
+        const isPartialScope =
           typeof document.billablePages === 'number' &&
           typeof document.totalPages === 'number' &&
           document.billablePages > 0 &&
           document.totalPages > document.billablePages
-        ) {
-          includedPages = buildLeadingPageIndexes(document.billablePages)
+
+        if (includedPages.length === 0 && isPartialScope) {
+          includedPages = buildLeadingPageIndexes(document.billablePages!)
+        } else if (isPartialScope && includedPages.length > document.billablePages!) {
+          includedPages = includedPages.slice(0, document.billablePages!)
         }
 
         if (includedPages.length === 0) {
