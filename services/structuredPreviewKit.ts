@@ -2464,36 +2464,37 @@ export async function buildStructuredKitBuffer(
     // Part 3: original intact (skipped if not PDF or unavailable)
     // When sourceRelevantPageCount is set and smaller than the full document,
     // only include the relevant leading pages (partial scope from parity decision).
-    let originalPageCount = 0;
-    if (originalPdfDocForAssembly) {
-      const allIndices = originalPdfDocForAssembly.getPageIndices();
-      const indicesToCopy =
+    const resolveOriginalPageIndices = (doc: PDFDocument): number[] => {
+      const allIndices = doc.getPageIndices();
+      if (
         typeof sourceRelevantPageCount === 'number' &&
         sourceRelevantPageCount > 0 &&
         sourceRelevantPageCount < allIndices.length
-          ? allIndices.slice(0, sourceRelevantPageCount)
-          : allIndices;
+      ) {
+        log(`original trimmed: ${allIndices.length} -> ${sourceRelevantPageCount} page(s) by sourceRelevantPageCount`);
+        return allIndices.slice(0, sourceRelevantPageCount);
+      }
+      return allIndices;
+    };
+
+    let originalPageCount = 0;
+    if (originalPdfDocForAssembly) {
+      const indicesToCopy = resolveOriginalPageIndices(originalPdfDocForAssembly);
       const originalPages = await finalPdf.copyPages(
         originalPdfDocForAssembly,
         indicesToCopy,
       );
       originalPages.forEach(p => finalPdf.addPage(p));
       originalPageCount = indicesToCopy.length;
-      log(`original appended: yes (${originalPageCount}/${allIndices.length} page(s))`);
+      log(`original appended: yes (${originalPageCount} page(s))`);
     } else if (input.isOriginalPdf && input.originalFileBuffer.byteLength > 0) {
       try {
         const originalDoc = await PDFDocument.load(input.originalFileBuffer, { ignoreEncryption: true });
-        const allIndices = originalDoc.getPageIndices();
-        const indicesToCopy =
-          typeof sourceRelevantPageCount === 'number' &&
-          sourceRelevantPageCount > 0 &&
-          sourceRelevantPageCount < allIndices.length
-            ? allIndices.slice(0, sourceRelevantPageCount)
-            : allIndices;
+        const indicesToCopy = resolveOriginalPageIndices(originalDoc);
         const originalPages = await finalPdf.copyPages(originalDoc, indicesToCopy);
         originalPages.forEach(p => finalPdf.addPage(p));
         originalPageCount = indicesToCopy.length;
-        log(`original appended: yes (${originalPageCount}/${allIndices.length} page(s))`);
+        log(`original appended: yes (${originalPageCount} page(s))`);
       } catch (origErr) {
         log(`original appended: no (pdf-lib load error: ${origErr})`);
       }
