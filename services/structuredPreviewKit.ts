@@ -910,7 +910,7 @@ function buildCertificationCoverHtml(
 
   const certificationBodyHtml = variant === 'es-en'
     ? `<p>
-  I, <strong>Isabele Bandeira de Moraes D'Angelo</strong>, certify that I am competent to translate
+  I, <strong>Isabele Bandeira de Moraes</strong>, certify that I am competent to translate
   from Spanish into English and that the attached translation is a
   <strong>complete</strong> and <strong>accurate translation</strong> of the attached original document.
 </p>
@@ -919,7 +919,7 @@ function buildCertificationCoverHtml(
   academic, banking, and institutional purposes, as required.
 </p>`
     : `<p>
-  I, <strong>Isabele Bandeira de Moraes D'Angelo</strong>, certify that I am competent to translate
+  I, <strong>Isabele Bandeira de Moraes</strong>, certify that I am competent to translate
   from Portuguese into English and that the attached translation is a
   <strong>complete</strong> and <strong>accurate translation</strong> of the attached original document.
 </p>
@@ -937,7 +937,7 @@ function buildCertificationCoverHtml(
   const lhImg = hasLh ? `<img src="letterhead.png" alt="">` : '';
   const ataImg = hasAta ? `<img class="logo-ata" src="logo-ata.png" alt="American Translators Association">` : '';
   const atifImg = hasAtif ? `<img class="logo-atif" src="atif.png" alt="ATIF">` : '';
-  const sigImg = hasSig ? `<img class="signature-img" src="assinatura-isabele.png.jpg" alt="Signature of Isabele Bandeira de Moraes D'Angelo">` : '';
+  const sigImg = hasSig ? `<img class="signature-img" src="assinatura-isabele.png.jpg" alt="Signature of Isabele Bandeira de Moraes">` : '';
   const sealImg = hasSeal ? `<img class="seal-img" src="selo-ata.png" alt="ATA Seal">` : '';
 
   const documentDate = meta.documentDate ?? '\u2014';
@@ -1236,13 +1236,13 @@ function buildCertificationCoverHtml(
       <div class="footer">
         <div class="footer-left">
           ${sigImg}
-          <div class="translator-name">Isabele Bandeira de Moraes D'Angelo</div>
+          <div class="translator-name">Isabele Bandeira de Moraes</div>
           <div class="credential">American Translators Association — Member No. M-194918</div>
           <div class="credential">ATIF Registration — #3622</div>
           <div class="contact">
             Telephone: +1 321 324-5851<br>
             Email: desk@promobidocs.com<br>
-            3300 Greenwald Way N, Kissimmee, FL
+            Address: 3300 Greenwald Way N, Kissimmee, FL
           </div>
         </div>
         <div class="footer-right">
